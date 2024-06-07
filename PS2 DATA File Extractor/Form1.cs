@@ -208,7 +208,7 @@ namespace PS2_DATA_File_Extractor
                 byte[] data = reader.ReadBytes(entry.Size);
 
                 string extension = Path.GetExtension(entry.Path).ToLower();
-                if (extension == ".png" || extension == ".bmp")
+                if (extension == ".png" || extension == ".bmp" || extension == ".ico" || extension == ".mnd")
                 {
                     try
                     {
