@@ -57,26 +57,24 @@ namespace PS2_DATA_File_Extractor
             using (FileStream fs = new FileStream(dataMetPath, FileMode.Open, FileAccess.Read))
             using (BinaryReader reader = new BinaryReader(fs))
             {
-                // Read the initial header (assuming 16 bytes based on provided data)
-                long initialHeaderSize = 16;
-                byte[] initialHeader = reader.ReadBytes((int)initialHeaderSize);
-
                 long fileSize = fs.Length;
 
-                // Ensure we don't go beyond the file size
+                // Skip the first 8 bytes
+                fs.Seek(8, SeekOrigin.Begin);
+
                 while (fs.Position < fileSize)
                 {
                     try
                     {
                         long entryStart = fs.Position;
 
-                        // Ensure there are enough bytes left for a complete entry
-                        if (fs.Position + 4 > fileSize)
-                        {
-                            break;
-                        }
+                        // Read the offset where the data starts (4 bytes, little-endian)
+                        int dataOffset = ReadInt32LE(reader);
 
-                        // Read string length (4 bytes, little-endian)
+                        // Read the size of the data (4 bytes, little-endian)
+                        int dataSize = ReadInt32LE(reader);
+
+                        // Read the string length (4 bytes, little-endian)
                         int strLength = ReadInt32LE(reader);
 
                         if (strLength == 0) // Reached separator or end of entries
@@ -84,21 +82,15 @@ namespace PS2_DATA_File_Extractor
                             break;
                         }
 
-                        // Ensure there are enough bytes left for the path and additional fields
-                        if (fs.Position + strLength + 4 + 4 > fileSize)
+                        // Ensure there are enough bytes left for the path
+                        if (fs.Position + strLength > fileSize)
                         {
                             break;
                         }
 
-                        // Read path (N bytes)
+                        // Read the path (N bytes)
                         byte[] pathBytes = reader.ReadBytes(strLength);
                         string path = Encoding.ASCII.GetString(pathBytes).Trim('\0');
-
-                        // Read offset (4 bytes, little-endian)
-                        int dataOffset = ReadInt32LE(reader);
-
-                        // Read size (4 bytes, little-endian)
-                        int dataSize = ReadInt32LE(reader);
 
                         // Log the end of the current header
                         long headerEndPosition = fs.Position;
@@ -107,7 +99,7 @@ namespace PS2_DATA_File_Extractor
                         FileEntry entry = new FileEntry
                         {
                             HeaderStart = entryStart,
-                            HeaderEnd = headerEndPosition - 1,
+                            HeaderEnd = headerEndPosition,
                             StringLength = strLength,
                             Path = path,
                             Offset = dataOffset,
@@ -121,16 +113,8 @@ namespace PS2_DATA_File_Extractor
                         }
                         groupedEntries[extension].Add(entry);
 
-                        // Calculate the next entry start position
-                        long nextEntryPosition = headerEndPosition; // This is where the next entry starts
-
-                        if (nextEntryPosition >= fileSize)
-                        {
-                            break;
-                        }
-
                         // Move to the next entry
-                        fs.Seek(nextEntryPosition, SeekOrigin.Begin);
+                        fs.Seek(headerEndPosition, SeekOrigin.Begin);
                     }
                     catch (EndOfStreamException)
                     {
@@ -189,7 +173,7 @@ namespace PS2_DATA_File_Extractor
             richTextBox1.Clear();
             richTextBox1.AppendText($"Header starts at address: {entry.HeaderStart} (0x{entry.HeaderStart:X})\n");
             richTextBox1.AppendText($"Header ends at address: {entry.HeaderEnd} (0x{entry.HeaderEnd:X})\n");
-            long headerLength = entry.HeaderEnd - entry.HeaderStart + 1; // +1 to include the end byte
+            long headerLength = entry.HeaderEnd - entry.HeaderStart;
             richTextBox1.AppendText($"Length of the header: {headerLength} (0x{headerLength:X})\n");
             richTextBox1.AppendText($"Length of the string: {entry.StringLength} (0x{entry.StringLength:X})\n");
             richTextBox1.AppendText($"Path: {entry.Path}\n");
@@ -243,19 +227,6 @@ namespace PS2_DATA_File_Extractor
             {
                 MessageBox.Show($"An error occurred while trying to display the image: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
-            /*try
-            {
-                _imageViewer = new ImageViewer();
-                _imageViewer.SetImage(image);
-                if (!_imageViewer.Visible)
-                {
-                    _imageViewer.Show();
-                }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"An error occurred while trying to display the image: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }*/
         }
 
         private static int ReadInt32LE(BinaryReader reader)
