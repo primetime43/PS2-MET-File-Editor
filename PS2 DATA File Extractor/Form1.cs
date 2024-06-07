@@ -12,6 +12,7 @@ namespace PS2_DATA_File_Extractor
         private Dictionary<string, List<FileEntry>> groupedEntries = new Dictionary<string, List<FileEntry>>();
         private string _dataMetPath;
         private ImageViewer _imageViewer; // Single instance of ImageViewer
+        private TreeNode _lastSelectedNode;
 
         public Form1()
         {
@@ -176,6 +177,7 @@ namespace PS2_DATA_File_Extractor
         {
             if (e.Node.Tag is FileEntry entry)
             {
+                _lastSelectedNode = e.Node; // Store the selected node
                 DisplayEntryInfo(entry);
             }
         }
@@ -205,7 +207,8 @@ namespace PS2_DATA_File_Extractor
                 fs.Seek(entry.Offset, SeekOrigin.Begin);
                 byte[] data = reader.ReadBytes(entry.Size);
 
-                if (Path.GetExtension(entry.Path).ToLower() == ".png")
+                string extension = Path.GetExtension(entry.Path).ToLower();
+                if (extension == ".png" || extension == ".bmp")
                 {
                     try
                     {
@@ -271,6 +274,15 @@ namespace PS2_DATA_File_Extractor
             public string Path { get; set; }
             public int Offset { get; set; }
             public int Size { get; set; }
+        }
+
+        private void richTextBox2_Enter(object sender, EventArgs e)
+        {
+            if (_lastSelectedNode != null)
+            {
+                treeView1.SelectedNode = _lastSelectedNode;
+                _lastSelectedNode.EnsureVisible(); // Ensure the selected node is visible
+            }
         }
     }
 }

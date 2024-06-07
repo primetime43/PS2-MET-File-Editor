@@ -72,6 +72,7 @@
             richTextBox2.Size = new Size(686, 548);
             richTextBox2.TabIndex = 3;
             richTextBox2.Text = "";
+            richTextBox2.MouseClick += richTextBox2_Enter;
             // 
             // pictureBox1
             // 
