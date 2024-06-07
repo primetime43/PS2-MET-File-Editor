@@ -34,6 +34,7 @@
             backgroundWorker1 = new System.ComponentModel.BackgroundWorker();
             richTextBox2 = new RichTextBox();
             pictureBox1 = new PictureBox();
+            saveSelectedFileBtn = new Button();
             ((System.ComponentModel.ISupportInitialize)pictureBox1).BeginInit();
             SuspendLayout();
             // 
@@ -83,11 +84,22 @@
             pictureBox1.TabIndex = 4;
             pictureBox1.TabStop = false;
             // 
+            // saveSelectedFileBtn
+            // 
+            saveSelectedFileBtn.Location = new Point(126, 763);
+            saveSelectedFileBtn.Name = "saveSelectedFileBtn";
+            saveSelectedFileBtn.Size = new Size(156, 47);
+            saveSelectedFileBtn.TabIndex = 5;
+            saveSelectedFileBtn.Text = "Save selected file";
+            saveSelectedFileBtn.UseVisualStyleBackColor = true;
+            saveSelectedFileBtn.Click += saveSelectedFileBtn_Click;
+            // 
             // Form1
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             ClientSize = new Size(1782, 875);
+            Controls.Add(saveSelectedFileBtn);
             Controls.Add(pictureBox1);
             Controls.Add(richTextBox2);
             Controls.Add(richTextBox1);
@@ -107,5 +119,6 @@
         private System.ComponentModel.BackgroundWorker backgroundWorker1;
         private RichTextBox richTextBox2;
         private PictureBox pictureBox1;
+        private Button saveSelectedFileBtn;
     }
 }

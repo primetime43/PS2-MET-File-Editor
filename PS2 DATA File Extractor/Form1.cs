@@ -13,6 +13,7 @@ namespace PS2_DATA_File_Extractor
         private string _dataMetPath;
         private ImageViewer _imageViewer; // Single instance of ImageViewer
         private TreeNode _lastSelectedNode;
+        private FileEntry _selectedEntry;
 
         public Form1()
         {
@@ -178,6 +179,7 @@ namespace PS2_DATA_File_Extractor
             if (e.Node.Tag is FileEntry entry)
             {
                 _lastSelectedNode = e.Node; // Store the selected node
+                _selectedEntry = entry; // Store the selected entry
                 DisplayEntryInfo(entry);
             }
         }
@@ -282,6 +284,52 @@ namespace PS2_DATA_File_Extractor
             {
                 treeView1.SelectedNode = _lastSelectedNode;
                 _lastSelectedNode.EnsureVisible(); // Ensure the selected node is visible
+            }
+        }
+
+        private void saveSelectedFileBtn_Click(object sender, EventArgs e)
+        {
+            if (_selectedEntry != null)
+            {
+                SaveFileDialog saveFileDialog = new SaveFileDialog();
+                saveFileDialog.FileName = Path.GetFileName(_selectedEntry.Path);
+
+                // Set the filter based on the file extension
+                string extension = Path.GetExtension(_selectedEntry.Path).ToLower();
+                if (!string.IsNullOrEmpty(extension))
+                {
+                    saveFileDialog.Filter = $"{extension.ToUpper().TrimStart('.')} files (*{extension})|*{extension}|All files (*.*)|*.*";
+                }
+                else
+                {
+                    saveFileDialog.Filter = "All files (*.*)|*.*";
+                }
+
+                if (saveFileDialog.ShowDialog() == DialogResult.OK)
+                {
+                    SaveSelectedFile(_selectedEntry, saveFileDialog.FileName);
+                }
+            }
+            else
+            {
+                MessageBox.Show("No file selected.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void SaveSelectedFile(FileEntry entry, string destinationPath)
+        {
+            using (FileStream fs = new FileStream(_dataMetPath, FileMode.Open, FileAccess.Read))
+            using (BinaryReader reader = new BinaryReader(fs))
+            {
+                fs.Seek(entry.Offset, SeekOrigin.Begin);
+                byte[] data = reader.ReadBytes(entry.Size);
+
+                using (FileStream destFs = new FileStream(destinationPath, FileMode.Create, FileAccess.Write))
+                {
+                    destFs.Write(data, 0, data.Length);
+                }
+
+                MessageBox.Show($"File saved successfully to {destinationPath}.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
         }
     }
