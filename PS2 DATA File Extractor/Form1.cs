@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Windows.Forms;
@@ -7,9 +8,15 @@ namespace PS2_DATA_File_Extractor
 {
     public partial class Form1 : Form
     {
+        private Dictionary<string, List<FileEntry>> groupedEntries = new Dictionary<string, List<FileEntry>>();
+        private string currentDataMetPath;
+
         public Form1()
         {
             InitializeComponent();
+            // Make sure to hook up the BeforeExpand event
+            treeView1.BeforeExpand += treeView1_BeforeExpand;
+            treeView1.AfterSelect += treeView1_AfterSelect;
         }
 
         private void button1_Click(object sender, EventArgs e)
@@ -21,11 +28,12 @@ namespace PS2_DATA_File_Extractor
 
                 if (openFileDialog.ShowDialog() == DialogResult.OK)
                 {
-                    string dataMetPath = openFileDialog.FileName;
+                    currentDataMetPath = openFileDialog.FileName;
                     try
                     {
-                        DisplayFileInfo(dataMetPath, "output.txt");
-                        MessageBox.Show($"Successfully read {dataMetPath}. Output written to output.txt.");
+                        ReadFileEntries(currentDataMetPath);
+                        PopulateTreeView();
+                        MessageBox.Show($"Successfully read {currentDataMetPath}.");
                     }
                     catch (Exception ex)
                     {
@@ -35,19 +43,16 @@ namespace PS2_DATA_File_Extractor
             }
         }
 
-        public static void DisplayFileInfo(string dataMetPath, string outputFilePath)
+        private void ReadFileEntries(string dataMetPath)
         {
+            groupedEntries.Clear();
+
             using (FileStream fs = new FileStream(dataMetPath, FileMode.Open, FileAccess.Read))
             using (BinaryReader reader = new BinaryReader(fs))
-            using (StreamWriter writer = new StreamWriter(outputFilePath))
             {
-                // Log the start of the file reading process
-                writer.WriteLine("Starting to read the file...\n");
-
                 // Read the initial header (assuming 16 bytes based on provided data)
                 long initialHeaderSize = 16;
                 byte[] initialHeader = reader.ReadBytes((int)initialHeaderSize);
-                writer.WriteLine($"Initial header: {BitConverter.ToString(initialHeader)}\n");
 
                 long fileSize = fs.Length;
 
@@ -61,24 +66,20 @@ namespace PS2_DATA_File_Extractor
                         // Ensure there are enough bytes left for a complete entry
                         if (fs.Position + 4 > fileSize)
                         {
-                            writer.WriteLine("Reached end of file before reading complete header.\n");
                             break;
                         }
 
                         // Read string length (4 bytes, little-endian)
                         int strLength = ReadInt32LE(reader);
-                        //writer.WriteLine($"String length: {strLength} (0x{strLength:X})");
 
                         if (strLength == 0) // Reached separator or end of entries
                         {
-                            writer.WriteLine("Reached separator or end of entries.\n");
                             break;
                         }
 
                         // Ensure there are enough bytes left for the path and additional fields
                         if (fs.Position + strLength + 4 + 4 > fileSize)
                         {
-                            writer.WriteLine("Reached end of file before reading complete entry.\n");
                             break;
                         }
 
@@ -95,25 +96,29 @@ namespace PS2_DATA_File_Extractor
                         // Log the end of the current header
                         long headerEndPosition = fs.Position;
 
-                        int headerTotalSize = (int)(headerEndPosition - entryStart);
+                        // Create a new FileEntry object and add it to the list
+                        FileEntry entry = new FileEntry
+                        {
+                            HeaderStart = entryStart,
+                            HeaderEnd = headerEndPosition - 1,
+                            StringLength = strLength,
+                            Path = path,
+                            Offset = dataOffset,
+                            Size = dataSize
+                        };
 
-                        // Output the information
-                        writer.WriteLine($"Header starts at address: {entryStart} (0x{entryStart:X})");
-                        writer.WriteLine($"Header ends at address: {headerEndPosition-1} (0x{headerEndPosition-1:X})");
-                        writer.WriteLine($"Length of the header (End - Start Position): {headerTotalSize} (0x{headerTotalSize:X})");
-                        writer.WriteLine($"Path (file name): {path}");
-                        writer.WriteLine($"Length of the string (file name): {strLength} (0x{strLength:X})");
-                        writer.WriteLine($"Offset where data starts: {dataOffset} (0x{dataOffset:X})");
-                        writer.WriteLine($"Size: {dataSize} (0x{dataSize:X})\n");
+                        string extension = Path.GetExtension(path);
+                        if (!groupedEntries.ContainsKey(extension))
+                        {
+                            groupedEntries[extension] = new List<FileEntry>();
+                        }
+                        groupedEntries[extension].Add(entry);
 
                         // Calculate the next entry start position
                         long nextEntryPosition = headerEndPosition; // This is where the next entry starts
 
-                        // Verify the next entry position
-                        //writer.WriteLine($"Next entry position: {nextEntryPosition} (0x{nextEntryPosition:X})");
                         if (nextEntryPosition >= fileSize)
                         {
-                            writer.WriteLine("Next entry position exceeds file size.\n");
                             break;
                         }
 
@@ -122,15 +127,86 @@ namespace PS2_DATA_File_Extractor
                     }
                     catch (EndOfStreamException)
                     {
-                        writer.WriteLine("Unexpected end of file encountered.\n");
                         break;
                     }
                     catch (IOException ex)
                     {
-                        writer.WriteLine($"I/O error occurred: {ex.Message}\n");
                         break;
                     }
                 }
+            }
+        }
+
+        private void PopulateTreeView()
+        {
+            treeView1.Nodes.Clear();
+            foreach (var group in groupedEntries)
+            {
+                TreeNode extensionNode = new TreeNode(group.Key)
+                {
+                    Tag = group.Value, // Store the list of FileEntry objects in the Tag property
+                    Nodes = { new TreeNode("Loading...") } // Add a dummy node for lazy loading
+                };
+                treeView1.Nodes.Add(extensionNode);
+            }
+        }
+
+        private void treeView1_BeforeExpand(object sender, TreeViewCancelEventArgs e)
+        {
+            if (e.Node.Tag is List<FileEntry> entries)
+            {
+                e.Node.Nodes.Clear(); // Clear the dummy loading node
+                foreach (var entry in entries)
+                {
+                    TreeNode entryNode = new TreeNode(entry.Path)
+                    {
+                        Tag = entry
+                    };
+                    e.Node.Nodes.Add(entryNode);
+                }
+            }
+        }
+
+        private void treeView1_AfterSelect(object sender, TreeViewEventArgs e)
+        {
+            if (e.Node.Tag is FileEntry entry)
+            {
+                DisplayEntryInfo(entry);
+                LoadFileData(entry);
+            }
+        }
+
+        private void DisplayEntryInfo(FileEntry entry)
+        {
+            richTextBox1.Clear();
+            richTextBox1.AppendText($"Header starts at address: {entry.HeaderStart} (0x{entry.HeaderStart:X})\n");
+            richTextBox1.AppendText($"Header ends at address: {entry.HeaderEnd} (0x{entry.HeaderEnd:X})\n");
+            long headerLength = entry.HeaderEnd - entry.HeaderStart + 1; // +1 to include the end byte
+            richTextBox1.AppendText($"Length of the header: {headerLength} (0x{headerLength:X})\n");
+            richTextBox1.AppendText($"Path: {entry.Path}\n");
+            richTextBox1.AppendText($"Length of the string: {entry.StringLength} (0x{entry.StringLength:X})\n");
+            richTextBox1.AppendText($"Offset: {entry.Offset} (0x{entry.Offset:X})\n");
+            richTextBox1.AppendText($"Size: {entry.Size} (0x{entry.Size:X})\n");
+            richTextBox1.AppendText($"Data spans from 0x{entry.Offset:X} to 0x{(entry.Offset + entry.Size):X}\n");
+        }
+
+        private void LoadFileData(FileEntry entry)
+        {
+            try
+            {
+                using (FileStream fs = new FileStream(currentDataMetPath, FileMode.Open, FileAccess.Read))
+                using (BinaryReader reader = new BinaryReader(fs))
+                {
+                    fs.Seek(entry.Offset, SeekOrigin.Begin);
+                    byte[] fileData = reader.ReadBytes(entry.Size);
+
+                    richTextBox2.Clear();
+                    richTextBox2.AppendText(Encoding.ASCII.GetString(fileData));
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"An error occurred while reading file data: {ex.Message}");
             }
         }
 
@@ -144,9 +220,14 @@ namespace PS2_DATA_File_Extractor
             return BitConverter.ToInt32(bytes, 0);
         }
 
-        private static void AppendText(StreamWriter writer, string text)
+        private class FileEntry
         {
-            writer.WriteLine(text);
+            public long HeaderStart { get; set; }
+            public long HeaderEnd { get; set; }
+            public int StringLength { get; set; }
+            public string Path { get; set; }
+            public int Offset { get; set; }
+            public int Size { get; set; }
         }
     }
 }

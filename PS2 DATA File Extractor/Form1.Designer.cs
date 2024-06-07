@@ -32,18 +32,21 @@
             button1 = new Button();
             richTextBox1 = new RichTextBox();
             backgroundWorker1 = new System.ComponentModel.BackgroundWorker();
+            richTextBox2 = new RichTextBox();
             SuspendLayout();
             // 
             // treeView1
             // 
             treeView1.Location = new Point(12, 12);
             treeView1.Name = "treeView1";
-            treeView1.Size = new Size(229, 683);
+            treeView1.Size = new Size(410, 659);
             treeView1.TabIndex = 0;
+            treeView1.BeforeExpand += treeView1_BeforeExpand;
+            treeView1.AfterSelect += treeView1_AfterSelect;
             // 
             // button1
             // 
-            button1.Location = new Point(392, 602);
+            button1.Location = new Point(126, 677);
             button1.Name = "button1";
             button1.Size = new Size(156, 47);
             button1.TabIndex = 1;
@@ -53,17 +56,27 @@
             // 
             // richTextBox1
             // 
-            richTextBox1.Location = new Point(282, 26);
+            richTextBox1.Location = new Point(439, 590);
             richTextBox1.Name = "richTextBox1";
-            richTextBox1.Size = new Size(855, 515);
+            richTextBox1.ReadOnly = true;
+            richTextBox1.Size = new Size(772, 134);
             richTextBox1.TabIndex = 2;
             richTextBox1.Text = "";
+            // 
+            // richTextBox2
+            // 
+            richTextBox2.Location = new Point(439, 12);
+            richTextBox2.Name = "richTextBox2";
+            richTextBox2.Size = new Size(772, 572);
+            richTextBox2.TabIndex = 3;
+            richTextBox2.Text = "";
             // 
             // Form1
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             ClientSize = new Size(1223, 736);
+            Controls.Add(richTextBox2);
             Controls.Add(richTextBox1);
             Controls.Add(button1);
             Controls.Add(treeView1);
@@ -78,5 +91,6 @@
         private Button button1;
         private RichTextBox richTextBox1;
         private System.ComponentModel.BackgroundWorker backgroundWorker1;
+        private RichTextBox richTextBox2;
     }
 }
