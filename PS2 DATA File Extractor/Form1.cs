@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Drawing;
 using System.IO;
 using System.Text;
 using System.Windows.Forms;
@@ -9,14 +10,18 @@ namespace PS2_DATA_File_Extractor
     public partial class Form1 : Form
     {
         private Dictionary<string, List<FileEntry>> groupedEntries = new Dictionary<string, List<FileEntry>>();
-        private string currentDataMetPath;
+        private string _dataMetPath;
+        private ImageViewer _imageViewer; // Single instance of ImageViewer
 
         public Form1()
         {
             InitializeComponent();
-            // Make sure to hook up the BeforeExpand event
+            // Make sure to hook up the BeforeExpand and AfterSelect events
             treeView1.BeforeExpand += treeView1_BeforeExpand;
             treeView1.AfterSelect += treeView1_AfterSelect;
+
+            // Initialize the ImageViewer form
+            //_imageViewer = new ImageViewer();
         }
 
         private void button1_Click(object sender, EventArgs e)
@@ -28,12 +33,12 @@ namespace PS2_DATA_File_Extractor
 
                 if (openFileDialog.ShowDialog() == DialogResult.OK)
                 {
-                    currentDataMetPath = openFileDialog.FileName;
+                    _dataMetPath = openFileDialog.FileName;
                     try
                     {
-                        ReadFileEntries(currentDataMetPath);
+                        ReadFileEntries(_dataMetPath);
                         PopulateTreeView();
-                        MessageBox.Show($"Successfully read {currentDataMetPath}.");
+                        MessageBox.Show($"Successfully read {_dataMetPath}.");
                     }
                     catch (Exception ex)
                     {
@@ -172,7 +177,6 @@ namespace PS2_DATA_File_Extractor
             if (e.Node.Tag is FileEntry entry)
             {
                 DisplayEntryInfo(entry);
-                LoadFileData(entry);
             }
         }
 
@@ -183,31 +187,70 @@ namespace PS2_DATA_File_Extractor
             richTextBox1.AppendText($"Header ends at address: {entry.HeaderEnd} (0x{entry.HeaderEnd:X})\n");
             long headerLength = entry.HeaderEnd - entry.HeaderStart + 1; // +1 to include the end byte
             richTextBox1.AppendText($"Length of the header: {headerLength} (0x{headerLength:X})\n");
-            richTextBox1.AppendText($"Path: {entry.Path}\n");
             richTextBox1.AppendText($"Length of the string: {entry.StringLength} (0x{entry.StringLength:X})\n");
+            richTextBox1.AppendText($"Path: {entry.Path}\n");
             richTextBox1.AppendText($"Offset: {entry.Offset} (0x{entry.Offset:X})\n");
             richTextBox1.AppendText($"Size: {entry.Size} (0x{entry.Size:X})\n");
             richTextBox1.AppendText($"Data spans from 0x{entry.Offset:X} to 0x{(entry.Offset + entry.Size):X}\n");
+
+            // Load and display the data in richTextBox2
+            LoadData(entry);
         }
 
-        private void LoadFileData(FileEntry entry)
+        private void LoadData(FileEntry entry)
+        {
+            using (FileStream fs = new FileStream(_dataMetPath, FileMode.Open, FileAccess.Read))
+            using (BinaryReader reader = new BinaryReader(fs))
+            {
+                fs.Seek(entry.Offset, SeekOrigin.Begin);
+                byte[] data = reader.ReadBytes(entry.Size);
+
+                if (Path.GetExtension(entry.Path).ToLower() == ".png")
+                {
+                    try
+                    {
+                        using (MemoryStream ms = new MemoryStream(data))
+                        {
+                            Image image = Image.FromStream(ms);
+                            ShowImageInPictureBox(image);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show($"An error occurred while trying to display the image: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    }
+                }
+                else
+                {
+                    string dataText = Encoding.ASCII.GetString(data);
+                    richTextBox2.Text = dataText;
+                }
+            }
+        }
+
+        private void ShowImageInPictureBox(Image image)
         {
             try
             {
-                using (FileStream fs = new FileStream(currentDataMetPath, FileMode.Open, FileAccess.Read))
-                using (BinaryReader reader = new BinaryReader(fs))
+                pictureBox1.Image = image;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"An error occurred while trying to display the image: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            /*try
+            {
+                _imageViewer = new ImageViewer();
+                _imageViewer.SetImage(image);
+                if (!_imageViewer.Visible)
                 {
-                    fs.Seek(entry.Offset, SeekOrigin.Begin);
-                    byte[] fileData = reader.ReadBytes(entry.Size);
-
-                    richTextBox2.Clear();
-                    richTextBox2.AppendText(Encoding.ASCII.GetString(fileData));
+                    _imageViewer.Show();
                 }
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"An error occurred while reading file data: {ex.Message}");
-            }
+                MessageBox.Show($"An error occurred while trying to display the image: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }*/
         }
 
         private static int ReadInt32LE(BinaryReader reader)

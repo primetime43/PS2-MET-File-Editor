@@ -33,6 +33,8 @@
             richTextBox1 = new RichTextBox();
             backgroundWorker1 = new System.ComponentModel.BackgroundWorker();
             richTextBox2 = new RichTextBox();
+            pictureBox1 = new PictureBox();
+            ((System.ComponentModel.ISupportInitialize)pictureBox1).BeginInit();
             SuspendLayout();
             // 
             // treeView1
@@ -67,21 +69,32 @@
             // 
             richTextBox2.Location = new Point(439, 12);
             richTextBox2.Name = "richTextBox2";
-            richTextBox2.Size = new Size(772, 572);
+            richTextBox2.Size = new Size(686, 548);
             richTextBox2.TabIndex = 3;
             richTextBox2.Text = "";
+            // 
+            // pictureBox1
+            // 
+            pictureBox1.BackColor = Color.White;
+            pictureBox1.Location = new Point(1151, 12);
+            pictureBox1.Name = "pictureBox1";
+            pictureBox1.Size = new Size(619, 548);
+            pictureBox1.TabIndex = 4;
+            pictureBox1.TabStop = false;
             // 
             // Form1
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(1223, 736);
+            ClientSize = new Size(1782, 875);
+            Controls.Add(pictureBox1);
             Controls.Add(richTextBox2);
             Controls.Add(richTextBox1);
             Controls.Add(button1);
             Controls.Add(treeView1);
             Name = "Form1";
             Text = "Form1";
+            ((System.ComponentModel.ISupportInitialize)pictureBox1).EndInit();
             ResumeLayout(false);
         }
 
@@ -92,5 +105,6 @@
         private RichTextBox richTextBox1;
         private System.ComponentModel.BackgroundWorker backgroundWorker1;
         private RichTextBox richTextBox2;
+        private PictureBox pictureBox1;
     }
 }
