@@ -149,8 +149,18 @@ namespace PS2_DATA_File_Extractor
                 {
                     textEditorControl1.Enabled = true;
                     string dataText = Encoding.ASCII.GetString(data);
-                    _selectedEntry.CurrentSize = data.Length;
+
+                    // Clear the text editor before setting new text
+                    textEditorControl1.Text = string.Empty;
+                    textEditorControl1.Refresh();
+
+                    // Set the new text
                     textEditorControl1.Text = dataText;
+
+                    // Force the UI to update
+                    textEditorControl1.Refresh();
+
+                    _selectedEntry.CurrentSize = data.Length;
                 }
             }
         }
