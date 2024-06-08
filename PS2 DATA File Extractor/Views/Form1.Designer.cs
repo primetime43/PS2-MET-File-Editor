@@ -41,7 +41,13 @@ namespace PS2_DATA_File_Extractor
             menuStrip1 = new MenuStrip();
             fileToolStripMenuItem = new ToolStripMenuItem();
             openmetFileToolStripMenuItem = new ToolStripMenuItem();
-            saveFileToPCToolStripMenuItem = new ToolStripMenuItem();
+            importFileToolStripMenuItem = new ToolStripMenuItem();
+            exportFileToPCToolStripMenuItem = new ToolStripMenuItem();
+            exitToolStripMenuItem = new ToolStripMenuItem();
+            editToolStripMenuItem = new ToolStripMenuItem();
+            saveFileChangesToolStripMenuItem = new ToolStripMenuItem();
+            maxFileSizeToolStripMenuItem = new ToolStripMenuItem();
+            currentFileSizeToolStripMenuItem = new ToolStripMenuItem();
             ((System.ComponentModel.ISupportInitialize)pictureBox1).BeginInit();
             ((System.ComponentModel.ISupportInitialize)splitContainer1).BeginInit();
             splitContainer1.Panel1.SuspendLayout();
@@ -58,9 +64,10 @@ namespace PS2_DATA_File_Extractor
             textEditorControl1.IsReadOnly = false;
             textEditorControl1.Location = new Point(3, 3);
             textEditorControl1.Name = "textEditorControl1";
-            textEditorControl1.Size = new Size(747, 410);
             textEditorControl1.Padding = new Padding(0, 0, 0, 5);
+            textEditorControl1.Size = new Size(742, 407);
             textEditorControl1.TabIndex = 0;
+            textEditorControl1.TextChanged += textEditorControl1_TextChanged;
             // 
             // treeView1
             // 
@@ -70,28 +77,28 @@ namespace PS2_DATA_File_Extractor
             treeView1.Size = new Size(362, 620);
             treeView1.TabIndex = 0;
             treeView1.BeforeExpand += treeView1_BeforeExpand;
+            treeView1.BeforeSelect += filesTreeView_BeforeSelect;
             treeView1.AfterSelect += treeView1_AfterSelect;
             // 
             // richTextBox1
             // 
+            richTextBox1.BackColor = Color.White;
             richTextBox1.Dock = DockStyle.Fill;
-            richTextBox1.Location = new Point(3, 419);
+            richTextBox1.Location = new Point(3, 416);
             richTextBox1.Name = "richTextBox1";
             richTextBox1.ReadOnly = true;
-            richTextBox1.Size = new Size(445, 203);
+            richTextBox1.Size = new Size(442, 201);
             richTextBox1.TabIndex = 2;
-            richTextBox1.BackColor = Color.White;
-            richTextBox1.Padding = new Padding(0, 0, 5, 5);
             richTextBox1.Text = "";
             // 
             // pictureBox1
             // 
             pictureBox1.BackColor = Color.White;
             pictureBox1.Dock = DockStyle.Fill;
-            pictureBox1.Location = new Point(454, 419);
+            pictureBox1.Location = new Point(451, 416);
             pictureBox1.Name = "pictureBox1";
-            pictureBox1.Size = new Size(296, 203);
             pictureBox1.Padding = new Padding(0, 0, 0, 5);
+            pictureBox1.Size = new Size(294, 201);
             pictureBox1.TabIndex = 4;
             pictureBox1.TabStop = false;
             // 
@@ -111,10 +118,10 @@ namespace PS2_DATA_File_Extractor
             // splitContainer1.Panel2
             // 
             splitContainer1.Panel2.Controls.Add(tableLayoutPanel1);
+            splitContainer1.Panel2.Padding = new Padding(0, 0, 5, 5);
             splitContainer1.Size = new Size(1127, 625);
             splitContainer1.SplitterDistance = 370;
             splitContainer1.TabIndex = 6;
-            splitContainer1.Panel2.Padding = new Padding(0, 0, 5, 5);
             // 
             // tableLayoutPanel1
             // 
@@ -131,13 +138,13 @@ namespace PS2_DATA_File_Extractor
             tableLayoutPanel1.RowCount = 2;
             tableLayoutPanel1.RowStyles.Add(new RowStyle(SizeType.Percent, 66.66666F));
             tableLayoutPanel1.RowStyles.Add(new RowStyle(SizeType.Percent, 33.33333F));
-            tableLayoutPanel1.Size = new Size(753, 625);
+            tableLayoutPanel1.Size = new Size(748, 620);
             tableLayoutPanel1.TabIndex = 5;
             // 
             // menuStrip1
             // 
             menuStrip1.Font = new Font("Segoe UI", 11.25F, FontStyle.Regular, GraphicsUnit.Point, 0);
-            menuStrip1.Items.AddRange(new ToolStripItem[] { fileToolStripMenuItem });
+            menuStrip1.Items.AddRange(new ToolStripItem[] { fileToolStripMenuItem, editToolStripMenuItem, maxFileSizeToolStripMenuItem, currentFileSizeToolStripMenuItem });
             menuStrip1.Location = new Point(0, 0);
             menuStrip1.Name = "menuStrip1";
             menuStrip1.Size = new Size(1127, 28);
@@ -146,7 +153,7 @@ namespace PS2_DATA_File_Extractor
             // 
             // fileToolStripMenuItem
             // 
-            fileToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[] { openmetFileToolStripMenuItem, saveFileToPCToolStripMenuItem });
+            fileToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[] { openmetFileToolStripMenuItem, importFileToolStripMenuItem, exportFileToPCToolStripMenuItem, exitToolStripMenuItem });
             fileToolStripMenuItem.Name = "fileToolStripMenuItem";
             fileToolStripMenuItem.Size = new Size(44, 24);
             fileToolStripMenuItem.Text = "File";
@@ -154,16 +161,61 @@ namespace PS2_DATA_File_Extractor
             // openmetFileToolStripMenuItem
             // 
             openmetFileToolStripMenuItem.Name = "openmetFileToolStripMenuItem";
-            openmetFileToolStripMenuItem.Size = new Size(177, 24);
+            openmetFileToolStripMenuItem.Size = new Size(189, 24);
             openmetFileToolStripMenuItem.Text = "Open .met file";
             openmetFileToolStripMenuItem.Click += openmetFileToolStripMenuItem_Click;
             // 
-            // saveFileToPCToolStripMenuItem
+            // importFileToolStripMenuItem
             // 
-            saveFileToPCToolStripMenuItem.Name = "saveFileToPCToolStripMenuItem";
-            saveFileToPCToolStripMenuItem.Size = new Size(177, 24);
-            saveFileToPCToolStripMenuItem.Text = "Save File To PC";
-            saveFileToPCToolStripMenuItem.Click += saveFileToPCToolStripMenuItem_Click;
+            importFileToolStripMenuItem.Name = "importFileToolStripMenuItem";
+            importFileToolStripMenuItem.Size = new Size(189, 24);
+            importFileToolStripMenuItem.Text = "Import File";
+            importFileToolStripMenuItem.Click += this.importFileToolStripMenuItem_Click;
+            // 
+            // exportFileToPCToolStripMenuItem
+            // 
+            exportFileToPCToolStripMenuItem.Name = "exportFileToPCToolStripMenuItem";
+            exportFileToPCToolStripMenuItem.Size = new Size(189, 24);
+            exportFileToPCToolStripMenuItem.Text = "Export File To PC";
+            exportFileToPCToolStripMenuItem.Click += exportFileToPCToolStripMenuItem_Click;
+            // 
+            // exitToolStripMenuItem
+            // 
+            exitToolStripMenuItem.Name = "exitToolStripMenuItem";
+            exitToolStripMenuItem.Size = new Size(189, 24);
+            exitToolStripMenuItem.Text = "Exit";
+            exitToolStripMenuItem.Click += exitToolStripMenuItem_Click;
+            // 
+            // editToolStripMenuItem
+            // 
+            editToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[] { saveFileChangesToolStripMenuItem });
+            editToolStripMenuItem.Margin = new Padding(0, 0, 300, 0);
+            editToolStripMenuItem.Name = "editToolStripMenuItem";
+            editToolStripMenuItem.Size = new Size(47, 24);
+            editToolStripMenuItem.Text = "Edit";
+            // 
+            // saveFileChangesToolStripMenuItem
+            // 
+            saveFileChangesToolStripMenuItem.Name = "saveFileChangesToolStripMenuItem";
+            saveFileChangesToolStripMenuItem.Size = new Size(196, 24);
+            saveFileChangesToolStripMenuItem.Text = "Save File Changes";
+            saveFileChangesToolStripMenuItem.Click += saveFileChangesToolStripMenuItem_Click;
+            // 
+            // maxFileSizeToolStripMenuItem
+            // 
+            maxFileSizeToolStripMenuItem.Margin = new Padding(40, 0, 0, 0);
+            maxFileSizeToolStripMenuItem.Name = "maxFileSizeToolStripMenuItem";
+            maxFileSizeToolStripMenuItem.Size = new Size(99, 24);
+            maxFileSizeToolStripMenuItem.Text = "MaxFileSize";
+            maxFileSizeToolStripMenuItem.Visible = false;
+            // 
+            // currentFileSizeToolStripMenuItem
+            // 
+            currentFileSizeToolStripMenuItem.Margin = new Padding(50, 0, 0, 0);
+            currentFileSizeToolStripMenuItem.Name = "currentFileSizeToolStripMenuItem";
+            currentFileSizeToolStripMenuItem.Size = new Size(119, 24);
+            currentFileSizeToolStripMenuItem.Text = "CurrentFileSize";
+            currentFileSizeToolStripMenuItem.Visible = false;
             // 
             // Form1
             // 
@@ -198,7 +250,13 @@ namespace PS2_DATA_File_Extractor
         private MenuStrip menuStrip1;
         private ToolStripMenuItem fileToolStripMenuItem;
         private ToolStripMenuItem openmetFileToolStripMenuItem;
-        private ToolStripMenuItem saveFileToPCToolStripMenuItem;
+        private ToolStripMenuItem exportFileToPCToolStripMenuItem;
         private TableLayoutPanel tableLayoutPanel1;
+        private ToolStripMenuItem editToolStripMenuItem;
+        private ToolStripMenuItem saveFileChangesToolStripMenuItem;
+        private ToolStripMenuItem importFileToolStripMenuItem;
+        private ToolStripMenuItem maxFileSizeToolStripMenuItem;
+        private ToolStripMenuItem currentFileSizeToolStripMenuItem;
+        private ToolStripMenuItem exitToolStripMenuItem;
     }
 }
