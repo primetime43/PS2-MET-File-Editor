@@ -54,8 +54,8 @@ namespace PS2_DATA_File_Extractor.FileOperations
         public static void SaveSelectedFileDialog(string dataMetPath, FileEntry entry)
         {
             SaveFileDialog saveFileDialog = new SaveFileDialog();
-            // Replace / with _ in the file name
-            saveFileDialog.FileName = entry.Path.Replace('/', '_');
+            // Replace / with - in the file name
+            saveFileDialog.FileName = entry.Path.Replace('/', '-');
 
             // Set the filter based on the file extension
             string extension = Path.GetExtension(entry.Path).ToLower();

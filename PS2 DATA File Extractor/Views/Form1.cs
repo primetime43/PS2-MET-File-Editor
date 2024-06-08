@@ -137,6 +137,7 @@ namespace PS2_DATA_File_Extractor
                         {
                             Image image = Image.FromStream(ms);
                             ShowImageInPictureBox(image);
+                            textEditorControl1.Enabled = false;
                         }
                     }
                     catch (Exception ex)
@@ -146,6 +147,7 @@ namespace PS2_DATA_File_Extractor
                 }
                 else
                 {
+                    textEditorControl1.Enabled = true;
                     string dataText = Encoding.ASCII.GetString(data);
                     _selectedEntry.CurrentSize = data.Length;
                     textEditorControl1.Text = dataText;
@@ -243,7 +245,7 @@ namespace PS2_DATA_File_Extractor
                 {
                     string filePath = openFileDialog.FileName;
                     string importedFileName = Path.GetFileName(filePath);
-                    string searchFileName = importedFileName.Replace('_', '/'); // Replace _ with / in the file name
+                    string searchFileName = importedFileName.Replace('-', '/'); // Replace - with / in the file name
                     bool fileFound = false;
                     bool overwriteSuccess = false;
                     TreeNode? matchedNode = null;
