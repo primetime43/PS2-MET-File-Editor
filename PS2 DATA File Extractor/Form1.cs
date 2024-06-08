@@ -22,32 +22,10 @@ namespace PS2_DATA_File_Extractor
             treeView1.BeforeExpand += treeView1_BeforeExpand;
             treeView1.AfterSelect += treeView1_AfterSelect;
 
+            textEditorControl1.SetHighlighting("XML");
+
             // Initialize the ImageViewer form
             //_imageViewer = new ImageViewer();
-        }
-
-        private void button1_Click(object sender, EventArgs e)
-        {
-            using (OpenFileDialog openFileDialog = new OpenFileDialog())
-            {
-                openFileDialog.Filter = "MET files (*.met)|*.met|All files (*.*)|*.*";
-                openFileDialog.Title = "Open data.met file";
-
-                if (openFileDialog.ShowDialog() == DialogResult.OK)
-                {
-                    _dataMetPath = openFileDialog.FileName;
-                    try
-                    {
-                        ReadFileEntries(_dataMetPath);
-                        PopulateTreeView();
-                        MessageBox.Show($"Successfully read {_dataMetPath}.");
-                    }
-                    catch (Exception ex)
-                    {
-                        MessageBox.Show($"An error occurred: {ex.Message}");
-                    }
-                }
-            }
         }
 
         private void ReadFileEntries(string dataMetPath)
@@ -212,7 +190,7 @@ namespace PS2_DATA_File_Extractor
                 else
                 {
                     string dataText = Encoding.ASCII.GetString(data);
-                    richTextBox2.Text = dataText;
+                    textEditorControl1.Text = dataText;
                 }
             }
         }
@@ -258,7 +236,48 @@ namespace PS2_DATA_File_Extractor
             }
         }
 
-        private void saveSelectedFileBtn_Click(object sender, EventArgs e)
+        private void SaveSelectedFile(FileEntry entry, string destinationPath)
+        {
+            using (FileStream fs = new FileStream(_dataMetPath, FileMode.Open, FileAccess.Read))
+            using (BinaryReader reader = new BinaryReader(fs))
+            {
+                fs.Seek(entry.Offset, SeekOrigin.Begin);
+                byte[] data = reader.ReadBytes(entry.Size);
+
+                using (FileStream destFs = new FileStream(destinationPath, FileMode.Create, FileAccess.Write))
+                {
+                    destFs.Write(data, 0, data.Length);
+                }
+
+                MessageBox.Show($"File saved successfully to {destinationPath}.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+        }
+
+        private void openmetFileToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            using (OpenFileDialog openFileDialog = new OpenFileDialog())
+            {
+                openFileDialog.Filter = "MET files (*.met)|*.met|All files (*.*)|*.*";
+                openFileDialog.Title = "Open data.met file";
+
+                if (openFileDialog.ShowDialog() == DialogResult.OK)
+                {
+                    _dataMetPath = openFileDialog.FileName;
+                    try
+                    {
+                        ReadFileEntries(_dataMetPath);
+                        PopulateTreeView();
+                        MessageBox.Show($"Successfully read {_dataMetPath}.");
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show($"An error occurred: {ex.Message}");
+                    }
+                }
+            }
+        }
+
+        private void saveFileToPCToolStripMenuItem_Click(object sender, EventArgs e)
         {
             if (_selectedEntry != null)
             {
@@ -284,23 +303,6 @@ namespace PS2_DATA_File_Extractor
             else
             {
                 MessageBox.Show("No file selected.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
-
-        private void SaveSelectedFile(FileEntry entry, string destinationPath)
-        {
-            using (FileStream fs = new FileStream(_dataMetPath, FileMode.Open, FileAccess.Read))
-            using (BinaryReader reader = new BinaryReader(fs))
-            {
-                fs.Seek(entry.Offset, SeekOrigin.Begin);
-                byte[] data = reader.ReadBytes(entry.Size);
-
-                using (FileStream destFs = new FileStream(destinationPath, FileMode.Create, FileAccess.Write))
-                {
-                    destFs.Write(data, 0, data.Length);
-                }
-
-                MessageBox.Show($"File saved successfully to {destinationPath}.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
         }
     }
