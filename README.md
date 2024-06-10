@@ -10,6 +10,7 @@ The tool can open, view, modify, import, and export files within the .MET files 
 To access the .MET files, you need to extract the game files from the iso using Winrar or 7zip. 
 
 If you modify files, you need to save the modified file to .MET (Under the Edit tab is a Save File Changes) option. You can then take the modified .MET file and repack it back into the .ISO; which can be done using ImgBurn to repack the game files into an .ISO and boot up the modified game.
+(This may support more games, but I haven't found another game that uses a .MET file yet)
 
 ![image](https://github.com/primetime43/PS2-DATA-File-Extractor/assets/12754111/c5129d59-4717-4597-8813-c75f153bbe80)
 
