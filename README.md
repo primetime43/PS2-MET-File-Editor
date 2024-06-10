@@ -23,3 +23,5 @@ If you modify files, you need to save the modified file to .MET (Under the Edit 
 ![image](https://github.com/primetime43/PS2-DATA-File-Extractor/assets/12754111/20a5ce20-61c0-4f00-9efc-dff3e9e55357)
 
 ![image](https://github.com/primetime43/PS2-DATA-File-Extractor/assets/12754111/ef1bb3f2-fe3e-4b43-9600-8c4270e83d2a)
+
+![image](https://github.com/primetime43/PS2-MET-File-Editor/assets/12754111/00792048-b0a0-462f-972e-70bb9771dd8d)
