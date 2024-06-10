@@ -43,6 +43,8 @@ namespace PS2_DATA_File_Extractor
             openmetFileToolStripMenuItem = new ToolStripMenuItem();
             importFileToolStripMenuItem = new ToolStripMenuItem();
             exportFileToPCToolStripMenuItem = new ToolStripMenuItem();
+            exportSelectFileToolStripMenuItem = new ToolStripMenuItem();
+            exportAllFilesToolStripMenuItem = new ToolStripMenuItem();
             exitToolStripMenuItem = new ToolStripMenuItem();
             editToolStripMenuItem = new ToolStripMenuItem();
             saveFileChangesToolStripMenuItem = new ToolStripMenuItem();
@@ -170,14 +172,28 @@ namespace PS2_DATA_File_Extractor
             importFileToolStripMenuItem.Name = "importFileToolStripMenuItem";
             importFileToolStripMenuItem.Size = new Size(189, 24);
             importFileToolStripMenuItem.Text = "Import File";
-            importFileToolStripMenuItem.Click += this.importFileToolStripMenuItem_Click;
+            importFileToolStripMenuItem.Click += importFileToolStripMenuItem_Click;
             // 
             // exportFileToPCToolStripMenuItem
             // 
+            exportFileToPCToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[] { exportSelectFileToolStripMenuItem, exportAllFilesToolStripMenuItem });
             exportFileToPCToolStripMenuItem.Name = "exportFileToPCToolStripMenuItem";
             exportFileToPCToolStripMenuItem.Size = new Size(189, 24);
             exportFileToPCToolStripMenuItem.Text = "Export File To PC";
-            exportFileToPCToolStripMenuItem.Click += exportFileToPCToolStripMenuItem_Click;
+            // 
+            // exportSelectFileToolStripMenuItem
+            // 
+            exportSelectFileToolStripMenuItem.Name = "exportSelectFileToolStripMenuItem";
+            exportSelectFileToolStripMenuItem.Size = new Size(209, 24);
+            exportSelectFileToolStripMenuItem.Text = "Export Selected File";
+            exportSelectFileToolStripMenuItem.Click += exportSelectFileToolStripMenuItem_Click;
+            // 
+            // exportAllFilesToolStripMenuItem
+            // 
+            exportAllFilesToolStripMenuItem.Name = "exportAllFilesToolStripMenuItem";
+            exportAllFilesToolStripMenuItem.Size = new Size(209, 24);
+            exportAllFilesToolStripMenuItem.Text = "Export All Files";
+            exportAllFilesToolStripMenuItem.Click += exportAllFilesToolStripMenuItem_Click;
             // 
             // exitToolStripMenuItem
             // 
@@ -258,5 +274,7 @@ namespace PS2_DATA_File_Extractor
         private ToolStripMenuItem maxFileSizeToolStripMenuItem;
         private ToolStripMenuItem currentFileSizeToolStripMenuItem;
         private ToolStripMenuItem exitToolStripMenuItem;
+        private ToolStripMenuItem exportSelectFileToolStripMenuItem;
+        private ToolStripMenuItem exportAllFilesToolStripMenuItem;
     }
 }

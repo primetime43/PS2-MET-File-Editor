@@ -214,24 +214,12 @@ namespace PS2_DATA_File_Extractor
             }
         }
 
-        private void exportFileToPCToolStripMenuItem_Click(object sender, EventArgs e)
-        {
-            if (_selectedEntry != null)
-            {
-                FileHelper.SaveSelectedFileDialog(_dataMetPath, _selectedEntry);
-            }
-            else
-            {
-                MessageBox.Show("No file selected.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
-
         private void saveFileChangesToolStripMenuItem_Click(object sender, EventArgs e)
         {
             if (_selectedEntry != null)
             {
                 string content = textEditorControl1.Text;
-                if (FileHelper.SaveFileEntryChanges(_dataMetPath, _selectedEntry, content))
+                if (FileSaver.SaveFileEntryChanges(_dataMetPath, _selectedEntry, content))
                 {
                     string listViewItemName = Path.GetFileName(_selectedEntry.Path);
                     string fileName = Path.GetFileName(_dataMetPath);
@@ -328,7 +316,7 @@ namespace PS2_DATA_File_Extractor
                 if (result == DialogResult.Yes)
                 {
                     // Overwrite the existing data
-                    FileHelper.SaveFileEntryChanges(_dataMetPath, entry, Encoding.ASCII.GetString(data));
+                    FileSaver.SaveFileEntryChanges(_dataMetPath, entry, Encoding.ASCII.GetString(data));
                     return new Tuple<bool, bool, TreeNode>(true, true, node); // File found and successfully overwritten
                 }
                 else
@@ -353,6 +341,58 @@ namespace PS2_DATA_File_Extractor
         private void exitToolStripMenuItem_Click(object sender, EventArgs e)
         {
             Application.Exit();
+        }
+
+        private void exportSelectFileToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            if (_selectedEntry != null)
+            {
+                FileExport.SaveSelectedFileDialog(_dataMetPath, _selectedEntry);
+            }
+            else
+            {
+                MessageBox.Show("No file selected.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void exportAllFilesToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            using (FolderBrowserDialog folderBrowserDialog = new FolderBrowserDialog())
+            {
+                if (folderBrowserDialog.ShowDialog() == DialogResult.OK)
+                {
+                    string outputPath = folderBrowserDialog.SelectedPath;
+                    FileExport fileExport = new FileExport(_dataMetPath);
+                    fileExport.ExtractAllFilesToStructure(outputPath, treeView1);
+                    MessageBox.Show("All files have been successfully exported.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    CollapseAllNodes(treeView1); // Collapse all nodes after extraction
+                }
+            }
+        }
+
+        /// <summary>
+        /// Recursively collapses all nodes in the TreeView.
+        /// </summary>
+        /// <param name="treeView">The TreeView to collapse.</param>
+        private void CollapseAllNodes(TreeView treeView)
+        {
+            foreach (TreeNode node in treeView.Nodes)
+            {
+                CollapseNode(node);
+            }
+        }
+
+        /// <summary>
+        /// Recursively collapses the given TreeNode and all its child nodes.
+        /// </summary>
+        /// <param name="node">The TreeNode to collapse.</param>
+        private void CollapseNode(TreeNode node)
+        {
+            foreach (TreeNode childNode in node.Nodes)
+            {
+                CollapseNode(childNode);
+            }
+            node.Collapse();
         }
     }
 }
