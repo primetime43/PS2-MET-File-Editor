@@ -17,11 +17,23 @@ namespace PS2_DATA_File_Extractor.FileOperations
         /// <returns>True if the changes were saved successfully, false otherwise.</returns>
         public static bool SaveFileEntryChanges(string dataMetPath, FileEntry entry, string content)
         {
+            byte[] data = Encoding.ASCII.GetBytes(content);
+            return SaveFileEntryChanges(dataMetPath, entry, data);
+        }
+
+        /// <summary>
+        /// Saves binary data to a file entry within a MET file.
+        /// </summary>
+        /// <param name="dataMetPath">The path to the data.met file.</param>
+        /// <param name="entry">The file entry to save changes to.</param>
+        /// <param name="data">The binary data to write to the file entry.</param>
+        /// <returns>True if the changes were saved successfully, false otherwise.</returns>
+        public static bool SaveFileEntryChanges(string dataMetPath, FileEntry entry, byte[] data)
+        {
             using (FileStream fs = new FileStream(dataMetPath, FileMode.Open, FileAccess.ReadWrite))
             using (BinaryWriter writer = new BinaryWriter(fs))
             {
                 fs.Seek(entry.Offset, SeekOrigin.Begin);
-                byte[] data = Encoding.ASCII.GetBytes(content);
 
                 if (data.Length > entry.OriginalSize)
                 {

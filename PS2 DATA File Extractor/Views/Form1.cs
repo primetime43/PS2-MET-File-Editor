@@ -296,7 +296,16 @@ namespace PS2_DATA_File_Extractor
             if (node.Tag is FileEntry entry && node.Text == importedFileName)
             {
                 byte[] data = File.ReadAllBytes(filePath);
-                data = RemoveZeroPadding(data); // Remove padding
+
+                // Check if this is a binary file (image) or text file
+                string extension = Path.GetExtension(entry.Path).ToLower();
+                bool isBinaryFile = extension == ".png" || extension == ".bmp" || extension == ".ico" || extension == ".mnd";
+
+                // Only remove padding for text files
+                if (!isBinaryFile)
+                {
+                    data = RemoveZeroPadding(data);
+                }
 
                 // Check if the imported file size fits in the allocated space
                 if (data.Length > entry.OriginalSize)
@@ -316,7 +325,16 @@ namespace PS2_DATA_File_Extractor
                 if (result == DialogResult.Yes)
                 {
                     // Overwrite the existing data
-                    FileSaver.SaveFileEntryChanges(_dataMetPath, entry, Encoding.ASCII.GetString(data));
+                    if (isBinaryFile)
+                    {
+                        // Save binary files directly without string conversion
+                        FileSaver.SaveFileEntryChanges(_dataMetPath, entry, data);
+                    }
+                    else
+                    {
+                        // Save text files as strings
+                        FileSaver.SaveFileEntryChanges(_dataMetPath, entry, Encoding.ASCII.GetString(data));
+                    }
                     return new Tuple<bool, bool, TreeNode>(true, true, node); // File found and successfully overwritten
                 }
                 else
