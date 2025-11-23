@@ -126,7 +126,6 @@ namespace PS2_DATA_File_Extractor
             {
                 fs.Seek(entry.Offset, SeekOrigin.Begin);
                 byte[] data = reader.ReadBytes(entry.OriginalSize);
-                data = RemoveZeroPadding(data); // Remove padding
 
                 string extension = Path.GetExtension(entry.Path).ToLower();
                 if (extension == ".png" || extension == ".bmp" || extension == ".ico" || extension == ".mnd")
@@ -148,6 +147,7 @@ namespace PS2_DATA_File_Extractor
                 else
                 {
                     textEditorControl1.Enabled = true;
+                    data = RemoveZeroPadding(data); // Remove padding only for text files
                     string dataText = Encoding.ASCII.GetString(data);
 
                     // Clear the text editor before setting new text
