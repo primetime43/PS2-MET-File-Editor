@@ -9,7 +9,6 @@ namespace PS2_DATA_File_Extractor
     {
         private Dictionary<string, List<FileEntry>> groupedEntries = new Dictionary<string, List<FileEntry>>();
         private string _dataMetPath;
-        private ImageViewer _imageViewer; // Single instance of ImageViewer
         private bool _hasUnsavedChanges = false;
         private FileEntry _selectedEntry;
 
@@ -21,9 +20,6 @@ namespace PS2_DATA_File_Extractor
             treeView1.AfterSelect += treeView1_AfterSelect;
 
             textEditorControl1.SetHighlighting("XML");
-
-            // Initialize the ImageViewer form
-            //_imageViewer = new ImageViewer();
         }
 
         private void PopulateTreeView()
@@ -56,29 +52,13 @@ namespace PS2_DATA_File_Extractor
             }
         }
 
-        private void filesTreeView_BeforeSelect(object sender, TreeViewCancelEventArgs e)
-        {
-            if (_hasUnsavedChanges)
-            {
-                DialogResult result = MessageBox.Show("You have unsaved changes. Do you want to save them?", "Unsaved Changes", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
-                if (result == DialogResult.Yes)
-                {
-                    saveFileChangesToolStripMenuItem_Click(sender, e);
-                }
-                else if (result == DialogResult.Cancel)
-                {
-                    e.Cancel = true;
-                }
-            }
-        }
-
         private void textEditorControl1_TextChanged(object sender, EventArgs e)
         {
             if (_selectedEntry != null)
             {
                 int selectedEntryCurrentSize = Encoding.ASCII.GetByteCount(textEditorControl1.Text);
                 currentFileSizeToolStripMenuItem.ForeColor = selectedEntryCurrentSize > _selectedEntry.OriginalSize ? Color.Red : Color.Black;
-                currentFileSizeToolStripMenuItem.Text = $"Current OriginalSize: 0x{selectedEntryCurrentSize:X} (hex)";
+                currentFileSizeToolStripMenuItem.Text = $"Current Size: 0x{selectedEntryCurrentSize:X} (hex)";
                 _hasUnsavedChanges = true;
             }
         }
@@ -92,10 +72,10 @@ namespace PS2_DATA_File_Extractor
                 DisplayEntryInfo(entry);
 
                 // move this eventually
-                maxFileSizeToolStripMenuItem.Text = $"Max OriginalSize: 0x{entry.OriginalSize:X} (hex)";
+                maxFileSizeToolStripMenuItem.Text = $"Max Size: 0x{entry.OriginalSize:X} (hex)";
                 maxFileSizeToolStripMenuItem.Visible = true;
 
-                currentFileSizeToolStripMenuItem.Text = $"Current OriginalSize: 0x{_selectedEntry.CurrentSize:X} (hex)";
+                currentFileSizeToolStripMenuItem.Text = $"Current Size: 0x{_selectedEntry.CurrentSize:X} (hex)";
                 currentFileSizeToolStripMenuItem.Visible = true;
 
                 _hasUnsavedChanges = false; // Reset the flag after loading new content
