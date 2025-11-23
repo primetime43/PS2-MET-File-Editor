@@ -138,6 +138,7 @@ namespace PS2_DATA_File_Extractor
                             ShowImageInPictureBox(image);
                             textEditorControl1.Enabled = false;
                         }
+                        _selectedEntry.CurrentSize = data.Length;
                     }
                     catch (Exception ex)
                     {
