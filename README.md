@@ -7,10 +7,34 @@ The tool can open, view, modify, import, and export files within the .MET files 
 - Import/Export Files: Import new files into the .MET archive or export existing files to your computer.
 - Save Changes: Save modifications to the .MET file, ensuring your changes are applied.
 
-To access the .MET files, you need to extract the game files from the iso using Winrar or 7zip. 
+To access the .MET files, you need to extract the game files from the ISO using WinRAR or 7-Zip.
 
-If you modify files, you need to save the modified file to .MET (Under the Edit tab is a Save File Changes) option. You can then take the modified .MET file and repack it back into the .ISO; which can be done using ImgBurn to repack the game files into an .ISO and boot up the modified game.
-(This may support more games, but I haven't found another game that uses a .MET file yet)
+## Workflow: Extracting, Modifying, and Rebuilding the ISO
+
+### Step 1: Extract the ISO
+1. Use **WinRAR** or **7-Zip** to extract your PS2 game ISO
+2. Extract all files to a folder
+3. You should see files like `SYSTEM.CNF`, `DATA.MET`, and the game executable
+
+### Step 2: Modify the MET File
+1. Open `DATA.MET` in the MET File Editor
+2. Make your changes
+3. Save changes
+4. The editor automatically handles file resizing and creates backups
+
+### Step 3: Rebuild the ISO with ImgBurn
+
+**IMPORTANT: You must use the correct file system settings or the ISO will not work!**
+
+#### ImgBurn Settings:
+1. Open ImgBurn and switch to **"Create image file from files/folders"** mode
+2. Click the folder icon and select your extracted game folder
+3. **Critical Settings:**
+   - **File System:** `ISO9660 + UDF (1.02)`
+   - **Volume Label:** Keep the original
+   - **UDF Revision:** 1.02
+4. Choose where to save the new ISO
+5. Click the **Build** button
 
 # .MET File Structure
 The .MET file in Backyard Baseball 2004 (PS2) contains various data and resources used by the game, such as textures, models, and other game assets. Understanding the structure of the .MET file is crucial for reading and writing its contents. Here's an overview of the .MET file structure:
