@@ -75,7 +75,9 @@ namespace PS2_DATA_File_Extractor.FileOperations
         /// <param name="folderPath">The folder path where the file will be extracted.</param>
         private void ExtractFile(FileEntry entry, string folderPath)
         {
-            string filePath = Path.Combine(folderPath, Path.GetFileName(entry.Path));
+            // Replace / with - in the file name to preserve directory structure
+            string fileName = entry.Path.Replace('/', '-');
+            string filePath = Path.Combine(folderPath, fileName);
             SaveSelectedFileLocally(_dataMetPath, entry, filePath, false);
         }
 
