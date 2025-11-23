@@ -76,7 +76,7 @@ namespace PS2_DATA_File_Extractor
         {
             if (_selectedEntry != null)
             {
-                int selectedEntryCurrentSize = textEditorControl1.Text.Length;
+                int selectedEntryCurrentSize = Encoding.ASCII.GetByteCount(textEditorControl1.Text);
                 currentFileSizeToolStripMenuItem.ForeColor = selectedEntryCurrentSize > _selectedEntry.OriginalSize ? Color.Red : Color.Black;
                 currentFileSizeToolStripMenuItem.Text = $"Current OriginalSize: 0x{selectedEntryCurrentSize:X} (hex)";
                 _hasUnsavedChanges = true;
