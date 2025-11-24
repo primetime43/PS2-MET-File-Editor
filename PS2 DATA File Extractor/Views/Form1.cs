@@ -227,6 +227,8 @@ namespace PS2_DATA_File_Extractor
                 byte[] data = reader.ReadBytes(entry.OriginalSize);
 
                 string extension = Path.GetExtension(entry.Path).ToLower();
+
+                // Check if it's an image file
                 if (extension == ".png" || extension == ".bmp" || extension == ".ico" || extension == ".mnd")
                 {
                     try
@@ -253,7 +255,8 @@ namespace PS2_DATA_File_Extractor
                         MessageBox.Show($"An error occurred while trying to display the image: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                     }
                 }
-                else
+                // Check if it's a human-readable text file
+                else if (IsTextFile(extension))
                 {
                     // Clear the image when showing text
                     if (pictureBox1.Image != null)
@@ -278,7 +281,42 @@ namespace PS2_DATA_File_Extractor
 
                     _selectedEntry.CurrentSize = data.Length;
                 }
+                // Binary file that's not an image - don't display in text editor
+                else
+                {
+                    // Clear both views
+                    if (pictureBox1.Image != null)
+                    {
+                        pictureBox1.Image.Dispose();
+                        pictureBox1.Image = null;
+                    }
+
+                    textEditorControl1.Text = $"[Binary File: {Path.GetFileName(entry.Path)}]\n\n" +
+                                             $"This file type ({extension}) is not editable as text.\n" +
+                                             $"File size: {data.Length} bytes\n\n" +
+                                             $"You can still export or import this file using the context menu.";
+                    textEditorControl1.Enabled = false;
+                    _selectedEntry.CurrentSize = data.Length;
+                }
             }
+        }
+
+        /// <summary>
+        /// Determines if a file extension represents a human-readable text file.
+        /// </summary>
+        private bool IsTextFile(string extension)
+        {
+            // Whitelist of known text-based file extensions
+            string[] textExtensions = {
+                ".txt", ".xml", ".html", ".htm", ".css", ".js", ".json",
+                ".cfg", ".ini", ".config", ".log", ".csv", ".md",
+                ".lua", ".script", ".shader", ".glsl", ".fx",
+                ".c", ".cpp", ".h", ".cs", ".java", ".py",
+                ".bat", ".sh", ".cmd", ".ps1",
+                ".sql", ".yml", ".yaml", ".toml"
+            };
+
+            return textExtensions.Contains(extension);
         }
 
         private byte[] RemoveZeroPadding(byte[] data)
