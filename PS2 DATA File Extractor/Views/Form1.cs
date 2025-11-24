@@ -34,7 +34,7 @@ namespace PS2_DATA_File_Extractor
         private void UpdateUIState()
         {
             // Update window title
-            string baseTitle = "PS2 MET File Editor";
+            string baseTitle = "PS2 MET File Editor v0.2";
             if (!string.IsNullOrEmpty(_dataMetPath))
             {
                 string fileName = Path.GetFileName(_dataMetPath);
