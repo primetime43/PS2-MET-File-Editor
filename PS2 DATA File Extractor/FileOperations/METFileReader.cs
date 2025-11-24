@@ -43,7 +43,7 @@ namespace PS2_DATA_File_Extractor.FileOperations
 
                         // Read the path (N bytes)
                         byte[] pathBytes = reader.ReadBytes(strLength);
-                        string path = Encoding.ASCII.GetString(pathBytes).Trim('\0');
+                        string path = Encoding.UTF8.GetString(pathBytes).Trim('\0');
 
                         // Log the end of the current header
                         long headerEndPosition = fs.Position;

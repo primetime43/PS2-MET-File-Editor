@@ -44,7 +44,7 @@ namespace PS2_DATA_File_Extractor.FileOperations
         /// <returns>True if the changes were saved successfully, false otherwise.</returns>
         public static bool SaveFileEntryChanges(string dataMetPath, FileEntry entry, string content)
         {
-            byte[] data = Encoding.ASCII.GetBytes(content);
+            byte[] data = Encoding.UTF8.GetBytes(content);
             return SaveFileEntryChanges(dataMetPath, entry, data);
         }
 
@@ -167,7 +167,7 @@ namespace PS2_DATA_File_Extractor.FileOperations
                         writer.Write(BitConverter.GetBytes(e.StringLength));
 
                         // Write path string
-                        byte[] pathBytes = Encoding.ASCII.GetBytes(e.Path);
+                        byte[] pathBytes = Encoding.UTF8.GetBytes(e.Path);
                         writer.Write(pathBytes);
                     }
 

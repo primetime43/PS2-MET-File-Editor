@@ -19,6 +19,9 @@ namespace PS2_DATA_File_Extractor
             treeView1.BeforeExpand += treeView1_BeforeExpand;
             treeView1.AfterSelect += treeView1_AfterSelect;
 
+            // Hook up FormClosing event to check for unsaved changes
+            this.FormClosing += Form1_FormClosing;
+
             textEditorControl1.SetHighlighting("XML");
         }
 
@@ -170,7 +173,7 @@ namespace PS2_DATA_File_Extractor
         {
             if (_selectedEntry != null)
             {
-                int selectedEntryCurrentSize = Encoding.ASCII.GetByteCount(textEditorControl1.Text);
+                int selectedEntryCurrentSize = Encoding.UTF8.GetByteCount(textEditorControl1.Text);
                 currentFileSizeToolStripMenuItem.ForeColor = selectedEntryCurrentSize > _selectedEntry.OriginalSize ? Color.Red : Color.Black;
                 currentFileSizeToolStripMenuItem.Text = $"Current Size: 0x{selectedEntryCurrentSize:X} (hex)";
                 _hasUnsavedChanges = true;
@@ -228,12 +231,21 @@ namespace PS2_DATA_File_Extractor
                 {
                     try
                     {
+                        // Clear the text editor when showing an image
+                        textEditorControl1.Text = string.Empty;
+                        textEditorControl1.Enabled = false;
+
+                        // Create a copy of the image to avoid holding the MemoryStream
+                        Image image;
                         using (MemoryStream ms = new MemoryStream(data))
                         {
-                            Image image = Image.FromStream(ms);
-                            ShowImageInPictureBox(image);
-                            textEditorControl1.Enabled = false;
+                            // Clone the image to prevent issues with stream disposal
+                            using (Image tempImage = Image.FromStream(ms))
+                            {
+                                image = new Bitmap(tempImage);
+                            }
                         }
+                        ShowImageInPictureBox(image);
                         _selectedEntry.CurrentSize = data.Length;
                     }
                     catch (Exception ex)
@@ -243,9 +255,16 @@ namespace PS2_DATA_File_Extractor
                 }
                 else
                 {
+                    // Clear the image when showing text
+                    if (pictureBox1.Image != null)
+                    {
+                        pictureBox1.Image.Dispose();
+                        pictureBox1.Image = null;
+                    }
+
                     textEditorControl1.Enabled = true;
                     data = RemoveZeroPadding(data); // Remove padding only for text files
-                    string dataText = Encoding.ASCII.GetString(data);
+                    string dataText = Encoding.UTF8.GetString(data);
 
                     // Clear the text editor before setting new text
                     textEditorControl1.Text = string.Empty;
@@ -278,6 +297,13 @@ namespace PS2_DATA_File_Extractor
         {
             try
             {
+                // Dispose the old image before assigning a new one to prevent memory leaks
+                if (pictureBox1.Image != null)
+                {
+                    pictureBox1.Image.Dispose();
+                    pictureBox1.Image = null;
+                }
+
                 pictureBox1.Image = image;
             }
             catch (Exception ex)
@@ -318,7 +344,7 @@ namespace PS2_DATA_File_Extractor
             if (_selectedEntry != null)
             {
                 string content = textEditorControl1.Text;
-                byte[] contentBytes = Encoding.ASCII.GetBytes(content);
+                byte[] contentBytes = Encoding.UTF8.GetBytes(content);
 
                 // Check if resize is needed
                 bool requiresResize = contentBytes.Length > _selectedEntry.OriginalSize;
@@ -468,7 +494,7 @@ namespace PS2_DATA_File_Extractor
                         }
                         else
                         {
-                            byte[] textBytes = Encoding.ASCII.GetBytes(Encoding.ASCII.GetString(data));
+                            byte[] textBytes = Encoding.UTF8.GetBytes(Encoding.UTF8.GetString(data));
                             success = FileSaver.SaveFileEntryChangesWithResize(_dataMetPath, _selectedEntry, textBytes);
                         }
 
@@ -584,7 +610,7 @@ namespace PS2_DATA_File_Extractor
                     else
                     {
                         // Convert text to bytes for the resize method
-                        byte[] textBytes = Encoding.ASCII.GetBytes(Encoding.ASCII.GetString(data));
+                        byte[] textBytes = Encoding.UTF8.GetBytes(Encoding.UTF8.GetString(data));
                         success = FileSaver.SaveFileEntryChangesWithResize(_dataMetPath, entry, textBytes);
                     }
 
@@ -619,7 +645,41 @@ namespace PS2_DATA_File_Extractor
 
         private void exitToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            Application.Exit();
+            this.Close();
+        }
+
+        /// <summary>
+        /// Handles the FormClosing event to check for unsaved changes before closing.
+        /// </summary>
+        private void Form1_FormClosing(object sender, FormClosingEventArgs e)
+        {
+            if (_hasUnsavedChanges)
+            {
+                DialogResult result = MessageBox.Show(
+                    "You have unsaved changes. Do you want to save before exiting?",
+                    "Unsaved Changes",
+                    MessageBoxButtons.YesNoCancel,
+                    MessageBoxIcon.Warning
+                );
+
+                if (result == DialogResult.Yes)
+                {
+                    // Try to save the changes
+                    saveFileChangesToolStripMenuItem_Click(sender, e);
+
+                    // If user still has unsaved changes (save failed or was canceled), don't close
+                    if (_hasUnsavedChanges)
+                    {
+                        e.Cancel = true;
+                    }
+                }
+                else if (result == DialogResult.Cancel)
+                {
+                    // User canceled, don't close the form
+                    e.Cancel = true;
+                }
+                // If result is No, allow the form to close without saving
+            }
         }
 
         private void exportSelectFileToolStripMenuItem_Click(object sender, EventArgs e)
