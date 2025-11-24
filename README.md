@@ -4,7 +4,7 @@ The tool can open, view, modify, import, and export files within the .MET files 
 - Open .MET Files: Easily open .MET files to explore their contents.
 - View Files: Browse and view files within the .MET archive.
 - Modify Files: Edit the contents of files within the .MET archive.
-- Import/Export Files: Import new files into the .MET archive or export existing files to your computer.
+- Import/Export Files (right click): Import new files into the .MET archive or export existing files to your computer.
 - Save Changes: Save modifications to the .MET file, ensuring your changes are applied.
 
 To access the .MET files, you need to extract the game files from the ISO using WinRAR or 7-Zip.
