@@ -178,8 +178,14 @@ namespace PS2_DATA_File_Extractor
                 int selectedEntryCurrentSize = Encoding.UTF8.GetByteCount(textEditorControl1.Text);
                 currentFileSizeToolStripMenuItem.ForeColor = selectedEntryCurrentSize > _selectedEntry.OriginalSize ? Color.Red : Color.Black;
                 currentFileSizeToolStripMenuItem.Text = $"Current Size: 0x{selectedEntryCurrentSize:X} (hex)";
-                _hasUnsavedChanges = true;
-                UpdateUIState();
+
+                // Only mark as unsaved if the control is editable (not in read-only mode)
+                // This prevents false positives when switching to hex view or binary file view
+                if (!textEditorControl1.IsReadOnly)
+                {
+                    _hasUnsavedChanges = true;
+                    UpdateUIState();
+                }
             }
         }
 
@@ -323,7 +329,7 @@ namespace PS2_DATA_File_Extractor
                 ".lua", ".script", ".shader", ".glsl", ".fx",
                 ".c", ".cpp", ".h", ".cs", ".java", ".py",
                 ".bat", ".sh", ".cmd", ".ps1",
-                ".sql", ".yml", ".yaml", ".toml", ".dat"
+                ".sql", ".yml", ".yaml", ".toml"
             };
 
             return textExtensions.Contains(extension);
@@ -343,29 +349,71 @@ namespace PS2_DATA_File_Extractor
 
             // Use read-only mode instead of disabling to allow scrolling
             textEditorControl1.IsReadOnly = true;
-            // Use the actual offset from the MET file as the base address
-            string hexOutput = FormatAsHex(data, entry.Offset);
-            textEditorControl1.Text = hexOutput;
+
+            // Read the header data from the MET file
+            byte[] headerData = ReadHeaderData(entry);
+
+            // Build complete hex view with header and data
+            StringBuilder fullHexView = new StringBuilder();
+
+            // Add file information
+            fullHexView.AppendLine($"File: {Path.GetFileName(entry.Path)}");
+            fullHexView.AppendLine($"Full Path: {entry.Path}");
+            fullHexView.AppendLine();
+
+            // Add header section
+            fullHexView.AppendLine("═══════════════════════════════════════════════════════════════════════════");
+            fullHexView.AppendLine("                           FILE ENTRY HEADER");
+            fullHexView.AppendLine($"  Location: 0x{entry.HeaderStart:X} - 0x{entry.HeaderEnd:X}");
+            fullHexView.AppendLine($"  Size: {headerData.Length} bytes (0x{headerData.Length:X})");
+            fullHexView.AppendLine("═══════════════════════════════════════════════════════════════════════════");
+            fullHexView.AppendLine();
+            fullHexView.Append(FormatAsHexSection(headerData, (int)entry.HeaderStart));
+
+            // Add separator
+            fullHexView.AppendLine();
+            fullHexView.AppendLine("═══════════════════════════════════════════════════════════════════════════");
+            fullHexView.AppendLine("                              FILE DATA");
+            fullHexView.AppendLine($"  Location: 0x{entry.Offset:X} - 0x{(entry.Offset + data.Length):X}");
+            fullHexView.AppendLine($"  Size: {data.Length} bytes (0x{data.Length:X})");
+            fullHexView.AppendLine("═══════════════════════════════════════════════════════════════════════════");
+            fullHexView.AppendLine();
+            fullHexView.Append(FormatAsHexSection(data, entry.Offset));
+
+            textEditorControl1.Text = fullHexView.ToString();
             _selectedEntry.CurrentSize = data.Length;
         }
 
         /// <summary>
-        /// Formats byte array as hexadecimal dump with offset, hex, and ASCII columns.
+        /// Reads the header data for a file entry from the MET file.
+        /// </summary>
+        private byte[] ReadHeaderData(FileEntry entry)
+        {
+            int headerLength = (int)(entry.HeaderEnd - entry.HeaderStart);
+            byte[] headerData = new byte[headerLength];
+
+            using (FileStream fs = new FileStream(_dataMetPath, FileMode.Open, FileAccess.Read))
+            using (BinaryReader reader = new BinaryReader(fs))
+            {
+                fs.Seek(entry.HeaderStart, SeekOrigin.Begin);
+                headerData = reader.ReadBytes(headerLength);
+            }
+
+            return headerData;
+        }
+
+        /// <summary>
+        /// Formats byte array as hexadecimal dump section with offset, hex, and ASCII columns.
         /// </summary>
         /// <param name="data">The byte data to format.</param>
         /// <param name="baseOffset">The starting offset address to display (actual position in MET file).</param>
-        private string FormatAsHex(byte[] data, int baseOffset)
+        private string FormatAsHexSection(byte[] data, int baseOffset)
         {
             StringBuilder sb = new StringBuilder();
             int bytesPerLine = 16;
 
-            // Header with file information
-            sb.AppendLine($"File: {Path.GetFileName(_selectedEntry.Path)}");
-            sb.AppendLine($"Offset in MET: 0x{baseOffset:X} - 0x{(baseOffset + data.Length):X}");
-            sb.AppendLine($"Size: {data.Length} bytes (0x{data.Length:X})");
-            sb.AppendLine();
             sb.AppendLine("Offset(h) 00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F  ASCII");
-            sb.AppendLine("------------------------------------------------------------------------");
+            sb.AppendLine("───────────────────────────────────────────────────────────────────────────");
 
             for (int i = 0; i < data.Length; i += bytesPerLine)
             {
