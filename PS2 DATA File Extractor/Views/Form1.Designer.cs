@@ -51,6 +51,8 @@ namespace PS2_DATA_File_Extractor
             exitToolStripMenuItem = new ToolStripMenuItem();
             editToolStripMenuItem = new ToolStripMenuItem();
             saveFileChangesToolStripMenuItem = new ToolStripMenuItem();
+            viewToolStripMenuItem = new ToolStripMenuItem();
+            hexViewToolStripMenuItem = new ToolStripMenuItem();
             maxFileSizeToolStripMenuItem = new ToolStripMenuItem();
             currentFileSizeToolStripMenuItem = new ToolStripMenuItem();
             statusStrip1 = new StatusStrip();
@@ -177,11 +179,11 @@ namespace PS2_DATA_File_Extractor
             tableLayoutPanel1.RowStyles.Add(new RowStyle(SizeType.Percent, 33.33333F));
             tableLayoutPanel1.Size = new Size(748, 620);
             tableLayoutPanel1.TabIndex = 5;
-            // 
+            //
             // menuStrip1
-            // 
+            //
             menuStrip1.Font = new Font("Segoe UI", 11.25F, FontStyle.Regular, GraphicsUnit.Point, 0);
-            menuStrip1.Items.AddRange(new ToolStripItem[] { fileToolStripMenuItem, editToolStripMenuItem, maxFileSizeToolStripMenuItem, currentFileSizeToolStripMenuItem });
+            menuStrip1.Items.AddRange(new ToolStripItem[] { fileToolStripMenuItem, editToolStripMenuItem, viewToolStripMenuItem, maxFileSizeToolStripMenuItem, currentFileSizeToolStripMenuItem });
             menuStrip1.Location = new Point(0, 0);
             menuStrip1.Name = "menuStrip1";
             menuStrip1.Size = new Size(1127, 28);
@@ -229,11 +231,10 @@ namespace PS2_DATA_File_Extractor
             exitToolStripMenuItem.Size = new Size(189, 24);
             exitToolStripMenuItem.Text = "Exit";
             exitToolStripMenuItem.Click += exitToolStripMenuItem_Click;
-            // 
+            //
             // editToolStripMenuItem
-            // 
+            //
             editToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[] { saveFileChangesToolStripMenuItem });
-            editToolStripMenuItem.Margin = new Padding(0, 0, 300, 0);
             editToolStripMenuItem.Name = "editToolStripMenuItem";
             editToolStripMenuItem.Size = new Size(47, 24);
             editToolStripMenuItem.Text = "Edit";
@@ -244,9 +245,25 @@ namespace PS2_DATA_File_Extractor
             saveFileChangesToolStripMenuItem.Size = new Size(196, 24);
             saveFileChangesToolStripMenuItem.Text = "Save File Changes";
             saveFileChangesToolStripMenuItem.Click += saveFileChangesToolStripMenuItem_Click;
-            // 
+            //
+            // viewToolStripMenuItem
+            //
+            viewToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[] { hexViewToolStripMenuItem });
+            viewToolStripMenuItem.Margin = new Padding(0, 0, 300, 0);
+            viewToolStripMenuItem.Name = "viewToolStripMenuItem";
+            viewToolStripMenuItem.Size = new Size(52, 24);
+            viewToolStripMenuItem.Text = "View";
+            //
+            // hexViewToolStripMenuItem
+            //
+            hexViewToolStripMenuItem.CheckOnClick = true;
+            hexViewToolStripMenuItem.Name = "hexViewToolStripMenuItem";
+            hexViewToolStripMenuItem.Size = new Size(180, 24);
+            hexViewToolStripMenuItem.Text = "Hex View";
+            hexViewToolStripMenuItem.Click += hexViewToolStripMenuItem_Click;
+            //
             // maxFileSizeToolStripMenuItem
-            // 
+            //
             maxFileSizeToolStripMenuItem.Margin = new Padding(40, 0, 0, 0);
             maxFileSizeToolStripMenuItem.Name = "maxFileSizeToolStripMenuItem";
             maxFileSizeToolStripMenuItem.Size = new Size(99, 24);
@@ -317,6 +334,8 @@ namespace PS2_DATA_File_Extractor
         private TableLayoutPanel tableLayoutPanel1;
         private ToolStripMenuItem editToolStripMenuItem;
         private ToolStripMenuItem saveFileChangesToolStripMenuItem;
+        private ToolStripMenuItem viewToolStripMenuItem;
+        private ToolStripMenuItem hexViewToolStripMenuItem;
         private ToolStripMenuItem maxFileSizeToolStripMenuItem;
         private ToolStripMenuItem currentFileSizeToolStripMenuItem;
         private ToolStripMenuItem exitToolStripMenuItem;

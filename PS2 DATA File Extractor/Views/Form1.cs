@@ -11,6 +11,8 @@ namespace PS2_DATA_File_Extractor
         private string _dataMetPath;
         private bool _hasUnsavedChanges = false;
         private FileEntry _selectedEntry;
+        private bool _isHexViewMode = false;
+        private byte[] _currentFileData;
 
         public Form1()
         {
@@ -225,6 +227,14 @@ namespace PS2_DATA_File_Extractor
             {
                 fs.Seek(entry.Offset, SeekOrigin.Begin);
                 byte[] data = reader.ReadBytes(entry.OriginalSize);
+                _currentFileData = data; // Store for hex view toggling
+
+                // If in hex view mode, show hex regardless of file type
+                if (_isHexViewMode)
+                {
+                    ShowHexView(data, entry);
+                    return;
+                }
 
                 string extension = Path.GetExtension(entry.Path).ToLower();
 
@@ -235,7 +245,7 @@ namespace PS2_DATA_File_Extractor
                     {
                         // Clear the text editor when showing an image
                         textEditorControl1.Text = string.Empty;
-                        textEditorControl1.Enabled = false;
+                        textEditorControl1.IsReadOnly = true;
 
                         // Create a copy of the image to avoid holding the MemoryStream
                         Image image;
@@ -265,7 +275,7 @@ namespace PS2_DATA_File_Extractor
                         pictureBox1.Image = null;
                     }
 
-                    textEditorControl1.Enabled = true;
+                    textEditorControl1.IsReadOnly = false;
                     data = RemoveZeroPadding(data); // Remove padding only for text files
                     string dataText = Encoding.UTF8.GetString(data);
 
@@ -291,11 +301,11 @@ namespace PS2_DATA_File_Extractor
                         pictureBox1.Image = null;
                     }
 
+                    textEditorControl1.IsReadOnly = true;
                     textEditorControl1.Text = $"[Binary File: {Path.GetFileName(entry.Path)}]\n\n" +
                                              $"This file type ({extension}) is not editable as text.\n" +
                                              $"File size: {data.Length} bytes\n\n" +
                                              $"You can still export or import this file using the context menu.";
-                    textEditorControl1.Enabled = false;
                     _selectedEntry.CurrentSize = data.Length;
                 }
             }
@@ -313,10 +323,104 @@ namespace PS2_DATA_File_Extractor
                 ".lua", ".script", ".shader", ".glsl", ".fx",
                 ".c", ".cpp", ".h", ".cs", ".java", ".py",
                 ".bat", ".sh", ".cmd", ".ps1",
-                ".sql", ".yml", ".yaml", ".toml"
+                ".sql", ".yml", ".yaml", ".toml", ".dat"
             };
 
             return textExtensions.Contains(extension);
+        }
+
+        /// <summary>
+        /// Displays file data in hexadecimal format.
+        /// </summary>
+        private void ShowHexView(byte[] data, FileEntry entry)
+        {
+            // Clear image if present
+            if (pictureBox1.Image != null)
+            {
+                pictureBox1.Image.Dispose();
+                pictureBox1.Image = null;
+            }
+
+            // Use read-only mode instead of disabling to allow scrolling
+            textEditorControl1.IsReadOnly = true;
+            // Use the actual offset from the MET file as the base address
+            string hexOutput = FormatAsHex(data, entry.Offset);
+            textEditorControl1.Text = hexOutput;
+            _selectedEntry.CurrentSize = data.Length;
+        }
+
+        /// <summary>
+        /// Formats byte array as hexadecimal dump with offset, hex, and ASCII columns.
+        /// </summary>
+        /// <param name="data">The byte data to format.</param>
+        /// <param name="baseOffset">The starting offset address to display (actual position in MET file).</param>
+        private string FormatAsHex(byte[] data, int baseOffset)
+        {
+            StringBuilder sb = new StringBuilder();
+            int bytesPerLine = 16;
+
+            // Header with file information
+            sb.AppendLine($"File: {Path.GetFileName(_selectedEntry.Path)}");
+            sb.AppendLine($"Offset in MET: 0x{baseOffset:X} - 0x{(baseOffset + data.Length):X}");
+            sb.AppendLine($"Size: {data.Length} bytes (0x{data.Length:X})");
+            sb.AppendLine();
+            sb.AppendLine("Offset(h) 00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F  ASCII");
+            sb.AppendLine("------------------------------------------------------------------------");
+
+            for (int i = 0; i < data.Length; i += bytesPerLine)
+            {
+                // Show actual offset in the MET file
+                sb.AppendFormat("{0:X8}  ", baseOffset + i);
+
+                // Hex values
+                int lineLength = Math.Min(bytesPerLine, data.Length - i);
+                for (int j = 0; j < bytesPerLine; j++)
+                {
+                    if (j < lineLength)
+                    {
+                        sb.AppendFormat("{0:X2} ", data[i + j]);
+                    }
+                    else
+                    {
+                        sb.Append("   "); // Padding for incomplete lines
+                    }
+                }
+
+                // ASCII representation
+                sb.Append(" ");
+                for (int j = 0; j < lineLength; j++)
+                {
+                    byte b = data[i + j];
+                    char c = (b >= 32 && b <= 126) ? (char)b : '.';
+                    sb.Append(c);
+                }
+
+                sb.AppendLine();
+            }
+
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// Toggles between hex view and normal view.
+        /// </summary>
+        private void ToggleHexView()
+        {
+            _isHexViewMode = !_isHexViewMode;
+
+            // Update menu item text
+            hexViewToolStripMenuItem.Checked = _isHexViewMode;
+
+            // Reload current file if one is selected
+            if (_selectedEntry != null && _currentFileData != null)
+            {
+                LoadData(_selectedEntry);
+            }
+        }
+
+        private void hexViewToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            ToggleHexView();
         }
 
         private byte[] RemoveZeroPadding(byte[] data)
