@@ -1,5 +1,8 @@
 The tool can open, view, modify, import, and export files within the .MET files of Backyard Baseball 2004 for the PlayStation 2.
 
+v0.2
+<img width="1920" height="1032" alt="image" src="https://github.com/user-attachments/assets/4ebd29d0-fe77-4be8-ac36-88f9123f96cc" />
+
 # Features
 - Open .MET Files: Easily open .MET files to explore their contents.
 - View Files: Browse and view files within the .MET archive.
