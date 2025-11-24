@@ -242,6 +242,10 @@ namespace PS2_DATA_File_Extractor
                     return;
                 }
 
+                // Clear and reset text editor state before loading new content
+                textEditorControl1.Text = string.Empty;
+                textEditorControl1.Refresh();
+
                 string extension = Path.GetExtension(entry.Path).ToLower();
 
                 // Check if it's an image file
@@ -249,8 +253,6 @@ namespace PS2_DATA_File_Extractor
                 {
                     try
                     {
-                        // Clear the text editor when showing an image
-                        textEditorControl1.Text = string.Empty;
                         textEditorControl1.IsReadOnly = true;
 
                         // Create a copy of the image to avoid holding the MemoryStream
@@ -284,15 +286,7 @@ namespace PS2_DATA_File_Extractor
                     textEditorControl1.IsReadOnly = false;
                     data = RemoveZeroPadding(data); // Remove padding only for text files
                     string dataText = Encoding.UTF8.GetString(data);
-
-                    // Clear the text editor before setting new text
-                    textEditorControl1.Text = string.Empty;
-                    textEditorControl1.Refresh();
-
-                    // Set the new text
                     textEditorControl1.Text = dataText;
-
-                    // Force the UI to update
                     textEditorControl1.Refresh();
 
                     _selectedEntry.CurrentSize = data.Length;
