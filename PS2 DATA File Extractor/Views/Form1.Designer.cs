@@ -34,6 +34,10 @@ namespace PS2_DATA_File_Extractor
         {
             textEditorControl1 = new TextEditorControl();
             treeView1 = new TreeView();
+            treeViewContextMenu = new ContextMenuStrip();
+            importFileContextMenuItem = new ToolStripMenuItem();
+            exportFileContextMenuItem = new ToolStripMenuItem();
+            saveChangesContextMenuItem = new ToolStripMenuItem();
             richTextBox1 = new RichTextBox();
             pictureBox1 = new PictureBox();
             splitContainer1 = new SplitContainer();
@@ -41,7 +45,6 @@ namespace PS2_DATA_File_Extractor
             menuStrip1 = new MenuStrip();
             fileToolStripMenuItem = new ToolStripMenuItem();
             openmetFileToolStripMenuItem = new ToolStripMenuItem();
-            importFileToolStripMenuItem = new ToolStripMenuItem();
             exportFileToPCToolStripMenuItem = new ToolStripMenuItem();
             exportSelectFileToolStripMenuItem = new ToolStripMenuItem();
             exportAllFilesToolStripMenuItem = new ToolStripMenuItem();
@@ -50,6 +53,8 @@ namespace PS2_DATA_File_Extractor
             saveFileChangesToolStripMenuItem = new ToolStripMenuItem();
             maxFileSizeToolStripMenuItem = new ToolStripMenuItem();
             currentFileSizeToolStripMenuItem = new ToolStripMenuItem();
+            statusStrip1 = new StatusStrip();
+            statusLabel = new ToolStripStatusLabel();
             ((System.ComponentModel.ISupportInitialize)pictureBox1).BeginInit();
             ((System.ComponentModel.ISupportInitialize)splitContainer1).BeginInit();
             splitContainer1.Panel1.SuspendLayout();
@@ -57,6 +62,8 @@ namespace PS2_DATA_File_Extractor
             splitContainer1.SuspendLayout();
             tableLayoutPanel1.SuspendLayout();
             menuStrip1.SuspendLayout();
+            treeViewContextMenu.SuspendLayout();
+            statusStrip1.SuspendLayout();
             SuspendLayout();
             // 
             // textEditorControl1
@@ -70,18 +77,46 @@ namespace PS2_DATA_File_Extractor
             textEditorControl1.Size = new Size(742, 407);
             textEditorControl1.TabIndex = 0;
             textEditorControl1.TextChanged += textEditorControl1_TextChanged;
-            // 
+            //
             // treeView1
-            // 
+            //
+            treeView1.ContextMenuStrip = treeViewContextMenu;
             treeView1.Dock = DockStyle.Fill;
             treeView1.Location = new Point(8, 0);
             treeView1.Name = "treeView1";
             treeView1.Size = new Size(362, 620);
             treeView1.TabIndex = 0;
             treeView1.BeforeExpand += treeView1_BeforeExpand;
-            treeView1.BeforeSelect += filesTreeView_BeforeSelect;
             treeView1.AfterSelect += treeView1_AfterSelect;
-            // 
+            //
+            // treeViewContextMenu
+            //
+            treeViewContextMenu.Items.AddRange(new ToolStripItem[] { importFileContextMenuItem, exportFileContextMenuItem, saveChangesContextMenuItem });
+            treeViewContextMenu.Name = "treeViewContextMenu";
+            treeViewContextMenu.Size = new Size(181, 70);
+            treeViewContextMenu.Opening += treeViewContextMenu_Opening;
+            //
+            // importFileContextMenuItem
+            //
+            importFileContextMenuItem.Name = "importFileContextMenuItem";
+            importFileContextMenuItem.Size = new Size(180, 22);
+            importFileContextMenuItem.Text = "Import File...";
+            importFileContextMenuItem.Click += importFileContextMenuItem_Click;
+            //
+            // exportFileContextMenuItem
+            //
+            exportFileContextMenuItem.Name = "exportFileContextMenuItem";
+            exportFileContextMenuItem.Size = new Size(180, 22);
+            exportFileContextMenuItem.Text = "Export File...";
+            exportFileContextMenuItem.Click += exportFileContextMenuItem_Click;
+            //
+            // saveChangesContextMenuItem
+            //
+            saveChangesContextMenuItem.Name = "saveChangesContextMenuItem";
+            saveChangesContextMenuItem.Size = new Size(180, 22);
+            saveChangesContextMenuItem.Text = "Save Changes";
+            saveChangesContextMenuItem.Click += saveChangesContextMenuItem_Click;
+            //
             // richTextBox1
             // 
             richTextBox1.BackColor = Color.White;
@@ -103,9 +138,9 @@ namespace PS2_DATA_File_Extractor
             pictureBox1.Size = new Size(294, 201);
             pictureBox1.TabIndex = 4;
             pictureBox1.TabStop = false;
-            // 
+            //
             // splitContainer1
-            // 
+            //
             splitContainer1.BackColor = SystemColors.Control;
             splitContainer1.Dock = DockStyle.Fill;
             splitContainer1.Location = new Point(0, 28);
@@ -152,27 +187,20 @@ namespace PS2_DATA_File_Extractor
             menuStrip1.Size = new Size(1127, 28);
             menuStrip1.TabIndex = 7;
             menuStrip1.Text = "menuStrip1";
-            // 
+            //
             // fileToolStripMenuItem
-            // 
-            fileToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[] { openmetFileToolStripMenuItem, importFileToolStripMenuItem, exportFileToPCToolStripMenuItem, exitToolStripMenuItem });
+            //
+            fileToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[] { openmetFileToolStripMenuItem, exportFileToPCToolStripMenuItem, exitToolStripMenuItem });
             fileToolStripMenuItem.Name = "fileToolStripMenuItem";
             fileToolStripMenuItem.Size = new Size(44, 24);
             fileToolStripMenuItem.Text = "File";
-            // 
+            //
             // openmetFileToolStripMenuItem
-            // 
+            //
             openmetFileToolStripMenuItem.Name = "openmetFileToolStripMenuItem";
             openmetFileToolStripMenuItem.Size = new Size(189, 24);
             openmetFileToolStripMenuItem.Text = "Open .met file";
             openmetFileToolStripMenuItem.Click += openmetFileToolStripMenuItem_Click;
-            // 
-            // importFileToolStripMenuItem
-            // 
-            importFileToolStripMenuItem.Name = "importFileToolStripMenuItem";
-            importFileToolStripMenuItem.Size = new Size(189, 24);
-            importFileToolStripMenuItem.Text = "Import File";
-            importFileToolStripMenuItem.Click += importFileToolStripMenuItem_Click;
             // 
             // exportFileToPCToolStripMenuItem
             // 
@@ -209,9 +237,9 @@ namespace PS2_DATA_File_Extractor
             editToolStripMenuItem.Name = "editToolStripMenuItem";
             editToolStripMenuItem.Size = new Size(47, 24);
             editToolStripMenuItem.Text = "Edit";
-            // 
+            //
             // saveFileChangesToolStripMenuItem
-            // 
+            //
             saveFileChangesToolStripMenuItem.Name = "saveFileChangesToolStripMenuItem";
             saveFileChangesToolStripMenuItem.Size = new Size(196, 24);
             saveFileChangesToolStripMenuItem.Text = "Save File Changes";
@@ -224,21 +252,37 @@ namespace PS2_DATA_File_Extractor
             maxFileSizeToolStripMenuItem.Size = new Size(99, 24);
             maxFileSizeToolStripMenuItem.Text = "MaxFileSize";
             maxFileSizeToolStripMenuItem.Visible = false;
-            // 
+            //
             // currentFileSizeToolStripMenuItem
-            // 
+            //
             currentFileSizeToolStripMenuItem.Margin = new Padding(50, 0, 0, 0);
             currentFileSizeToolStripMenuItem.Name = "currentFileSizeToolStripMenuItem";
             currentFileSizeToolStripMenuItem.Size = new Size(119, 24);
             currentFileSizeToolStripMenuItem.Text = "CurrentFileSize";
             currentFileSizeToolStripMenuItem.Visible = false;
-            // 
+            //
+            // statusStrip1
+            //
+            statusStrip1.Items.AddRange(new ToolStripItem[] { statusLabel });
+            statusStrip1.Location = new Point(0, 631);
+            statusStrip1.Name = "statusStrip1";
+            statusStrip1.Size = new Size(1127, 22);
+            statusStrip1.TabIndex = 9;
+            statusStrip1.Text = "statusStrip1";
+            //
+            // statusLabel
+            //
+            statusLabel.Name = "statusLabel";
+            statusLabel.Size = new Size(39, 17);
+            statusLabel.Text = "Ready";
+            //
             // Form1
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = SystemColors.Control;
             ClientSize = new Size(1127, 653);
+            Controls.Add(statusStrip1);
             Controls.Add(splitContainer1);
             Controls.Add(menuStrip1);
             MainMenuStrip = menuStrip1;
@@ -252,6 +296,9 @@ namespace PS2_DATA_File_Extractor
             tableLayoutPanel1.ResumeLayout(false);
             menuStrip1.ResumeLayout(false);
             menuStrip1.PerformLayout();
+            treeViewContextMenu.ResumeLayout(false);
+            statusStrip1.ResumeLayout(false);
+            statusStrip1.PerformLayout();
             ResumeLayout(false);
             PerformLayout();
         }
@@ -270,11 +317,16 @@ namespace PS2_DATA_File_Extractor
         private TableLayoutPanel tableLayoutPanel1;
         private ToolStripMenuItem editToolStripMenuItem;
         private ToolStripMenuItem saveFileChangesToolStripMenuItem;
-        private ToolStripMenuItem importFileToolStripMenuItem;
         private ToolStripMenuItem maxFileSizeToolStripMenuItem;
         private ToolStripMenuItem currentFileSizeToolStripMenuItem;
         private ToolStripMenuItem exitToolStripMenuItem;
         private ToolStripMenuItem exportSelectFileToolStripMenuItem;
         private ToolStripMenuItem exportAllFilesToolStripMenuItem;
+        private ContextMenuStrip treeViewContextMenu;
+        private ToolStripMenuItem importFileContextMenuItem;
+        private ToolStripMenuItem exportFileContextMenuItem;
+        private ToolStripMenuItem saveChangesContextMenuItem;
+        private StatusStrip statusStrip1;
+        private ToolStripStatusLabel statusLabel;
     }
 }

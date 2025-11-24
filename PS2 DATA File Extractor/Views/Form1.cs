@@ -22,6 +22,74 @@ namespace PS2_DATA_File_Extractor
             textEditorControl1.SetHighlighting("XML");
         }
 
+        /// <summary>
+        /// Updates the UI to reflect the current save state.
+        /// </summary>
+        private void UpdateUIState()
+        {
+            // Update window title
+            string baseTitle = "PS2 MET File Editor";
+            if (!string.IsNullOrEmpty(_dataMetPath))
+            {
+                string fileName = Path.GetFileName(_dataMetPath);
+                if (_hasUnsavedChanges)
+                {
+                    this.Text = $"{baseTitle} - {fileName} *";
+                }
+                else
+                {
+                    this.Text = $"{baseTitle} - {fileName}";
+                }
+            }
+            else
+            {
+                this.Text = baseTitle;
+            }
+
+            // Update status bar
+            if (_hasUnsavedChanges)
+            {
+                statusLabel.Text = "Unsaved changes in editor";
+            }
+            else if (!string.IsNullOrEmpty(_dataMetPath))
+            {
+                statusLabel.Text = $"Ready - {Path.GetFileName(_dataMetPath)}";
+            }
+            else
+            {
+                statusLabel.Text = "Ready";
+            }
+
+            // Update Save menu item text
+            if (_hasUnsavedChanges)
+            {
+                saveFileChangesToolStripMenuItem.Text = "Save File Changes *";
+            }
+            else
+            {
+                saveFileChangesToolStripMenuItem.Text = "Save File Changes";
+            }
+        }
+
+        /// <summary>
+        /// Sets a temporary status message that will be displayed briefly.
+        /// </summary>
+        private void SetStatusMessage(string message, int durationMs = 3000)
+        {
+            statusLabel.Text = message;
+
+            // Use a timer to reset the message after the duration
+            var timer = new System.Windows.Forms.Timer();
+            timer.Interval = durationMs;
+            timer.Tick += (s, e) =>
+            {
+                timer.Stop();
+                timer.Dispose();
+                UpdateUIState(); // Reset to normal state
+            };
+            timer.Start();
+        }
+
         private void PopulateTreeView()
         {
             treeView1.Nodes.Clear();
@@ -41,13 +109,59 @@ namespace PS2_DATA_File_Extractor
             if (e.Node.Tag is List<FileEntry> entries)
             {
                 e.Node.Nodes.Clear(); // Clear the dummy loading node
+
+                // Build hierarchical structure
                 foreach (var entry in entries)
                 {
-                    TreeNode entryNode = new TreeNode(entry.Path)
+                    BuildHierarchicalNode(e.Node, entry);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Builds a hierarchical tree structure for a file entry, creating folder nodes as needed.
+        /// </summary>
+        private void BuildHierarchicalNode(TreeNode parentNode, FileEntry entry)
+        {
+            // Split the path into parts (e.g., "data/batting/abne/file.png" -> ["data", "batting", "abne", "file.png"])
+            string[] pathParts = entry.Path.Split('/');
+
+            // Start from index 1 to skip "data" (as requested)
+            TreeNode currentNode = parentNode;
+            for (int i = 1; i < pathParts.Length; i++)
+            {
+                string part = pathParts[i];
+                bool isLastPart = (i == pathParts.Length - 1);
+
+                // Try to find existing node with this name
+                TreeNode? existingNode = null;
+                foreach (TreeNode child in currentNode.Nodes)
+                {
+                    if (child.Text == part)
                     {
-                        Tag = entry
-                    };
-                    e.Node.Nodes.Add(entryNode);
+                        existingNode = child;
+                        break;
+                    }
+                }
+
+                if (existingNode != null)
+                {
+                    // Node already exists, use it
+                    currentNode = existingNode;
+                }
+                else
+                {
+                    // Create new node
+                    TreeNode newNode = new TreeNode(part);
+
+                    // Only attach FileEntry tag to leaf nodes (actual files)
+                    if (isLastPart)
+                    {
+                        newNode.Tag = entry;
+                    }
+
+                    currentNode.Nodes.Add(newNode);
+                    currentNode = newNode;
                 }
             }
         }
@@ -60,6 +174,7 @@ namespace PS2_DATA_File_Extractor
                 currentFileSizeToolStripMenuItem.ForeColor = selectedEntryCurrentSize > _selectedEntry.OriginalSize ? Color.Red : Color.Black;
                 currentFileSizeToolStripMenuItem.Text = $"Current Size: 0x{selectedEntryCurrentSize:X} (hex)";
                 _hasUnsavedChanges = true;
+                UpdateUIState();
             }
         }
 
@@ -79,6 +194,7 @@ namespace PS2_DATA_File_Extractor
                 currentFileSizeToolStripMenuItem.Visible = true;
 
                 _hasUnsavedChanges = false; // Reset the flag after loading new content
+                UpdateUIState();
             }
         }
 
@@ -185,7 +301,9 @@ namespace PS2_DATA_File_Extractor
                         groupedEntries.Clear();
                         groupedEntries = METFileReader.ReadFileEntries(_dataMetPath, groupedEntries);
                         PopulateTreeView();
-                        //MessageBox.Show($"Successfully read {_dataMetPath}.");
+                        _hasUnsavedChanges = false;
+                        UpdateUIState();
+                        SetStatusMessage($"Opened {Path.GetFileName(_dataMetPath)} successfully");
                     }
                     catch (Exception ex)
                     {
@@ -200,12 +318,78 @@ namespace PS2_DATA_File_Extractor
             if (_selectedEntry != null)
             {
                 string content = textEditorControl1.Text;
-                if (FileSaver.SaveFileEntryChanges(_dataMetPath, _selectedEntry, content))
+                byte[] contentBytes = Encoding.ASCII.GetBytes(content);
+
+                // Check if resize is needed
+                bool requiresResize = contentBytes.Length > _selectedEntry.OriginalSize;
+
+                if (requiresResize)
+                {
+                    int sizeDelta = contentBytes.Length - _selectedEntry.OriginalSize;
+                    DialogResult result = MessageBox.Show(
+                        $"The new content is larger than the original ({contentBytes.Length} bytes vs {_selectedEntry.OriginalSize} bytes).\n\n" +
+                        $"This will require rebuilding the MET file structure (expanding by {sizeDelta} bytes).\n" +
+                        $"A backup will be created automatically.\n\n" +
+                        $"Do you want to proceed?",
+                        "Confirm File Resize",
+                        MessageBoxButtons.YesNo,
+                        MessageBoxIcon.Warning
+                    );
+
+                    if (result != DialogResult.Yes)
+                    {
+                        return; // User canceled
+                    }
+                }
+
+                if (FileSaver.SaveFileEntryChangesWithResize(_dataMetPath, _selectedEntry, contentBytes))
                 {
                     string listViewItemName = Path.GetFileName(_selectedEntry.Path);
                     string fileName = Path.GetFileName(_dataMetPath);
-                    MessageBox.Show($"'{listViewItemName}' changes successfully saved to '{fileName}'.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+
+                    if (requiresResize)
+                    {
+                        MessageBox.Show($"✓ Changes written to {fileName}\n\n" +
+                                       $"File: {listViewItemName}\n" +
+                                       $"Action: MET file resized and rebuilt\n" +
+                                       $"New size: {contentBytes.Length} bytes (was {_selectedEntry.OriginalSize} bytes)",
+                            "Successfully Written to MET File", MessageBoxButtons.OK, MessageBoxIcon.Information);
+
+                        // Reload the entire file structure after resize
+                        groupedEntries.Clear();
+                        groupedEntries = METFileReader.ReadFileEntries(_dataMetPath, groupedEntries);
+                        PopulateTreeView();
+
+                        // Reselect the current entry
+                        // Find and select the node in the tree
+                        foreach (TreeNode extensionNode in treeView1.Nodes)
+                        {
+                            if (extensionNode.Text == Path.GetExtension(_selectedEntry.Path))
+                            {
+                                extensionNode.Expand();
+                                foreach (TreeNode fileNode in extensionNode.Nodes)
+                                {
+                                    if (fileNode.Tag is FileEntry entry && entry.Path == _selectedEntry.Path)
+                                    {
+                                        treeView1.SelectedNode = fileNode;
+                                        break;
+                                    }
+                                }
+                                break;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        MessageBox.Show($"✓ Changes written to {fileName}\n\n" +
+                                       $"File: {listViewItemName}\n" +
+                                       $"Size: {contentBytes.Length} bytes",
+                            "Successfully Written to MET File", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    }
+
                     _hasUnsavedChanges = false;
+                    UpdateUIState();
+                    SetStatusMessage($"Changes saved to {fileName}");
                 }
             }
             else
@@ -216,57 +400,128 @@ namespace PS2_DATA_File_Extractor
 
         private void importFileToolStripMenuItem_Click(object sender, EventArgs e)
         {
+            // Check if a file is selected
+            if (_selectedEntry == null)
+            {
+                MessageBox.Show("Please select a file in the tree view first.", "No File Selected", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
             _hasUnsavedChanges = false;
             using (OpenFileDialog openFileDialog = new OpenFileDialog())
             {
-                openFileDialog.Title = "Import file";
+                openFileDialog.Title = $"Import file to replace '{Path.GetFileName(_selectedEntry.Path)}'";
+
+                // Set file filter based on the selected file's extension
+                string extension = Path.GetExtension(_selectedEntry.Path).ToLower();
+                if (!string.IsNullOrEmpty(extension))
+                {
+                    openFileDialog.Filter = $"{extension.ToUpper().TrimStart('.')} files (*{extension})|*{extension}|All files (*.*)|*.*";
+                }
+
                 if (openFileDialog.ShowDialog() == DialogResult.OK)
                 {
                     string filePath = openFileDialog.FileName;
-                    string importedFileName = Path.GetFileName(filePath);
-                    string searchFileName = importedFileName.Replace('-', '/'); // Replace - with / in the file name
-                    bool fileFound = false;
-                    bool overwriteSuccess = false;
-                    TreeNode? matchedNode = null;
+                    byte[] data = File.ReadAllBytes(filePath);
 
-                    string fileExtension = Path.GetExtension(searchFileName).ToLower();
+                    // Check if this is a binary file (image) or text file
+                    bool isBinaryFile = extension == ".png" || extension == ".bmp" || extension == ".ico" || extension == ".mnd";
 
-                    // Iterate through the tree nodes to find the matching file extension node
-                    foreach (TreeNode extensionNode in treeView1.Nodes)
+                    // Only remove padding for text files
+                    if (!isBinaryFile)
                     {
-                        if (extensionNode.Text.ToLower() == fileExtension)
-                        {
-                            // Expand the extension node to load its children
-                            extensionNode.Expand();
-
-                            // Iterate through the child nodes of the extension node to find the matching file name
-                            foreach (TreeNode childNode in extensionNode.Nodes)
-                            {
-                                var result = FindAndReplaceFile(childNode, searchFileName, filePath);
-                                fileFound = result.Item1;
-                                overwriteSuccess = result.Item2;
-                                matchedNode = result.Item3;
-
-                                if (fileFound) break;
-                            }
-
-                            if (fileFound) break;
-                        }
+                        data = RemoveZeroPadding(data);
                     }
 
-                    if (fileFound && overwriteSuccess)
+                    // Check if the imported file requires resizing the MET file
+                    bool requiresResize = data.Length > _selectedEntry.OriginalSize;
+                    string confirmMessage;
+
+                    if (requiresResize)
                     {
-                        // Update the selected TreeView item
-                        treeView1.SelectedNode = matchedNode;
-                        MessageBox.Show($"'{searchFileName}' was successfully imported and overwritten.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                    }
-                    else if (fileFound && !overwriteSuccess)
-                    {
-                        MessageBox.Show("The imported file is too large to fit in the existing space or the overwrite was canceled.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        int sizeDelta = data.Length - _selectedEntry.OriginalSize;
+                        confirmMessage = $"The imported file is larger than the original ({data.Length} bytes vs {_selectedEntry.OriginalSize} bytes).\n\n" +
+                                       $"This will require rebuilding the MET file structure (expanding by {sizeDelta} bytes).\n" +
+                                       $"A backup will be created automatically.\n\n" +
+                                       $"Replace '{Path.GetFileName(_selectedEntry.Path)}' with the imported file?";
                     }
                     else
                     {
-                        MessageBox.Show("No matching file found in the tree.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        confirmMessage = $"Replace '{Path.GetFileName(_selectedEntry.Path)}' with the imported file?";
+                    }
+
+                    // Ask for confirmation
+                    DialogResult result = MessageBox.Show(
+                        confirmMessage,
+                        requiresResize ? "Confirm File Resize" : "Confirm Replace",
+                        MessageBoxButtons.YesNo,
+                        requiresResize ? MessageBoxIcon.Warning : MessageBoxIcon.Question
+                    );
+
+                    if (result == DialogResult.Yes)
+                    {
+                        // Use the resize-capable save method
+                        bool success;
+                        if (isBinaryFile)
+                        {
+                            success = FileSaver.SaveFileEntryChangesWithResize(_dataMetPath, _selectedEntry, data);
+                        }
+                        else
+                        {
+                            byte[] textBytes = Encoding.ASCII.GetBytes(Encoding.ASCII.GetString(data));
+                            success = FileSaver.SaveFileEntryChangesWithResize(_dataMetPath, _selectedEntry, textBytes);
+                        }
+
+                        if (success)
+                        {
+                            string fileName = Path.GetFileName(_dataMetPath);
+                            string listViewItemName = Path.GetFileName(_selectedEntry.Path);
+
+                            if (requiresResize)
+                            {
+                                // Reload the entire file structure after resize
+                                groupedEntries.Clear();
+                                groupedEntries = METFileReader.ReadFileEntries(_dataMetPath, groupedEntries);
+                                PopulateTreeView();
+
+                                // Reselect the current entry
+                                foreach (TreeNode extensionNode in treeView1.Nodes)
+                                {
+                                    if (extensionNode.Text == Path.GetExtension(_selectedEntry.Path))
+                                    {
+                                        extensionNode.Expand();
+                                        foreach (TreeNode fileNode in extensionNode.Nodes)
+                                        {
+                                            if (fileNode.Tag is FileEntry entry && entry.Path == _selectedEntry.Path)
+                                            {
+                                                treeView1.SelectedNode = fileNode;
+                                                break;
+                                            }
+                                        }
+                                        break;
+                                    }
+                                }
+
+                                MessageBox.Show($"✓ File imported and written to {fileName}\n\n" +
+                                               $"File: {listViewItemName}\n" +
+                                               $"Action: MET file resized and rebuilt\n" +
+                                               $"New size: {data.Length} bytes (was {_selectedEntry.OriginalSize} bytes)",
+                                    "Successfully Written to MET File", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                            }
+                            else
+                            {
+                                MessageBox.Show($"✓ File imported and written to {fileName}\n\n" +
+                                               $"File: {listViewItemName}\n" +
+                                               $"Size: {data.Length} bytes",
+                                    "Successfully Written to MET File", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                            }
+
+                            // Reload the file data in the editor
+                            LoadData(_selectedEntry);
+                            _hasUnsavedChanges = false;
+                            UpdateUIState();
+                            SetStatusMessage($"File imported and saved to {fileName}");
+                        }
                     }
                 }
             }
@@ -274,8 +529,12 @@ namespace PS2_DATA_File_Extractor
 
         private Tuple<bool, bool, TreeNode> FindAndReplaceFile(TreeNode node, string importedFileName, string filePath)
         {
+            System.Diagnostics.Debug.WriteLine($"  Comparing: '{node.Text}' == '{importedFileName}' ? {node.Text == importedFileName}");
+
             if (node.Tag is FileEntry entry && node.Text == importedFileName)
             {
+                System.Diagnostics.Debug.WriteLine($"  MATCH FOUND! Entry path: {entry.Path}");
+
                 byte[] data = File.ReadAllBytes(filePath);
 
                 // Check if this is a binary file (image) or text file
@@ -288,35 +547,56 @@ namespace PS2_DATA_File_Extractor
                     data = RemoveZeroPadding(data);
                 }
 
-                // Check if the imported file size fits in the allocated space
-                if (data.Length > entry.OriginalSize)
+                // Check if the imported file requires resizing the MET file
+                bool requiresResize = data.Length > entry.OriginalSize;
+                string confirmMessage;
+
+                if (requiresResize)
                 {
-                    MessageBox.Show("The imported file is too large to fit in the existing space.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    return new Tuple<bool, bool, TreeNode>(true, false, null); // File found but too large to overwrite
+                    int sizeDelta = data.Length - entry.OriginalSize;
+                    confirmMessage = $"The imported file is larger than the original ({data.Length} bytes vs {entry.OriginalSize} bytes).\n\n" +
+                                   $"This will require rebuilding the MET file structure (expanding by {sizeDelta} bytes).\n" +
+                                   $"A backup will be created automatically.\n\n" +
+                                   $"Do you want to proceed with importing '{importedFileName}'?";
+                }
+                else
+                {
+                    confirmMessage = $"Are you sure you want to overwrite '{importedFileName}'?";
                 }
 
                 // Ask for confirmation before overwriting
                 DialogResult result = MessageBox.Show(
-                    $"Are you sure you want to overwrite '{importedFileName}'?",
-                    "Confirm Overwrite",
+                    confirmMessage,
+                    requiresResize ? "Confirm File Resize" : "Confirm Overwrite",
                     MessageBoxButtons.YesNo,
-                    MessageBoxIcon.Warning
+                    requiresResize ? MessageBoxIcon.Warning : MessageBoxIcon.Question
                 );
 
                 if (result == DialogResult.Yes)
                 {
-                    // Overwrite the existing data
+                    // Use the resize-capable save method for all imports
+                    bool success;
                     if (isBinaryFile)
                     {
                         // Save binary files directly without string conversion
-                        FileSaver.SaveFileEntryChanges(_dataMetPath, entry, data);
+                        success = FileSaver.SaveFileEntryChangesWithResize(_dataMetPath, entry, data);
                     }
                     else
                     {
-                        // Save text files as strings
-                        FileSaver.SaveFileEntryChanges(_dataMetPath, entry, Encoding.ASCII.GetString(data));
+                        // Convert text to bytes for the resize method
+                        byte[] textBytes = Encoding.ASCII.GetBytes(Encoding.ASCII.GetString(data));
+                        success = FileSaver.SaveFileEntryChangesWithResize(_dataMetPath, entry, textBytes);
                     }
-                    return new Tuple<bool, bool, TreeNode>(true, true, node); // File found and successfully overwritten
+
+                    if (success && requiresResize)
+                    {
+                        // Reload the entire file structure after resize
+                        groupedEntries.Clear();
+                        groupedEntries = METFileReader.ReadFileEntries(_dataMetPath, groupedEntries);
+                        PopulateTreeView();
+                    }
+
+                    return new Tuple<bool, bool, TreeNode>(true, success, success ? node : null);
                 }
                 else
                 {
@@ -392,6 +672,57 @@ namespace PS2_DATA_File_Extractor
                 CollapseNode(childNode);
             }
             node.Collapse();
+        }
+
+        /// <summary>
+        /// Handles the context menu opening event to show/hide menu items based on selection.
+        /// </summary>
+        private void treeViewContextMenu_Opening(object sender, System.ComponentModel.CancelEventArgs e)
+        {
+            // Only show context menu if a file is selected (not an extension group)
+            if (treeView1.SelectedNode != null && treeView1.SelectedNode.Tag is FileEntry)
+            {
+                // Show all menu items
+                importFileContextMenuItem.Visible = true;
+                exportFileContextMenuItem.Visible = true;
+
+                // Only show "Save Changes" if there are unsaved changes and it's a text file
+                string extension = Path.GetExtension(_selectedEntry?.Path ?? "").ToLower();
+                bool isTextFile = extension != ".png" && extension != ".bmp" && extension != ".ico" && extension != ".mnd";
+                saveChangesContextMenuItem.Visible = isTextFile && _hasUnsavedChanges;
+            }
+            else
+            {
+                // No file selected, cancel the context menu
+                e.Cancel = true;
+            }
+        }
+
+        /// <summary>
+        /// Handles the Import File context menu click.
+        /// </summary>
+        private void importFileContextMenuItem_Click(object sender, EventArgs e)
+        {
+            // Reuse the existing import logic
+            importFileToolStripMenuItem_Click(sender, e);
+        }
+
+        /// <summary>
+        /// Handles the Export File context menu click.
+        /// </summary>
+        private void exportFileContextMenuItem_Click(object sender, EventArgs e)
+        {
+            // Reuse the existing export logic
+            exportSelectFileToolStripMenuItem_Click(sender, e);
+        }
+
+        /// <summary>
+        /// Handles the Save Changes context menu click.
+        /// </summary>
+        private void saveChangesContextMenuItem_Click(object sender, EventArgs e)
+        {
+            // Reuse the existing save logic
+            saveFileChangesToolStripMenuItem_Click(sender, e);
         }
     }
 }
