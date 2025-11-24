@@ -13,6 +13,7 @@ namespace PS2_DATA_File_Extractor
         private FileEntry _selectedEntry;
         private bool _isHexViewMode = false;
         private byte[] _currentFileData;
+        private byte[] _leadingUnprintableBytes = Array.Empty<byte>();
 
         public Form1()
         {
@@ -200,6 +201,7 @@ namespace PS2_DATA_File_Extractor
             if (e.Node.Tag is FileEntry entry)
             {
                 _selectedEntry = entry; // Store the selected entry
+                _leadingUnprintableBytes = Array.Empty<byte>(); // Reset for new file
 
                 DisplayEntryInfo(entry);
 
@@ -291,7 +293,12 @@ namespace PS2_DATA_File_Extractor
 
                     textEditorControl1.IsReadOnly = false;
                     data = RemoveZeroPadding(data); // Remove padding only for text files
-                    string dataText = Encoding.UTF8.GetString(data);
+
+                    // Extract and store leading unprintable bytes (like control characters)
+                    // These will be preserved when saving, but hidden from the editor
+                    byte[] printableData = ExtractLeadingUnprintableBytes(data);
+
+                    string dataText = Encoding.UTF8.GetString(printableData);
                     textEditorControl1.Text = dataText;
                     textEditorControl1.Refresh();
 
@@ -644,6 +651,60 @@ namespace PS2_DATA_File_Extractor
             return unpaddedData;
         }
 
+        /// <summary>
+        /// Extracts leading unprintable bytes from data and returns the printable portion.
+        /// Stores the unprintable bytes in _leadingUnprintableBytes for later restoration.
+        /// </summary>
+        private byte[] ExtractLeadingUnprintableBytes(byte[] data)
+        {
+            int firstPrintableIndex = 0;
+
+            // Find the first printable character
+            // We consider printable: space (32) through ~ (126), plus common whitespace (tab=9, LF=10, CR=13)
+            for (int i = 0; i < data.Length; i++)
+            {
+                byte b = data[i];
+                bool isPrintable = (b >= 32 && b <= 126) || b == 9 || b == 10 || b == 13;
+
+                if (isPrintable)
+                {
+                    firstPrintableIndex = i;
+                    break;
+                }
+            }
+
+            // If no printable characters found, return empty array
+            if (firstPrintableIndex == 0 && data.Length > 0)
+            {
+                byte b = data[0];
+                bool isPrintable = (b >= 32 && b <= 126) || b == 9 || b == 10 || b == 13;
+                if (!isPrintable)
+                {
+                    // All data is unprintable
+                    _leadingUnprintableBytes = data;
+                    return Array.Empty<byte>();
+                }
+            }
+
+            // Extract leading unprintable bytes
+            if (firstPrintableIndex > 0)
+            {
+                _leadingUnprintableBytes = new byte[firstPrintableIndex];
+                Array.Copy(data, 0, _leadingUnprintableBytes, 0, firstPrintableIndex);
+
+                // Return the printable portion
+                byte[] printableData = new byte[data.Length - firstPrintableIndex];
+                Array.Copy(data, firstPrintableIndex, printableData, 0, printableData.Length);
+                return printableData;
+            }
+            else
+            {
+                // No leading unprintable bytes
+                _leadingUnprintableBytes = Array.Empty<byte>();
+                return data;
+            }
+        }
+
         private void ShowImageInPictureBox(Image image)
         {
             try
@@ -695,6 +756,15 @@ namespace PS2_DATA_File_Extractor
             {
                 string content = textEditorControl1.Text;
                 byte[] contentBytes = Encoding.UTF8.GetBytes(content);
+
+                // Prepend any leading unprintable bytes that were stripped during load
+                if (_leadingUnprintableBytes.Length > 0)
+                {
+                    byte[] fullContent = new byte[_leadingUnprintableBytes.Length + contentBytes.Length];
+                    Array.Copy(_leadingUnprintableBytes, 0, fullContent, 0, _leadingUnprintableBytes.Length);
+                    Array.Copy(contentBytes, 0, fullContent, _leadingUnprintableBytes.Length, contentBytes.Length);
+                    contentBytes = fullContent;
+                }
 
                 // Check if resize is needed
                 bool requiresResize = contentBytes.Length > _selectedEntry.OriginalSize;
