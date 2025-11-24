@@ -7,7 +7,7 @@ namespace PS2_DATA_File_Extractor
 {
     public partial class Form1 : Form
     {
-        private Dictionary<string, List<FileEntry>> groupedEntries = new Dictionary<string, List<FileEntry>>();
+        private METFileStructure _metFileStructure;
         private string _dataMetPath;
         private bool _hasUnsavedChanges = false;
         private FileEntry _selectedEntry;
@@ -98,7 +98,13 @@ namespace PS2_DATA_File_Extractor
         private void PopulateTreeView()
         {
             treeView1.Nodes.Clear();
-            foreach (var group in groupedEntries)
+
+            if (_metFileStructure == null || _metFileStructure.GroupedEntries == null)
+            {
+                return;
+            }
+
+            foreach (var group in _metFileStructure.GroupedEntries)
             {
                 TreeNode extensionNode = new TreeNode(group.Key)
                 {
@@ -323,7 +329,7 @@ namespace PS2_DATA_File_Extractor
                 ".lua", ".script", ".shader", ".glsl", ".fx",
                 ".c", ".cpp", ".h", ".cs", ".java", ".py",
                 ".bat", ".sh", ".cmd", ".ps1",
-                ".sql", ".yml", ".yaml", ".toml"
+                ".sql", ".yml", ".yaml", ".toml", ".dat"
             };
 
             return textExtensions.Contains(extension);
@@ -465,6 +471,167 @@ namespace PS2_DATA_File_Extractor
             ToggleHexView();
         }
 
+        private void fileStructureToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            if (_metFileStructure == null)
+            {
+                MessageBox.Show("No MET file is currently loaded.", "No File Loaded", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            // Create a custom form to display the structure information
+            Form structureForm = new Form
+            {
+                Text = "MET File Structure Information",
+                Width = 700,
+                Height = 600,
+                StartPosition = FormStartPosition.CenterParent,
+                FormBorderStyle = FormBorderStyle.Sizable,
+                MinimizeBox = false,
+                MaximizeBox = true
+            };
+
+            // Create a RichTextBox to display the information
+            RichTextBox infoTextBox = new RichTextBox
+            {
+                Dock = DockStyle.Fill,
+                ReadOnly = true,
+                Font = new Font("Consolas", 10),
+                BackColor = Color.White,
+                Padding = new Padding(10)
+            };
+
+            // Build the structure information
+            StringBuilder info = new StringBuilder();
+
+            // Statistics from METFileStructure
+            info.AppendLine(new string('═', 70));
+            info.AppendLine("                    MET FILE STRUCTURE INFORMATION");
+            info.AppendLine(new string('═', 70));
+            info.AppendLine();
+            info.AppendLine(_metFileStructure.GetStatistics());
+
+            // Header information
+            info.AppendLine();
+            info.AppendLine(new string('═', 70));
+            info.AppendLine("                         HEADER DETAILS");
+            info.AppendLine(new string('═', 70));
+            info.AppendLine();
+            info.AppendLine($"MET Header (8 bytes):");
+            info.AppendLine($"  Bytes 0-3 (Data Section Offset): 0x{_metFileStructure.DataSectionOffset:X} ({_metFileStructure.DataSectionOffset:N0} bytes)");
+            info.AppendLine($"  Bytes 4-7 (Unknown Value):       0x{_metFileStructure.UnknownHeaderValue:X}");
+            info.AppendLine();
+            info.AppendLine($"File Entry Headers Section:");
+            info.AppendLine($"  Start: 0x00000008 (byte 8)");
+            info.AppendLine($"  End:   0x{_metFileStructure.DataSectionOffset:X} (byte {_metFileStructure.DataSectionOffset:N0})");
+            info.AppendLine($"  Size:  {_metFileStructure.HeaderSectionSize:N0} bytes");
+            info.AppendLine();
+            info.AppendLine($"Data Section:");
+            info.AppendLine($"  Start: 0x{_metFileStructure.DataSectionOffset:X}");
+            info.AppendLine($"  End:   0x{_metFileStructure.TotalFileSize:X}");
+            info.AppendLine($"  Size:  {(_metFileStructure.TotalFileSize - _metFileStructure.DataSectionOffset):N0} bytes");
+
+            // Validation
+            info.AppendLine();
+            info.AppendLine(new string('═', 70));
+            info.AppendLine("                      STRUCTURE VALIDATION");
+            info.AppendLine(new string('═', 70));
+            info.AppendLine();
+
+            var (isValid, errors) = _metFileStructure.ValidateStructure();
+            if (isValid)
+            {
+                info.AppendLine("✓ Structure validation PASSED");
+                info.AppendLine("  All offsets and sizes are consistent.");
+            }
+            else
+            {
+                info.AppendLine("✗ Structure validation FAILED");
+                info.AppendLine();
+                info.AppendLine("Errors found:");
+                foreach (var error in errors)
+                {
+                    info.AppendLine($"  • {error}");
+                }
+            }
+
+            // Entry address ranges (first 10 and last 10)
+            info.AppendLine();
+            info.AppendLine(new string('═', 70));
+            info.AppendLine("                    FILE ENTRY ADDRESS MAP");
+            info.AppendLine(new string('═', 70));
+            info.AppendLine();
+
+            var allEntries = _metFileStructure.AllEntries;
+            int entriesToShow = Math.Min(10, allEntries.Count);
+
+            info.AppendLine($"Showing first {entriesToShow} entries:");
+            info.AppendLine();
+            info.AppendLine("Entry Path                                    Header Range           Data Range");
+            info.AppendLine(new string('─', 70));
+
+            for (int i = 0; i < entriesToShow; i++)
+            {
+                var entry = allEntries[i];
+                string path = entry.Path.Length > 40 ? "..." + entry.Path.Substring(entry.Path.Length - 37) : entry.Path;
+                info.AppendLine($"{path,-42} 0x{entry.HeaderStart:X6}-0x{entry.HeaderEnd:X6}  0x{entry.Offset:X8}-0x{(entry.Offset + entry.OriginalSize):X8}");
+            }
+
+            if (allEntries.Count > 20)
+            {
+                info.AppendLine($"... ({allEntries.Count - 20} entries omitted) ...");
+                info.AppendLine();
+                info.AppendLine($"Showing last 10 entries:");
+                info.AppendLine();
+
+                for (int i = allEntries.Count - 10; i < allEntries.Count; i++)
+                {
+                    var entry = allEntries[i];
+                    string path = entry.Path.Length > 40 ? "..." + entry.Path.Substring(entry.Path.Length - 37) : entry.Path;
+                    info.AppendLine($"{path,-42} 0x{entry.HeaderStart:X6}-0x{entry.HeaderEnd:X6}  0x{entry.Offset:X8}-0x{(entry.Offset + entry.OriginalSize):X8}");
+                }
+            }
+            else if (allEntries.Count > 10)
+            {
+                info.AppendLine();
+                info.AppendLine($"Showing remaining {allEntries.Count - 10} entries:");
+                info.AppendLine();
+
+                for (int i = 10; i < allEntries.Count; i++)
+                {
+                    var entry = allEntries[i];
+                    string path = entry.Path.Length > 40 ? "..." + entry.Path.Substring(entry.Path.Length - 37) : entry.Path;
+                    info.AppendLine($"{path,-42} 0x{entry.HeaderStart:X6}-0x{entry.HeaderEnd:X6}  0x{entry.Offset:X8}-0x{(entry.Offset + entry.OriginalSize):X8}");
+                }
+            }
+
+            infoTextBox.Text = info.ToString();
+
+            // Add close button
+            Button closeButton = new Button
+            {
+                Text = "Close",
+                Width = 100,
+                Height = 30,
+                Anchor = AnchorStyles.Bottom | AnchorStyles.Right,
+                Location = new Point(structureForm.ClientSize.Width - 110, structureForm.ClientSize.Height - 40)
+            };
+            closeButton.Click += (s, ev) => structureForm.Close();
+
+            // Add controls to form
+            structureForm.Controls.Add(infoTextBox);
+            structureForm.Controls.Add(closeButton);
+
+            // Bring close button to front
+            closeButton.BringToFront();
+
+            // Adjust textbox to make room for button
+            infoTextBox.Padding = new Padding(10, 10, 10, 50);
+
+            // Show the form as a modal dialog
+            structureForm.ShowDialog(this);
+        }
+
         private byte[] RemoveZeroPadding(byte[] data)
         {
             int i = data.Length - 1;
@@ -508,8 +675,7 @@ namespace PS2_DATA_File_Extractor
                     _dataMetPath = openFileDialog.FileName;
                     try
                     {
-                        groupedEntries.Clear();
-                        groupedEntries = METFileReader.ReadFileEntries(_dataMetPath, groupedEntries);
+                        _metFileStructure = METFileReader.ReadMETFile(_dataMetPath);
                         PopulateTreeView();
                         _hasUnsavedChanges = false;
                         UpdateUIState();
@@ -566,8 +732,7 @@ namespace PS2_DATA_File_Extractor
                             "Successfully Written to MET File", MessageBoxButtons.OK, MessageBoxIcon.Information);
 
                         // Reload the entire file structure after resize
-                        groupedEntries.Clear();
-                        groupedEntries = METFileReader.ReadFileEntries(_dataMetPath, groupedEntries);
+                        _metFileStructure = METFileReader.ReadMETFile(_dataMetPath);
                         PopulateTreeView();
 
                         // Reselect the current entry
@@ -690,8 +855,7 @@ namespace PS2_DATA_File_Extractor
                             if (requiresResize)
                             {
                                 // Reload the entire file structure after resize
-                                groupedEntries.Clear();
-                                groupedEntries = METFileReader.ReadFileEntries(_dataMetPath, groupedEntries);
+                                _metFileStructure = METFileReader.ReadMETFile(_dataMetPath);
                                 PopulateTreeView();
 
                                 // Reselect the current entry
@@ -801,8 +965,7 @@ namespace PS2_DATA_File_Extractor
                     if (success && requiresResize)
                     {
                         // Reload the entire file structure after resize
-                        groupedEntries.Clear();
-                        groupedEntries = METFileReader.ReadFileEntries(_dataMetPath, groupedEntries);
+                        _metFileStructure = METFileReader.ReadMETFile(_dataMetPath);
                         PopulateTreeView();
                     }
 

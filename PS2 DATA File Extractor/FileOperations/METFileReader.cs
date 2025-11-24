@@ -5,17 +5,29 @@ namespace PS2_DATA_File_Extractor.FileOperations
 {
     public class METFileReader
     {
-        public static Dictionary<string, List<FileEntry>> ReadFileEntries(string dataMetPath, Dictionary<string, List<FileEntry>> groupedEntries)
+        public static METFileStructure ReadMETFile(string dataMetPath)
         {
+            var structure = new METFileStructure
+            {
+                FilePath = dataMetPath,
+                GroupedEntries = new Dictionary<string, List<FileEntry>>()
+            };
+
             using (FileStream fs = new FileStream(dataMetPath, FileMode.Open, FileAccess.Read))
             using (BinaryReader reader = new BinaryReader(fs))
             {
-                long fileSize = fs.Length;
+                structure.TotalFileSize = fs.Length;
 
-                // Skip the first 8 bytes
-                fs.Seek(8, SeekOrigin.Begin);
+                // Read the 8-byte MET header
+                // Bytes 0-3: Offset where data section begins (tells us where headers end)
+                structure.DataSectionOffset = ReadInt32LE(reader);
 
-                while (fs.Position < fileSize)
+                // Bytes 4-7: Unknown value (possibly total data size or metadata)
+                structure.UnknownHeaderValue = ReadInt32LE(reader);
+
+                // File entries start at byte 8 and continue until dataSectionOffset
+                // This is structure-based reading instead of pattern matching
+                while (fs.Position < structure.DataSectionOffset && fs.Position < structure.TotalFileSize)
                 {
                     try
                     {
@@ -30,13 +42,14 @@ namespace PS2_DATA_File_Extractor.FileOperations
                         // Read the string length (4 bytes, little-endian)
                         int strLength = ReadInt32LE(reader);
 
-                        if (strLength == 0) // Reached separator or end of entries
+                        // Validate string length
+                        if (strLength <= 0 || strLength > 512) // Sanity check for path length
                         {
                             break;
                         }
 
                         // Ensure there are enough bytes left for the path
-                        if (fs.Position + strLength > fileSize)
+                        if (fs.Position + strLength > structure.DataSectionOffset)
                         {
                             break;
                         }
@@ -61,11 +74,11 @@ namespace PS2_DATA_File_Extractor.FileOperations
                         };
 
                         string extension = Path.GetExtension(path);
-                        if (!groupedEntries.ContainsKey(extension))
+                        if (!structure.GroupedEntries.ContainsKey(extension))
                         {
-                            groupedEntries[extension] = new List<FileEntry>();
+                            structure.GroupedEntries[extension] = new List<FileEntry>();
                         }
-                        groupedEntries[extension].Add(entry);
+                        structure.GroupedEntries[extension].Add(entry);
 
                         // Move to the next entry
                         fs.Seek(headerEndPosition, SeekOrigin.Begin);
@@ -80,7 +93,16 @@ namespace PS2_DATA_File_Extractor.FileOperations
                     }
                 }
             }
-            return groupedEntries;
+            return structure;
+        }
+
+        /// <summary>
+        /// Legacy method for backwards compatibility.
+        /// </summary>
+        public static Dictionary<string, List<FileEntry>> ReadFileEntries(string dataMetPath, Dictionary<string, List<FileEntry>> groupedEntries)
+        {
+            var structure = ReadMETFile(dataMetPath);
+            return structure.GroupedEntries;
         }
 
         private static int ReadInt32LE(BinaryReader reader)

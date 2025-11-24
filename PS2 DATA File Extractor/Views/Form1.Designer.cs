@@ -53,6 +53,7 @@ namespace PS2_DATA_File_Extractor
             saveFileChangesToolStripMenuItem = new ToolStripMenuItem();
             viewToolStripMenuItem = new ToolStripMenuItem();
             hexViewToolStripMenuItem = new ToolStripMenuItem();
+            fileStructureToolStripMenuItem = new ToolStripMenuItem();
             maxFileSizeToolStripMenuItem = new ToolStripMenuItem();
             currentFileSizeToolStripMenuItem = new ToolStripMenuItem();
             statusStrip1 = new StatusStrip();
@@ -248,7 +249,7 @@ namespace PS2_DATA_File_Extractor
             //
             // viewToolStripMenuItem
             //
-            viewToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[] { hexViewToolStripMenuItem });
+            viewToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[] { hexViewToolStripMenuItem, fileStructureToolStripMenuItem });
             viewToolStripMenuItem.Margin = new Padding(0, 0, 300, 0);
             viewToolStripMenuItem.Name = "viewToolStripMenuItem";
             viewToolStripMenuItem.Size = new Size(52, 24);
@@ -261,6 +262,13 @@ namespace PS2_DATA_File_Extractor
             hexViewToolStripMenuItem.Size = new Size(180, 24);
             hexViewToolStripMenuItem.Text = "Hex View";
             hexViewToolStripMenuItem.Click += hexViewToolStripMenuItem_Click;
+            //
+            // fileStructureToolStripMenuItem
+            //
+            fileStructureToolStripMenuItem.Name = "fileStructureToolStripMenuItem";
+            fileStructureToolStripMenuItem.Size = new Size(180, 24);
+            fileStructureToolStripMenuItem.Text = "File Structure Info";
+            fileStructureToolStripMenuItem.Click += fileStructureToolStripMenuItem_Click;
             //
             // maxFileSizeToolStripMenuItem
             //
@@ -336,6 +344,7 @@ namespace PS2_DATA_File_Extractor
         private ToolStripMenuItem saveFileChangesToolStripMenuItem;
         private ToolStripMenuItem viewToolStripMenuItem;
         private ToolStripMenuItem hexViewToolStripMenuItem;
+        private ToolStripMenuItem fileStructureToolStripMenuItem;
         private ToolStripMenuItem maxFileSizeToolStripMenuItem;
         private ToolStripMenuItem currentFileSizeToolStripMenuItem;
         private ToolStripMenuItem exitToolStripMenuItem;
