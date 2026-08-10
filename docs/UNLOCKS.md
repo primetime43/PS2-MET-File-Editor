@@ -1,14 +1,43 @@
-# Backyard Baseball unlock/save format
+# Backyard Baseball unlock and save format
 
 The unlock state is not stored in `DATA.MET`. Ghidra analysis of the retail USA executable
 `SLUS_208.65` traced it to the PS2 memory-card file named `Settings`, serialized by
 `BaseballYaga::SoundOptions::SaveData`.
 
-## Safe workflow
+## Game/ISO patch (recommended)
+
+For a modded game build, patch the executable that will be placed in the rebuilt ISO:
+
+1. Extract the ISO and keep its directory structure.
+2. Choose **Edit > Patch Game Executable Unlocks...**.
+3. Select the extracted USA executable `SLUS_208.65`.
+4. Select individual content or **Unlock All**, then apply.
+5. Rebuild the ISO with the patched executable.
+
+This does not depend on a memory card. Selected content is forced unlocked for existing saves,
+new saves, and no-save sessions. The editor patches the extracted executable rather than writing
+the ISO container directly; the patch becomes part of the game when the ISO is rebuilt.
+
+The patch does not change the executable's size. It modifies two Ghidra-confirmed functions:
+
+| Function | Runtime address | File offset | Patched behavior |
+| --- | ---: | ---: | --- |
+| `SoundOptions::IsItemUnlocked(int)` | `0x0026B0C0` | `0x0016B140` | ORs the selected forced mask into the saved mask before testing the requested bit |
+| `SoundOptions::FieldsRemainingForAquadome()` | `0x0026B0E0` | `0x0016B160` | Returns zero when Aquadome is forced unlocked |
+
+The verified retail executable is 34,769,044 bytes with SHA-256
+`DCB35FAE266F0D46DCAE7CF605830AC780CF0F199321760B3971F68350BB1FA7`. Patch safety uses the
+original R5900 instruction signatures, so an unsupported revision or conflicting existing patch
+is rejected. Each apply or restore creates a timestamped backup. **Restore Original Checks**
+puts the verified instructions back.
+
+## Optional save-file editing
+
+The memory-card editor remains available for changing one save's actual progress:
 
 1. Back up the full memory card.
 2. Export the Backyard Baseball file named `Settings` with a PS2 memory-card tool.
-3. In the editor, choose **Edit > Unlock Content (Settings Save)...**.
+3. Choose **Edit > Edit Exported Save Unlocks (Optional)...**.
 4. Select the exported `Settings` file, choose content, and save.
 5. Import the edited file back into the same game save.
 

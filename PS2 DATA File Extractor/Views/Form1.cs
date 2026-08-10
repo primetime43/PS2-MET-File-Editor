@@ -28,10 +28,13 @@ namespace PS2_DATA_File_Extractor
 
             textEditorControl1.SetHighlighting("XML");
 
-            ToolStripMenuItem unlockContentMenuItem = new ToolStripMenuItem("Unlock Content (Settings Save)...");
-            unlockContentMenuItem.Click += unlockContentMenuItem_Click;
+            ToolStripMenuItem patchGameMenuItem = new ToolStripMenuItem("Patch Game Executable Unlocks...");
+            patchGameMenuItem.Click += patchGameMenuItem_Click;
+            ToolStripMenuItem editSaveMenuItem = new ToolStripMenuItem("Edit Exported Save Unlocks (Optional)...");
+            editSaveMenuItem.Click += editSaveMenuItem_Click;
             editToolStripMenuItem.DropDownItems.Add(new ToolStripSeparator());
-            editToolStripMenuItem.DropDownItems.Add(unlockContentMenuItem);
+            editToolStripMenuItem.DropDownItems.Add(patchGameMenuItem);
+            editToolStripMenuItem.DropDownItems.Add(editSaveMenuItem);
         }
 
         /// <summary>
@@ -1157,7 +1160,40 @@ namespace PS2_DATA_File_Extractor
             }
             node.Collapse();
         }
-        private void unlockContentMenuItem_Click(object? sender, EventArgs e)
+        private void patchGameMenuItem_Click(object? sender, EventArgs e)
+        {
+            using OpenFileDialog dialog = new OpenFileDialog
+            {
+                Title = "Open extracted USA game executable",
+                FileName = "SLUS_208.65",
+                Filter = "Backyard Baseball executable (SLUS_208.65)|SLUS_208.65|All files (*.*)|*.*"
+            };
+
+            if (dialog.ShowDialog(this) != DialogResult.OK)
+            {
+                return;
+            }
+
+            try
+            {
+                GameExecutableUnlockState state =
+                    GameExecutableUnlockPatcher.Inspect(dialog.FileName);
+                using GameExecutableUnlockForm editor =
+                    new GameExecutableUnlockForm(dialog.FileName, state);
+                editor.ShowDialog(this);
+            }
+            catch (Exception exception)
+            {
+                MessageBox.Show(
+                    this,
+                    exception.Message,
+                    "Unsupported Game Executable",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+            }
+        }
+
+        private void editSaveMenuItem_Click(object? sender, EventArgs e)
         {
             using OpenFileDialog dialog = new OpenFileDialog
             {

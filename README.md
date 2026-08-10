@@ -14,13 +14,14 @@ To access the .MET files, you need to extract the game files from the ISO using 
 
 ## Modding and unlock editing
 
-- **View > Hex Editor** edits any selected archive payload as byte pairs and validates the input before saving.
+- **Edit > Patch Game Executable Unlocks...** forces selected players, fields, Darts, and Aquadome unlocked in the game itself.
+- **View > Hex Editor** edits any selected archive payload as validated byte pairs.
 - **Import File** preserves replacement files byte-for-byte, including binary data and trailing zeros.
-- **Edit > Unlock Content (Settings Save)...** edits named players, fields, and the Darts minigame in an exported PS2 memory-card `Settings` file.
-- Both MET resizing and Settings-save edits create timestamped backups.
+- MET, executable, and optional save-file edits create timestamped backups.
 
-Persistent unlocks are not stored in `DATA.MET`. See [Backyard Baseball unlock/save format](docs/UNLOCKS.md)
-for the reversed bit map, CRC details, safe memory-card workflow, and useful game-tuning files.
+Persistent unlock progress normally lives on the memory card, not in `DATA.MET`. The executable
+patch makes selected content available to every save in the rebuilt ISO. See
+[Backyard Baseball unlock and save format](docs/UNLOCKS.md) for patch details and the recovered bit map.
 
 ## Workflow: Extracting, Modifying, and Rebuilding the ISO
 
@@ -29,11 +30,13 @@ for the reversed bit map, CRC details, safe memory-card workflow, and useful gam
 2. Extract all files to a folder
 3. You should see files like `SYSTEM.CNF`, `DATA.MET`, and the game executable
 
-### Step 2: Modify the MET File
-1. Open `DATA.MET` in the MET File Editor
-2. Make your changes
-3. Save changes
-4. The editor automatically handles file resizing and creates backups
+### Step 2: Modify the game files
+1. Open `DATA.MET` in the MET File Editor and make any archive changes.
+2. Save the MET changes; resizing and backups are handled automatically.
+3. Choose **Edit > Patch Game Executable Unlocks...**.
+4. Select the extracted USA executable `SLUS_208.65`.
+5. Select individual content or **Unlock All**, then apply the patch.
+6. Keep the patched executable beside the other extracted game files.
 
 ### Step 3: Rebuild the ISO with ImgBurn
 

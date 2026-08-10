@@ -64,8 +64,10 @@ When a payload grows:
 Shifting later offsets by only the raw payload-size delta breaks sector alignment. Copying the original 8-byte global header without updating word 1 leaves stale archive metadata. Both behaviors existed in the old editor rebuild path and are covered by regression tests now.
 
 
-## Unlock persistence is a separate file
+## Unlock logic is outside DATA.MET
 
-The retail executable's unlock checks do not read `DATA.MET`. Players, locked fields, the
-Darts minigame, and Aquadome progress are stored in the memory-card file named `Settings`.
-See [Backyard Baseball unlock/save format](UNLOCKS.md) for the recovered mask and CRC layout.
+The retail executable's unlock checks do not read `DATA.MET`. Normal progress is stored in the
+memory-card file named `Settings`, but a modded ISO can force selected content unlocked by
+patching the extracted `SLUS_208.65` executable before rebuilding. See
+[Backyard Baseball unlock and save format](UNLOCKS.md) for the executable patch points,
+recovered mask, and optional save-file layout.
