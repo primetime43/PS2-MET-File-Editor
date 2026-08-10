@@ -8,6 +8,8 @@ public sealed class PlayerStatsArchiveTests : IDisposable
 {
     private const int FirstOffset = 2048;
     private const int CloneOffset = 4096;
+    private const int PortraitOffset = 6144;
+    private static readonly byte[] FakePortrait = { 0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4 };
     private readonly string _tempDirectory = Path.Combine(Path.GetTempPath(), $"player-stats-tests-{Guid.NewGuid():N}");
 
     [Fact]
@@ -89,6 +91,23 @@ public sealed class PlayerStatsArchiveTests : IDisposable
     }
 
     [Fact]
+    public void PortraitArchiveMapsStatsNamesAndSkipsClones()
+    {
+        Directory.CreateDirectory(_tempDirectory);
+        string metPath = Path.Combine(_tempDirectory, "DATA.MET");
+        CreateArchive(metPath);
+        PlayerStatsArchive players = PlayerStatsArchive.Load(metPath);
+        PlayerPortraitArchive portraits = PlayerPortraitArchive.Load(metPath);
+
+        PlayerPortrait portrait = Assert.IsType<PlayerPortrait>(
+            portraits.GetPortrait(players.Players.Single(player => player.FirstName == "Abner")));
+
+        Assert.Equal("data/polaroids/abner.png", portrait.SourcePath);
+        Assert.Equal(FakePortrait, portrait.Data);
+        Assert.Null(portraits.GetPortrait(players.Players.Single(player => player.IsClone)));
+    }
+
+    [Fact]
     public void SavingMultiplePlayersCreatesOneBackupAndPreservesArchiveLayout()
     {
         Directory.CreateDirectory(_tempDirectory);
@@ -138,18 +157,21 @@ public sealed class PlayerStatsArchiveTests : IDisposable
         short[] cloneValues = Enumerable.Repeat((short)40, PlayerStatsRecord.BaseFieldCount).ToArray();
         byte[] normal = CreateRecord(normalValues, Array.Empty<short>(), "Abner", "Ace", "Dubbleplay");
         byte[] clone = CreateRecord(cloneValues, new short[8], "Zena", "", "Fromme");
-        int totalLength = CloneOffset + clone.Length;
+        int totalLength = PortraitOffset + FakePortrait.Length;
         using FileStream stream = new(path, FileMode.Create, FileAccess.ReadWrite);
         using BinaryWriter writer = new(stream);
         writer.Write(FirstOffset);
         writer.Write(totalLength - FirstOffset);
         WriteEntry(writer, FirstOffset, normal.Length, "data/kids/stats/Abner_stats.dat");
         WriteEntry(writer, CloneOffset, clone.Length, "data/kids/stats/Clone1_stats.dat");
+        WriteEntry(writer, PortraitOffset, FakePortrait.Length, "data/polaroids/abner.png");
         writer.Write(new byte[12]);
         stream.Position = FirstOffset;
         writer.Write(normal);
         stream.Position = CloneOffset;
         writer.Write(clone);
+        stream.Position = PortraitOffset;
+        writer.Write(FakePortrait);
     }
 
     private static void WriteEntry(BinaryWriter writer, int offset, int size, string path)

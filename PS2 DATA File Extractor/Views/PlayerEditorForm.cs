@@ -50,8 +50,23 @@ public sealed class PlayerEditorForm : Form
     };
 
     private readonly PlayerStatsArchive _archive;
+    private readonly PlayerPortraitArchive _portraits;
     private readonly TextBox _search = new() { Dock = DockStyle.Top, PlaceholderText = "Search players..." };
     private readonly ListBox _playerList = new() { Dock = DockStyle.Fill, IntegralHeight = false };
+    private readonly PictureBox _portrait = new()
+    {
+        Dock = DockStyle.Fill,
+        BackColor = SystemColors.Window,
+        BorderStyle = BorderStyle.FixedSingle,
+        SizeMode = PictureBoxSizeMode.Zoom
+    };
+    private readonly Label _portraitMessage = new()
+    {
+        Dock = DockStyle.Fill,
+        BackColor = SystemColors.Window,
+        TextAlign = ContentAlignment.MiddleCenter
+    };
+    private readonly ToolTip _portraitToolTip = new();
     private readonly TextBox _firstName = new() { Width = 145, MaxLength = PlayerStatsRecord.MaxNameLength };
     private readonly TextBox _nickname = new() { Width = 145, MaxLength = PlayerStatsRecord.MaxNameLength };
     private readonly TextBox _lastName = new() { Width = 145, MaxLength = PlayerStatsRecord.MaxNameLength };
@@ -75,6 +90,7 @@ public sealed class PlayerEditorForm : Form
     public PlayerEditorForm(PlayerStatsArchive archive, string metPath)
     {
         _archive = archive;
+        _portraits = PlayerPortraitArchive.Load(metPath);
         Text = "Player Editor - DATA.MET";
         StartPosition = FormStartPosition.CenterParent;
         ClientSize = new Size(1120, 760);
@@ -109,7 +125,7 @@ public sealed class PlayerEditorForm : Form
         split.Panel1.Controls.Add(_search);
 
         Panel details = new() { Dock = DockStyle.Fill, Padding = new Padding(8) };
-        FlowLayoutPanel identity = BuildIdentityPanel();
+        Control identity = BuildIdentityArea();
         TableLayoutPanel summary = new()
         {
             Dock = DockStyle.Top,
@@ -170,14 +186,55 @@ public sealed class PlayerEditorForm : Form
         _playerList.SelectedIndexChanged += (_, _) => LoadSelectedPlayer();
         HookIdentityEvents();
         PopulatePlayerList();
-        _status.Text = $"Loaded {_archive.Players.Count} players ({_archive.Players.Count(player => player.IsClone)} clones).";
+        Shown += (_, _) => SetInitialPlayerListWidth(split);
+        FormClosed += (_, _) =>
+        {
+            _portrait.Image?.Dispose();
+            _portraitToolTip.Dispose();
+        };
+        _status.Text = $"Loaded {_archive.Players.Count} players ({_archive.Players.Count(player => player.IsClone)} clones) and {_portraits.PortraitCount} portraits.";
+    }
+
+    private Control BuildIdentityArea()
+    {
+        TableLayoutPanel area = new()
+        {
+            Dock = DockStyle.Top,
+            Height = 170,
+            ColumnCount = 2,
+            RowCount = 1,
+            Padding = new Padding(4)
+        };
+        area.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        area.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 170F));
+        area.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+
+        FlowLayoutPanel identity = BuildIdentityPanel();
+        TableLayoutPanel portraitPanel = new()
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 2,
+            Margin = new Padding(8, 0, 0, 0)
+        };
+        portraitPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        portraitPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 20F));
+        portraitPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+        portraitPanel.Controls.Add(new Label { Text = "Player image", Dock = DockStyle.Fill }, 0, 0);
+        Panel imageHost = new() { Dock = DockStyle.Fill };
+        imageHost.Controls.Add(_portrait);
+        imageHost.Controls.Add(_portraitMessage);
+        portraitPanel.Controls.Add(imageHost, 0, 1);
+        area.Controls.Add(identity, 0, 0);
+        area.Controls.Add(portraitPanel, 1, 0);
+        return area;
     }
 
     private FlowLayoutPanel BuildIdentityPanel()
     {
         FlowLayoutPanel panel = new()
         {
-            Dock = DockStyle.Top,
+            Dock = DockStyle.Fill,
             Height = 142,
             Padding = new Padding(4),
             WrapContents = true,
@@ -191,6 +248,21 @@ public sealed class PlayerEditorForm : Form
             Labeled("Archive entry", _source, 300)
         });
         return panel;
+    }
+
+    private void SetInitialPlayerListWidth(SplitContainer split)
+    {
+        int widestItem = _playerList.Items.Cast<object>()
+            .Select(item => TextRenderer.MeasureText(item.ToString() ?? string.Empty, _playerList.Font).Width)
+            .DefaultIfEmpty(200)
+            .Max();
+        int desiredWidth = Math.Clamp(widestItem + SystemInformation.VerticalScrollBarWidth + 30, 240, 420);
+        int maximumWidth = Math.Max(240, split.ClientSize.Width - 560 - split.SplitterWidth);
+        int initialWidth = Math.Min(desiredWidth, maximumWidth);
+
+        split.SplitterDistance = initialWidth;
+        split.Panel1MinSize = Math.Min(220, initialWidth);
+        split.Panel2MinSize = Math.Min(520, split.ClientSize.Width - initialWidth - split.SplitterWidth);
     }
 
     private void HookIdentityEvents()
@@ -243,12 +315,42 @@ public sealed class PlayerEditorForm : Form
         SelectChoice(_batHand, _current.BaseValues[29]);
         SelectChoice(_throwHand, _current.BaseValues[30]);
         _source.Text = _current.SourcePath;
+        LoadPlayerPortrait();
         LoadGridValues(_coreGrid);
         LoadGridValues(_pitchGrid);
         LoadGridValues(_cloneGrid);
         _clonePage.Enabled = _current.IsClone;
         _loading = false;
         UpdateSummaryAndStatus();
+    }
+
+    private void LoadPlayerPortrait()
+    {
+        Image? oldImage = _portrait.Image;
+        _portrait.Image = null;
+        oldImage?.Dispose();
+        _portraitMessage.Visible = true;
+        _portraitMessage.Text = _current?.IsClone == true
+            ? "No stored portrait\nfor clone players"
+            : "No portrait found";
+        _portraitMessage.BringToFront();
+        _portraitToolTip.SetToolTip(_portrait, string.Empty);
+        if (_current == null) return;
+
+        PlayerPortrait? portrait = _portraits.GetPortrait(_current);
+        if (portrait == null) return;
+        try
+        {
+            using MemoryStream stream = new(portrait.Data, writable: false);
+            using Image source = Image.FromStream(stream);
+            _portrait.Image = new Bitmap(source);
+            _portraitMessage.Visible = false;
+            _portraitToolTip.SetToolTip(_portrait, portrait.SourcePath);
+        }
+        catch (ArgumentException)
+        {
+            _portraitMessage.Text = "Portrait could not\nbe loaded";
+        }
     }
 
     private static decimal Clamp(short value, decimal minimum, decimal maximum) =>

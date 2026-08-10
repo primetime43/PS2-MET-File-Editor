@@ -18,7 +18,7 @@ To access the .MET files, you need to extract the game files from the ISO using 
 
 ## Modding and unlock editing
 
-- **Player Editor...** on the **Game Tools** tab edits all 230 retail and clone `*_stats.dat` records, including names,
+- **Player Editor...** on the **Game Tools** tab shows the stored player polaroids and edits all 230 retail and clone `*_stats.dat` records, including names,
   batting/running/fielding components, all 12 pitch ratings, identity data, and clone appearance slots.
   The reversed layout and executable addresses are in [`docs/PLAYER_STATS.md`](docs/PLAYER_STATS.md).
 - **Stadium Editor...** edits lighting, cameras, collision tags, and ambient models, particles,
