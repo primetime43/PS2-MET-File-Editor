@@ -1,6 +1,6 @@
 The tool can open, view, modify, import, and export files within the .MET files of Backyard Baseball 2004 for the PlayStation 2.
 
-v0.2 (hex view)
+v0.3 (editable hex and unlock editor)
 <img width="1920" height="1032" alt="image" src="https://github.com/user-attachments/assets/4ebd29d0-fe77-4be8-ac36-88f9123f96cc" />
 
 # Features
@@ -11,6 +11,16 @@ v0.2 (hex view)
 - Save Changes: Save modifications to the .MET file, ensuring your changes are applied.
 
 To access the .MET files, you need to extract the game files from the ISO using WinRAR or 7-Zip.
+
+## Modding and unlock editing
+
+- **View > Hex Editor** edits any selected archive payload as byte pairs and validates the input before saving.
+- **Import File** preserves replacement files byte-for-byte, including binary data and trailing zeros.
+- **Edit > Unlock Content (Settings Save)...** edits named players, fields, and the Darts minigame in an exported PS2 memory-card `Settings` file.
+- Both MET resizing and Settings-save edits create timestamped backups.
+
+Persistent unlocks are not stored in `DATA.MET`. See [Backyard Baseball unlock/save format](docs/UNLOCKS.md)
+for the reversed bit map, CRC details, safe memory-card workflow, and useful game-tuning files.
 
 ## Workflow: Extracting, Modifying, and Rebuilding the ISO
 

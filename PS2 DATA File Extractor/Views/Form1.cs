@@ -12,6 +12,7 @@ namespace PS2_DATA_File_Extractor
         private bool _hasUnsavedChanges = false;
         private FileEntry _selectedEntry;
         private bool _isHexViewMode = false;
+        private bool _isLoadingEditorContent;
         private byte[] _currentFileData;
         private byte[] _leadingUnprintableBytes = Array.Empty<byte>();
 
@@ -26,6 +27,11 @@ namespace PS2_DATA_File_Extractor
             this.FormClosing += Form1_FormClosing;
 
             textEditorControl1.SetHighlighting("XML");
+
+            ToolStripMenuItem unlockContentMenuItem = new ToolStripMenuItem("Unlock Content (Settings Save)...");
+            unlockContentMenuItem.Click += unlockContentMenuItem_Click;
+            editToolStripMenuItem.DropDownItems.Add(new ToolStripSeparator());
+            editToolStripMenuItem.DropDownItems.Add(unlockContentMenuItem);
         }
 
         /// <summary>
@@ -34,7 +40,7 @@ namespace PS2_DATA_File_Extractor
         private void UpdateUIState()
         {
             // Update window title
-            string baseTitle = "PS2 MET File Editor v0.2";
+            string baseTitle = "PS2 MET File Editor v0.3";
             if (!string.IsNullOrEmpty(_dataMetPath))
             {
                 string fileName = Path.GetFileName(_dataMetPath);
@@ -180,9 +186,29 @@ namespace PS2_DATA_File_Extractor
 
         private void textEditorControl1_TextChanged(object sender, EventArgs e)
         {
-            if (_selectedEntry != null)
+            if (_selectedEntry != null && !_isLoadingEditorContent)
             {
-                int selectedEntryCurrentSize = Encoding.UTF8.GetByteCount(textEditorControl1.Text);
+                int selectedEntryCurrentSize;
+                if (_isHexViewMode)
+                {
+                    if (!HexDataCodec.TryParse(textEditorControl1.Text, out byte[] data, out string error))
+                    {
+                        currentFileSizeToolStripMenuItem.ForeColor = Color.Red;
+                        currentFileSizeToolStripMenuItem.Text = $"Invalid hex: {error}";
+                        _hasUnsavedChanges = true;
+                        UpdateUIState();
+                        return;
+                    }
+
+                    selectedEntryCurrentSize = data.Length;
+                }
+                else
+                {
+                    selectedEntryCurrentSize = _leadingUnprintableBytes.Length +
+                        Encoding.UTF8.GetByteCount(textEditorControl1.Text);
+                }
+
+                _selectedEntry.CurrentSize = selectedEntryCurrentSize;
                 currentFileSizeToolStripMenuItem.ForeColor = selectedEntryCurrentSize > _selectedEntry.OriginalSize ? Color.Red : Color.Black;
                 currentFileSizeToolStripMenuItem.Text = $"Current Size: 0x{selectedEntryCurrentSize:X} (hex)";
 
@@ -235,6 +261,19 @@ namespace PS2_DATA_File_Extractor
         }
 
         private void LoadData(FileEntry entry)
+        {
+            _isLoadingEditorContent = true;
+            try
+            {
+                LoadDataCore(entry);
+            }
+            finally
+            {
+                _isLoadingEditorContent = false;
+            }
+        }
+
+        private void LoadDataCore(FileEntry entry)
         {
             using (FileStream fs = new FileStream(_dataMetPath, FileMode.Open, FileAccess.Read))
             using (BinaryReader reader = new BinaryReader(fs))
@@ -347,48 +386,16 @@ namespace PS2_DATA_File_Extractor
         /// </summary>
         private void ShowHexView(byte[] data, FileEntry entry)
         {
-            // Clear image if present
             if (pictureBox1.Image != null)
             {
                 pictureBox1.Image.Dispose();
                 pictureBox1.Image = null;
             }
 
-            // Use read-only mode instead of disabling to allow scrolling
-            textEditorControl1.IsReadOnly = true;
-
-            // Read the header data from the MET file
-            byte[] headerData = ReadHeaderData(entry);
-
-            // Build complete hex view with header and data
-            StringBuilder fullHexView = new StringBuilder();
-
-            // Add file information
-            fullHexView.AppendLine($"File: {Path.GetFileName(entry.Path)}");
-            fullHexView.AppendLine($"Full Path: {entry.Path}");
-            fullHexView.AppendLine();
-
-            // Add header section
-            fullHexView.AppendLine("═══════════════════════════════════════════════════════════════════════════");
-            fullHexView.AppendLine("                           FILE ENTRY HEADER");
-            fullHexView.AppendLine($"  Location: 0x{entry.HeaderStart:X} - 0x{entry.HeaderEnd:X}");
-            fullHexView.AppendLine($"  Size: {headerData.Length} bytes (0x{headerData.Length:X})");
-            fullHexView.AppendLine("═══════════════════════════════════════════════════════════════════════════");
-            fullHexView.AppendLine();
-            fullHexView.Append(FormatAsHexSection(headerData, (int)entry.HeaderStart));
-
-            // Add separator
-            fullHexView.AppendLine();
-            fullHexView.AppendLine("═══════════════════════════════════════════════════════════════════════════");
-            fullHexView.AppendLine("                              FILE DATA");
-            fullHexView.AppendLine($"  Location: 0x{entry.Offset:X} - 0x{(entry.Offset + data.Length):X}");
-            fullHexView.AppendLine($"  Size: {data.Length} bytes (0x{data.Length:X})");
-            fullHexView.AppendLine("═══════════════════════════════════════════════════════════════════════════");
-            fullHexView.AppendLine();
-            fullHexView.Append(FormatAsHexSection(data, entry.Offset));
-
-            textEditorControl1.Text = fullHexView.ToString();
+            textEditorControl1.IsReadOnly = false;
+            textEditorControl1.Text = HexDataCodec.Format(data);
             _selectedEntry.CurrentSize = data.Length;
+            SetStatusMessage("Hex editor shows payload bytes only. Enter byte pairs separated by spaces or lines.");
         }
 
         /// <summary>
@@ -461,6 +468,17 @@ namespace PS2_DATA_File_Extractor
         /// </summary>
         private void ToggleHexView()
         {
+            if (_hasUnsavedChanges)
+            {
+                hexViewToolStripMenuItem.Checked = _isHexViewMode;
+                MessageBox.Show(
+                    "Save or discard the current changes before switching editor modes.",
+                    "Unsaved Changes",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                return;
+            }
+
             _isHexViewMode = !_isHexViewMode;
 
             // Update menu item text
@@ -754,17 +772,42 @@ namespace PS2_DATA_File_Extractor
         {
             if (_selectedEntry != null)
             {
-                string content = textEditorControl1.Text;
-                byte[] contentBytes = Encoding.UTF8.GetBytes(content);
-
-                // Prepend any leading unprintable bytes that were stripped during load
-                if (_leadingUnprintableBytes.Length > 0)
+                byte[] contentBytes;
+                if (_isHexViewMode)
                 {
-                    byte[] fullContent = new byte[_leadingUnprintableBytes.Length + contentBytes.Length];
-                    Array.Copy(_leadingUnprintableBytes, 0, fullContent, 0, _leadingUnprintableBytes.Length);
-                    Array.Copy(contentBytes, 0, fullContent, _leadingUnprintableBytes.Length, contentBytes.Length);
-                    contentBytes = fullContent;
+                    if (!HexDataCodec.TryParse(textEditorControl1.Text, out contentBytes, out string error))
+                    {
+                        MessageBox.Show(
+                            error,
+                            "Invalid Hex Data",
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Error);
+                        return;
+                    }
                 }
+                else
+                {
+                    if (textEditorControl1.IsReadOnly)
+                    {
+                        MessageBox.Show(
+                            "This binary preview cannot be saved as text. Use Hex Editor or Import File.",
+                            "Binary File",
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Information);
+                        return;
+                    }
+
+                    contentBytes = Encoding.UTF8.GetBytes(textEditorControl1.Text);
+                    if (_leadingUnprintableBytes.Length > 0)
+                    {
+                        byte[] fullContent = new byte[_leadingUnprintableBytes.Length + contentBytes.Length];
+                        Array.Copy(_leadingUnprintableBytes, 0, fullContent, 0, _leadingUnprintableBytes.Length);
+                        Array.Copy(contentBytes, 0, fullContent, _leadingUnprintableBytes.Length, contentBytes.Length);
+                        contentBytes = fullContent;
+                    }
+                }
+
+                int originalSize = _selectedEntry.OriginalSize;
 
                 // Check if resize is needed
                 bool requiresResize = contentBytes.Length > _selectedEntry.OriginalSize;
@@ -798,7 +841,7 @@ namespace PS2_DATA_File_Extractor
                         MessageBox.Show($"✓ Changes written to {fileName}\n\n" +
                                        $"File: {listViewItemName}\n" +
                                        $"Action: MET file resized and rebuilt\n" +
-                                       $"New size: {contentBytes.Length} bytes (was {_selectedEntry.OriginalSize} bytes)",
+                                       $"New size: {contentBytes.Length} bytes (was {originalSize} bytes)",
                             "Successfully Written to MET File", MessageBoxButtons.OK, MessageBoxIcon.Information);
 
                         // Reload the entire file structure after resize
@@ -832,6 +875,7 @@ namespace PS2_DATA_File_Extractor
                             "Successfully Written to MET File", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     }
 
+                    LoadData(_selectedEntry);
                     _hasUnsavedChanges = false;
                     UpdateUIState();
                     SetStatusMessage($"Changes saved to {fileName}");
@@ -869,14 +913,6 @@ namespace PS2_DATA_File_Extractor
                     string filePath = openFileDialog.FileName;
                     byte[] data = File.ReadAllBytes(filePath);
 
-                    // Check if this is a binary file (image) or text file
-                    bool isBinaryFile = extension == ".png" || extension == ".bmp" || extension == ".ico" || extension == ".mnd";
-
-                    // Only remove padding for text files
-                    if (!isBinaryFile)
-                    {
-                        data = RemoveZeroPadding(data);
-                    }
 
                     // Check if the imported file requires resizing the MET file
                     bool requiresResize = data.Length > _selectedEntry.OriginalSize;
@@ -905,17 +941,8 @@ namespace PS2_DATA_File_Extractor
 
                     if (result == DialogResult.Yes)
                     {
-                        // Use the resize-capable save method
-                        bool success;
-                        if (isBinaryFile)
-                        {
-                            success = FileSaver.SaveFileEntryChangesWithResize(_dataMetPath, _selectedEntry, data);
-                        }
-                        else
-                        {
-                            byte[] textBytes = Encoding.UTF8.GetBytes(Encoding.UTF8.GetString(data));
-                            success = FileSaver.SaveFileEntryChangesWithResize(_dataMetPath, _selectedEntry, textBytes);
-                        }
+                        // Import is always byte-for-byte, regardless of extension.
+                        bool success = FileSaver.SaveFileEntryChangesWithResize(_dataMetPath, _selectedEntry, data);
 
                         if (success)
                         {
@@ -981,15 +1008,6 @@ namespace PS2_DATA_File_Extractor
 
                 byte[] data = File.ReadAllBytes(filePath);
 
-                // Check if this is a binary file (image) or text file
-                string extension = Path.GetExtension(entry.Path).ToLower();
-                bool isBinaryFile = extension == ".png" || extension == ".bmp" || extension == ".ico" || extension == ".mnd";
-
-                // Only remove padding for text files
-                if (!isBinaryFile)
-                {
-                    data = RemoveZeroPadding(data);
-                }
 
                 // Check if the imported file requires resizing the MET file
                 bool requiresResize = data.Length > entry.OriginalSize;
@@ -1018,19 +1036,8 @@ namespace PS2_DATA_File_Extractor
 
                 if (result == DialogResult.Yes)
                 {
-                    // Use the resize-capable save method for all imports
-                    bool success;
-                    if (isBinaryFile)
-                    {
-                        // Save binary files directly without string conversion
-                        success = FileSaver.SaveFileEntryChangesWithResize(_dataMetPath, entry, data);
-                    }
-                    else
-                    {
-                        // Convert text to bytes for the resize method
-                        byte[] textBytes = Encoding.UTF8.GetBytes(Encoding.UTF8.GetString(data));
-                        success = FileSaver.SaveFileEntryChangesWithResize(_dataMetPath, entry, textBytes);
-                    }
+                    // Import is always byte-for-byte, regardless of extension.
+                    bool success = FileSaver.SaveFileEntryChangesWithResize(_dataMetPath, entry, data);
 
                     if (success && requiresResize)
                     {
@@ -1150,6 +1157,37 @@ namespace PS2_DATA_File_Extractor
             }
             node.Collapse();
         }
+        private void unlockContentMenuItem_Click(object? sender, EventArgs e)
+        {
+            using OpenFileDialog dialog = new OpenFileDialog
+            {
+                Title = "Open exported Backyard Baseball Settings save",
+                FileName = "Settings",
+                Filter = "Backyard Baseball Settings (Settings)|Settings|All files (*.*)|*.*"
+            };
+
+            if (dialog.ShowDialog(this) != DialogResult.OK)
+            {
+                return;
+            }
+
+            try
+            {
+                GameSettingsFile settings = GameSettingsFile.Load(dialog.FileName);
+                using UnlockEditorForm editor = new UnlockEditorForm(settings, dialog.FileName);
+                editor.ShowDialog(this);
+            }
+            catch (Exception exception)
+            {
+                MessageBox.Show(
+                    this,
+                    $"This is not a valid Backyard Baseball Settings file.\n\n{exception.Message}",
+                    "Unable to Open Settings",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+            }
+        }
+
 
         /// <summary>
         /// Handles the context menu opening event to show/hide menu items based on selection.
@@ -1163,10 +1201,7 @@ namespace PS2_DATA_File_Extractor
                 importFileContextMenuItem.Visible = true;
                 exportFileContextMenuItem.Visible = true;
 
-                // Only show "Save Changes" if there are unsaved changes and it's a text file
-                string extension = Path.GetExtension(_selectedEntry?.Path ?? "").ToLower();
-                bool isTextFile = extension != ".png" && extension != ".bmp" && extension != ".ico" && extension != ".mnd";
-                saveChangesContextMenuItem.Visible = isTextFile && _hasUnsavedChanges;
+                saveChangesContextMenuItem.Visible = !textEditorControl1.IsReadOnly && _hasUnsavedChanges;
             }
             else
             {

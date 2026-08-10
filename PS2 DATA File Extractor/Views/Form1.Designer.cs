@@ -260,7 +260,7 @@ namespace PS2_DATA_File_Extractor
             hexViewToolStripMenuItem.CheckOnClick = true;
             hexViewToolStripMenuItem.Name = "hexViewToolStripMenuItem";
             hexViewToolStripMenuItem.Size = new Size(180, 24);
-            hexViewToolStripMenuItem.Text = "Hex View";
+            hexViewToolStripMenuItem.Text = "Hex Editor";
             hexViewToolStripMenuItem.Click += hexViewToolStripMenuItem_Click;
             //
             // fileStructureToolStripMenuItem
@@ -312,7 +312,7 @@ namespace PS2_DATA_File_Extractor
             Controls.Add(menuStrip1);
             MainMenuStrip = menuStrip1;
             Name = "Form1";
-            Text = "PS2 MET File Editor v0.2";
+            Text = "PS2 MET File Editor v0.3";
             ((System.ComponentModel.ISupportInitialize)pictureBox1).EndInit();
             splitContainer1.Panel1.ResumeLayout(false);
             splitContainer1.Panel2.ResumeLayout(false);

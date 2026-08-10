@@ -6,6 +6,7 @@
     <RootNamespace>PS2_DATA_File_Extractor</RootNamespace>
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
+    <Version>0.3.0</Version>
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
 
