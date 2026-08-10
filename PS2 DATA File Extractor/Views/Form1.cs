@@ -28,6 +28,12 @@ namespace PS2_DATA_File_Extractor
 
             textEditorControl1.SetHighlighting("XML");
 
+            ToolStripMenuItem rebuildIsoMenuItem = new ToolStripMenuItem("Rebuild Game ISO...");
+            rebuildIsoMenuItem.Click += rebuildIsoMenuItem_Click;
+            int exitIndex = fileToolStripMenuItem.DropDownItems.IndexOf(exitToolStripMenuItem);
+            fileToolStripMenuItem.DropDownItems.Insert(exitIndex, new ToolStripSeparator());
+            fileToolStripMenuItem.DropDownItems.Insert(exitIndex, rebuildIsoMenuItem);
+
             ToolStripMenuItem patchGameMenuItem = new ToolStripMenuItem("Patch Game Executable Unlocks...");
             patchGameMenuItem.Click += patchGameMenuItem_Click;
             ToolStripMenuItem editSaveMenuItem = new ToolStripMenuItem("Edit Exported Save Unlocks (Optional)...");
@@ -743,6 +749,15 @@ namespace PS2_DATA_File_Extractor
             {
                 MessageBox.Show($"An error occurred while trying to display the image: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
+        }
+
+        private void rebuildIsoMenuItem_Click(object? sender, EventArgs e)
+        {
+            string? initialDirectory = string.IsNullOrWhiteSpace(_dataMetPath)
+                ? null
+                : Path.GetDirectoryName(_dataMetPath);
+            using IsoRebuildForm dialog = new IsoRebuildForm(initialDirectory);
+            dialog.ShowDialog(this);
         }
 
         private void openmetFileToolStripMenuItem_Click(object sender, EventArgs e)

@@ -38,19 +38,17 @@ patch makes selected content available to every save in the rebuilt ISO. See
 5. Select individual content or **Unlock All**, then apply the patch.
 6. Keep the patched executable beside the other extracted game files.
 
-### Step 3: Rebuild the ISO with ImgBurn
+### Step 3: Rebuild the ISO in the editor
 
-**IMPORTANT: You must use the correct file system settings or the ISO will not work!**
+1. Install ImgBurn if it is not already installed; the editor detects the standard install location.
+2. Choose **File > Rebuild Game ISO...**.
+3. Select the extracted game folder and an output path outside that folder.
+4. Confirm the volume label and click **Build ISO**.
+5. The editor starts ImgBurn with `ISO9660 + UDF` and UDF revision `1.02`, then validates the generated image.
 
-#### ImgBurn Settings:
-1. Open ImgBurn and switch to **"Create image file from files/folders"** mode
-2. Click the folder icon and select your extracted game folder
-3. **Critical Settings:**
-   - **File System:** `ISO9660 + UDF (1.02)`
-   - **Volume Label:** Keep the original
-   - **UDF Revision:** 1.02
-4. Choose where to save the new ISO
-5. Click the **Build** button
+The source folder is checked for `SYSTEM.CNF`, `DATA.MET`, and the executable referenced by
+`SYSTEM.CNF`. Existing output images are moved to timestamped backups. See
+[ISO rebuilding](docs/ISO_REBUILD.md) for validation, recovery, and backend details.
 
 # .MET File Structure
 The .MET file in Backyard Baseball 2004 (PS2) contains various data and resources used by the game, such as textures, models, and other game assets. Understanding the structure of the .MET file is crucial for reading and writing its contents. Here's an overview of the .MET file structure:

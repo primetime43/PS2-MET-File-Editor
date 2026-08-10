@@ -12,7 +12,7 @@ For a modded game build, patch the executable that will be placed in the rebuilt
 2. Choose **Edit > Patch Game Executable Unlocks...**.
 3. Select the extracted USA executable `SLUS_208.65`.
 4. Select individual content or **Unlock All**, then apply.
-5. Rebuild the ISO with the patched executable.
+5. Choose **File > Rebuild Game ISO...** and build from the extracted game folder.
 
 This does not depend on a memory card. Selected content is forced unlocked for existing saves,
 new saves, and no-save sessions. The editor patches the extracted executable rather than writing
