@@ -526,7 +526,7 @@ namespace PS2_DATA_File_Extractor
             info.AppendLine();
             info.AppendLine($"MET Header (8 bytes):");
             info.AppendLine($"  Bytes 0-3 (Data Section Offset): 0x{_metFileStructure.DataSectionOffset:X} ({_metFileStructure.DataSectionOffset:N0} bytes)");
-            info.AppendLine($"  Bytes 4-7 (Unknown Value):       0x{_metFileStructure.UnknownHeaderValue:X}");
+            info.AppendLine($"  Bytes 4-7 (Data Section Size):   0x{_metFileStructure.DataSectionSize:X} ({_metFileStructure.DataSectionSize:N0} bytes)");
             info.AppendLine();
             info.AppendLine($"File Entry Headers Section:");
             info.AppendLine($"  Start: 0x00000008 (byte 8)");
@@ -536,7 +536,7 @@ namespace PS2_DATA_File_Extractor
             info.AppendLine($"Data Section:");
             info.AppendLine($"  Start: 0x{_metFileStructure.DataSectionOffset:X}");
             info.AppendLine($"  End:   0x{_metFileStructure.TotalFileSize:X}");
-            info.AppendLine($"  Size:  {(_metFileStructure.TotalFileSize - _metFileStructure.DataSectionOffset):N0} bytes");
+            info.AppendLine($"  Size:  {_metFileStructure.DataSectionSize:N0} bytes");
 
             // Validation
             info.AppendLine();

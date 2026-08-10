@@ -5,6 +5,8 @@ VisualStudioVersion = 17.9.34902.65
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PS2 DATA File Extractor", "PS2 DATA File Extractor\PS2 DATA File Extractor.csproj", "{C04B95DD-6A77-404B-B773-8600C6A24E2E}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PS2 DATA File Extractor.Tests", "PS2 DATA File Extractor.Tests\PS2 DATA File Extractor.Tests.csproj", "{98538E18-32E8-49E0-8D35-215FD0D51342}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -15,6 +17,10 @@ Global
 		{C04B95DD-6A77-404B-B773-8600C6A24E2E}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{C04B95DD-6A77-404B-B773-8600C6A24E2E}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{C04B95DD-6A77-404B-B773-8600C6A24E2E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{98538E18-32E8-49E0-8D35-215FD0D51342}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{98538E18-32E8-49E0-8D35-215FD0D51342}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{98538E18-32E8-49E0-8D35-215FD0D51342}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{98538E18-32E8-49E0-8D35-215FD0D51342}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

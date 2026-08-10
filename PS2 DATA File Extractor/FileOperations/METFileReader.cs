@@ -17,13 +17,22 @@ namespace PS2_DATA_File_Extractor.FileOperations
             using (BinaryReader reader = new BinaryReader(fs))
             {
                 structure.TotalFileSize = fs.Length;
+                if (structure.TotalFileSize < 8)
+                {
+                    throw new InvalidDataException("The MET file is too small to contain its 8-byte header.");
+                }
 
                 // Read the 8-byte MET header
                 // Bytes 0-3: Offset where data section begins (tells us where headers end)
                 structure.DataSectionOffset = ReadInt32LE(reader);
 
-                // Bytes 4-7: Unknown value (possibly total data size or metadata)
-                structure.UnknownHeaderValue = ReadInt32LE(reader);
+                // Bytes 4-7: Total number of bytes in the data section
+                structure.DataSectionSize = ReadInt32LE(reader);
+
+                if (structure.DataSectionOffset < 8 || structure.DataSectionOffset > structure.TotalFileSize)
+                {
+                    throw new InvalidDataException($"Invalid MET data section offset: 0x{structure.DataSectionOffset:X}.");
+                }
 
                 // File entries start at byte 8 and continue until dataSectionOffset
                 // This is structure-based reading instead of pattern matching
@@ -43,7 +52,7 @@ namespace PS2_DATA_File_Extractor.FileOperations
                         int strLength = ReadInt32LE(reader);
 
                         // Validate string length
-                        if (strLength <= 0 || strLength > 512) // Sanity check for path length
+                        if (strLength <= 0 || strLength > byte.MaxValue) // The game reads only the low byte.
                         {
                             break;
                         }
@@ -87,7 +96,7 @@ namespace PS2_DATA_File_Extractor.FileOperations
                     {
                         break;
                     }
-                    catch (IOException ex)
+                    catch (IOException)
                     {
                         break;
                     }
@@ -108,6 +117,11 @@ namespace PS2_DATA_File_Extractor.FileOperations
         private static int ReadInt32LE(BinaryReader reader)
         {
             byte[] bytes = reader.ReadBytes(4);
+            if (bytes.Length != 4)
+            {
+                throw new EndOfStreamException("Unexpected end of MET file while reading a 32-bit value.");
+            }
+
             if (BitConverter.IsLittleEndian)
                 return BitConverter.ToInt32(bytes, 0);
             else

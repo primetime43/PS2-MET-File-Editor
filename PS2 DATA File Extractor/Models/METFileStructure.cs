@@ -1,3 +1,4 @@
+using PS2_DATA_File_Extractor.FileOperations;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -16,10 +17,10 @@ namespace PS2_DATA_File_Extractor.Models
         public int DataSectionOffset { get; set; }
 
         /// <summary>
-        /// Unknown value from bytes 4-7 of MET file.
-        /// Possibly total data size or metadata - preserved for future use.
+        /// Size of the data section from bytes 4-7 of the MET file.
+        /// This is always equal to TotalFileSize - DataSectionOffset.
         /// </summary>
-        public int UnknownHeaderValue { get; set; }
+        public int DataSectionSize { get; set; }
 
         /// <summary>
         /// Total size of the MET file in bytes.
@@ -140,6 +141,12 @@ namespace PS2_DATA_File_Extractor.Models
                 errors.Add("Data section offset is less than 8 (invalid MET header)");
             }
 
+            long calculatedDataSectionSize = TotalFileSize - DataSectionOffset;
+            if (DataSectionSize != calculatedDataSectionSize)
+            {
+                errors.Add($"Header data section size is {DataSectionSize:N0} bytes, but the file contains {calculatedDataSectionSize:N0} bytes");
+            }
+
             // Check that all file entries are within bounds
             var allEntries = AllEntries;
             for (int i = 0; i < allEntries.Count; i++)
@@ -150,6 +157,11 @@ namespace PS2_DATA_File_Extractor.Models
                 if (entry.Offset < DataSectionOffset || entry.Offset >= TotalFileSize)
                 {
                     errors.Add($"Entry '{entry.Path}' has invalid offset: 0x{entry.Offset:X}");
+                }
+
+                if (entry.Offset % METFileRebuilder.SectorSize != 0)
+                {
+                    errors.Add($"Entry '{entry.Path}' is not aligned to a {METFileRebuilder.SectorSize}-byte sector: 0x{entry.Offset:X}");
                 }
 
                 // Validate size is reasonable
@@ -185,7 +197,7 @@ namespace PS2_DATA_File_Extractor.Models
             stats.AppendLine($"Total Files: {FileCount}");
             stats.AppendLine($"Header Section: {HeaderSectionSize:N0} bytes");
             stats.AppendLine($"Data Section Offset: 0x{DataSectionOffset:X}");
-            stats.AppendLine($"Unknown Header Value: 0x{UnknownHeaderValue:X}");
+            stats.AppendLine($"Data Section Size: {DataSectionSize:N0} bytes (0x{DataSectionSize:X})");
             stats.AppendLine();
             stats.AppendLine("Files by Extension:");
 
