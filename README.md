@@ -101,7 +101,7 @@ OriginalSize: 3367 (0xD27)
 Data spans from 0x2C37C000 to 0x2C37CD27
 ```
 
-![image](https://github.com/primetime43/PS2-MET-File-Editor/assets/12754111/5ada88d4-6ab9-448b-ad12-665afef58d7f)
+![image](https://github.com/primetime43/Backyard-Baseball-PS2-Editor/assets/12754111/5ada88d4-6ab9-448b-ad12-665afef58d7f)
 
 ![image](https://github.com/primetime43/PS2-DATA-File-Extractor/assets/12754111/c5129d59-4717-4597-8813-c75f153bbe80)
 
@@ -115,4 +115,4 @@ Data spans from 0x2C37C000 to 0x2C37CD27
 
 ![image](https://github.com/primetime43/PS2-DATA-File-Extractor/assets/12754111/ef1bb3f2-fe3e-4b43-9600-8c4270e83d2a)
 
-![image](https://github.com/primetime43/PS2-MET-File-Editor/assets/12754111/00792048-b0a0-462f-972e-70bb9771dd8d)
+![image](https://github.com/primetime43/Backyard-Baseball-PS2-Editor/assets/12754111/00792048-b0a0-462f-972e-70bb9771dd8d)
