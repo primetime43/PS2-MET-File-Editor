@@ -64,13 +64,26 @@ signed 16-bit range for experimentation. Extreme or negative values can produce 
 the timestamped archive backup is the recovery point.
 ## Player portraits
 
-Finished roster portraits are separate PNG entries under `data/polaroids/<player-code>.png` in
-`DATA.MET`; they are not stored in `*_stats.dat`. **Export...** writes the selected PNG without
-alteration. **Replace...** accepts PNG, BMP, JPG, or JPEG files, converts the image to PNG, and
-fits it onto the existing portrait's original pixel dimensions without stretching, and writes it to the
-archive entry after creating a timestamped `DATA.MET` backup. Images must be between 1 and 4096
-pixels in each dimension. If the replacement is larger, the shared MET
-rebuilder preserves 2048-byte sector alignment and updates later offsets.
+Finished roster portraits have editable source PNG entries under `data/polaroids/<player-code>.png`
+in `DATA.MET`; they are not stored in `*_stats.dat`. The game also has a compiled copy: 61 logical
+portraits are packed into 73 shared 256-by-256 pages named `data/menus/polaroids_0.png` through
+`polaroids_72.png`. `data/menus/polaroids.imp` maps each logical portrait name and size to two or
+four rectangular regions on those pages. Overflow strips and corners from different portraits can
+share the same page, which is why the numbered PNGs can look like unrelated image fragments.
+
+**Export...** writes the clean source PNG without alteration. **Replace...** accepts PNG, BMP, JPG,
+or JPEG files, converts and fits the image to the source portrait's original dimensions without
+stretching, then updates both the source PNG and every region referenced by `polaroids.imp` in one
+archive transaction. Existing packed alpha is retained so the polaroid outline remains transparent,
+and pixels belonging to neighboring portraits on shared pages are preserved. A single timestamped
+`DATA.MET` backup is created first. Images must be between 1 and 4096 pixels in each dimension.
+If any replacement PNG changes size, the shared MET rebuilder preserves 2048-byte sector
+alignment and updates later offsets.
+
+The separate `data/playercard/<player>/` folders are the models, animations, and textures used to
+render the interactive 3D player-card view. `viewcard.imj` and `pickplayers.imj` load their screen UI.
+Those assets are not alternate flat portraits, so they are intentionally not replaced by the polaroid
+button.
 
 The 178 `clone*_stats.dat` records have eight appearance selectors but no matching polaroid entry.
 The game assembles their 3D appearance from shared assets at runtime, so the editor cannot assign

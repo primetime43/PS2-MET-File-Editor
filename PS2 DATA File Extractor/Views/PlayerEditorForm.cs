@@ -207,7 +207,7 @@ public sealed class PlayerEditorForm : Form
             _portrait.Image?.Dispose();
             _portraitToolTip.Dispose();
         };
-        _status.Text = $"Loaded {_archive.Players.Count} players ({_archive.Players.Count(player => player.IsClone)} clones) and {_portraits.PortraitCount} portraits.";
+        _status.Text = $"Loaded {_archive.Players.Count} players ({_archive.Players.Count(player => player.IsClone)} clones) and {_portraits.PortraitCount} portraits ({_portraits.PackedPortraitCount} game-texture mappings).";
     }
 
     private Control BuildIdentityArea()
@@ -236,7 +236,7 @@ public sealed class PlayerEditorForm : Form
         portraitPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 20F));
         portraitPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
         portraitPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 34F));
-        portraitPanel.Controls.Add(new Label { Text = "Player image", Dock = DockStyle.Fill }, 0, 0);
+        portraitPanel.Controls.Add(new Label { Text = "Player polaroid", Dock = DockStyle.Fill }, 0, 0);
         Panel imageHost = new() { Dock = DockStyle.Fill };
         imageHost.Controls.Add(_portrait);
         imageHost.Controls.Add(_portraitMessage);
@@ -380,7 +380,7 @@ public sealed class PlayerEditorForm : Form
             using Image source = Image.FromStream(stream);
             _portrait.Image = new Bitmap(source);
             _portraitMessage.Visible = false;
-            _portraitToolTip.SetToolTip(_portrait, portrait.SourcePath);
+            _portraitToolTip.SetToolTip(_portrait, portrait.SourcePath + (portrait.HasPackedGameTexture ? "\nReplacement also updates the packed textures used in-game." : string.Empty));
         }
         catch (ArgumentException)
         {
@@ -445,6 +445,7 @@ public sealed class PlayerEditorForm : Form
 
         if (MessageBox.Show(this,
                 $"Replace {_currentPortrait.SourcePath} with this image?\n\n" +
+                (_currentPortrait.HasPackedGameTexture ? "The raw portrait and its packed in-game texture regions will both be updated.\n\n" : string.Empty) +
                 "The change is written to DATA.MET immediately and a timestamped backup is created first.",
                 "Replace Player Portrait", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
             return;
@@ -460,7 +461,9 @@ public sealed class PlayerEditorForm : Form
                 ? "\nThe archive was resized with sector alignment preserved."
                 : string.Empty;
             MessageBox.Show(this,
-                $"Replaced {result.SourcePath}.\n\nBackup: {result.BackupPath}{rebuild}",
+                $"Replaced {result.SourcePath}.\n" +
+                (result.PackedTextureCount > 0 ? $"Updated {result.PackedTextureCount} packed in-game texture page{(result.PackedTextureCount == 1 ? string.Empty : "s")}.\n\n" : "\n") +
+                $"Backup: {result.BackupPath}{rebuild}",
                 "Portrait Replaced", MessageBoxButtons.OK, MessageBoxIcon.Information);
             _status.Text = $"Replaced portrait for {_current.DisplayName}.";
         }
