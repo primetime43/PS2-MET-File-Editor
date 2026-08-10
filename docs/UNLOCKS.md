@@ -99,6 +99,13 @@ editable files include:
 - `data/options/menuoptions.ini`: rules, display defaults, contestants, and sound options.
 - field and player text/config files for stats and metadata.
 
+The editor exposes the supported gameplay files through **Edit > Gameplay Tweaks...**. Its tabs
+cover ball properties, batting and power-up bats, per-field physics, simulated-game factors,
+practice/debug switches, and selected game defaults. Values are type-validated before saving;
+comments, formatting, unlisted keys, and missing optional files are preserved. One timestamped
+`DATA.MET` backup is made for each save operation, and values that grow an INI entry use the
+sector-aware MET rebuilder.
+
 Text files can be edited normally. Any entry can be changed in **View > Hex Editor** using
 whitespace-separated byte pairs. Hex mode covers payload bytes only; it never exposes archive
 header bytes. Import File also writes the selected file byte-for-byte, including trailing zeros.

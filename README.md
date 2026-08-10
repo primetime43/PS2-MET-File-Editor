@@ -14,6 +14,8 @@ To access the .MET files, you need to extract the game files from the ISO using 
 
 ## Modding and unlock editing
 
+- **Edit > Gameplay Tweaks...** provides validated tabs for 285 ball, bat/power-up, field physics,
+  simulation, practice/cheat, and game-default values stored in `DATA.MET`.
 - **Edit > Patch Game Executable Unlocks...** forces selected players, fields, Darts, and Aquadome unlocked in the game itself.
 - **View > Hex Editor** edits any selected archive payload as validated byte pairs.
 - **Import File** preserves replacement files byte-for-byte, including binary data and trailing zeros.
@@ -32,11 +34,13 @@ patch makes selected content available to every save in the rebuilt ISO. See
 
 ### Step 2: Modify the game files
 1. Open `DATA.MET` in the MET File Editor and make any archive changes.
-2. Save the MET changes; resizing and backups are handled automatically.
-3. Choose **Edit > Patch Game Executable Unlocks...**.
-4. Select the extracted USA executable `SLUS_208.65`.
-5. Select individual content or **Unlock All**, then apply the patch.
-6. Keep the patched executable beside the other extracted game files.
+2. For structured game tuning, choose **Edit > Gameplay Tweaks...**, edit values in the category
+   tabs, and select **Save to DATA.MET**. Comments and unsupported INI keys are preserved.
+3. Save any other MET changes; resizing and backups are handled automatically.
+4. Choose **Edit > Patch Game Executable Unlocks...**.
+5. Select the extracted USA executable `SLUS_208.65`.
+6. Select individual content or **Unlock All**, then apply the patch.
+7. Keep the patched executable beside the other extracted game files.
 
 ### Step 3: Rebuild the ISO in the editor
 

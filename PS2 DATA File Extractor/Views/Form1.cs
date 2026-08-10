@@ -38,7 +38,10 @@ namespace PS2_DATA_File_Extractor
             patchGameMenuItem.Click += patchGameMenuItem_Click;
             ToolStripMenuItem editSaveMenuItem = new ToolStripMenuItem("Edit Exported Save Unlocks (Optional)...");
             editSaveMenuItem.Click += editSaveMenuItem_Click;
+            ToolStripMenuItem gameplayTweaksMenuItem = new ToolStripMenuItem("Gameplay Tweaks...");
+            gameplayTweaksMenuItem.Click += gameplayTweaksMenuItem_Click;
             editToolStripMenuItem.DropDownItems.Add(new ToolStripSeparator());
+            editToolStripMenuItem.DropDownItems.Add(gameplayTweaksMenuItem);
             editToolStripMenuItem.DropDownItems.Add(patchGameMenuItem);
             editToolStripMenuItem.DropDownItems.Add(editSaveMenuItem);
         }
@@ -1208,6 +1211,54 @@ namespace PS2_DATA_File_Extractor
             }
         }
 
+        private void gameplayTweaksMenuItem_Click(object? sender, EventArgs e)
+        {
+            if (string.IsNullOrWhiteSpace(_dataMetPath) || _metFileStructure == null)
+            {
+                MessageBox.Show(this, "Open DATA.MET before editing gameplay tweaks.",
+                    "No MET File Loaded", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            if (_hasUnsavedChanges)
+            {
+                MessageBox.Show(this,
+                    "Save or discard the currently selected file's changes before opening Gameplay Tweaks.",
+                    "Unsaved File Changes", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            try
+            {
+                GameplayTuningArchive archive = GameplayTuningArchive.Load(_dataMetPath);
+                using GameplayTweaksForm editor = new GameplayTweaksForm(archive, _dataMetPath);
+                if (editor.ShowDialog(this) != DialogResult.OK)
+                {
+                    return;
+                }
+
+                _metFileStructure = METFileReader.ReadMETFile(_dataMetPath);
+                PopulateTreeView();
+                _selectedEntry = null!;
+                _currentFileData = Array.Empty<byte>();
+                _leadingUnprintableBytes = Array.Empty<byte>();
+                textEditorControl1.Text = string.Empty;
+                richTextBox1.Clear();
+                if (pictureBox1.Image != null)
+                {
+                    pictureBox1.Image.Dispose();
+                    pictureBox1.Image = null;
+                }
+                _hasUnsavedChanges = false;
+                UpdateUIState();
+                SetStatusMessage("Gameplay tweaks saved; DATA.MET directory reloaded.");
+            }
+            catch (Exception exception)
+            {
+                MessageBox.Show(this, exception.Message, "Unable to Open Gameplay Tweaks",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
         private void editSaveMenuItem_Click(object? sender, EventArgs e)
         {
             using OpenFileDialog dialog = new OpenFileDialog
