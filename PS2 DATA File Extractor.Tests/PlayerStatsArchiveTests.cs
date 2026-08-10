@@ -9,7 +9,8 @@ public sealed class PlayerStatsArchiveTests : IDisposable
     private const int FirstOffset = 2048;
     private const int CloneOffset = 4096;
     private const int PortraitOffset = 6144;
-    private static readonly byte[] FakePortrait = { 0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4 };
+    private static readonly byte[] FakePortrait = Convert.FromBase64String(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=");
     private readonly string _tempDirectory = Path.Combine(Path.GetTempPath(), $"player-stats-tests-{Guid.NewGuid():N}");
 
     [Fact]
@@ -105,6 +106,25 @@ public sealed class PlayerStatsArchiveTests : IDisposable
         Assert.Equal("data/polaroids/abner.png", portrait.SourcePath);
         Assert.Equal(FakePortrait, portrait.Data);
         Assert.Null(portraits.GetPortrait(players.Players.Single(player => player.IsClone)));
+    }
+
+    [Fact]
+    public void ReplacingPortraitCreatesBackupAndWritesNewPng()
+    {
+        Directory.CreateDirectory(_tempDirectory);
+        string metPath = Path.Combine(_tempDirectory, "DATA.MET");
+        CreateArchive(metPath);
+        PlayerStatsRecord player = PlayerStatsArchive.Load(metPath).Players.Single(item => !item.IsClone);
+        PlayerPortraitArchive portraits = PlayerPortraitArchive.Load(metPath);
+        byte[] replacement = FakePortrait.Concat(new byte[] { 0 }).ToArray();
+
+        PlayerPortraitSaveResult result = portraits.ReplaceWithBackup(player, replacement);
+
+        Assert.NotNull(result.BackupPath);
+        Assert.True(File.Exists(result.BackupPath));
+        Assert.Equal("data/polaroids/abner.png", result.SourcePath);
+        Assert.Equal(replacement, PlayerPortraitArchive.Load(metPath).GetPortrait(player)!.Data);
+        Assert.True(METFileReader.ReadMETFile(metPath).ValidateStructure().IsValid);
     }
 
     [Fact]

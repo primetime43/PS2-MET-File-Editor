@@ -62,3 +62,17 @@ exposed as raw appearance slots until their exact cosmetic enums are confirmed.
 The retail records use 0-100 for ordinary skills. The editor deliberately accepts the entire
 signed 16-bit range for experimentation. Extreme or negative values can produce odd game logic;
 the timestamped archive backup is the recovery point.
+## Player portraits
+
+Finished roster portraits are separate PNG entries under `data/polaroids/<player-code>.png` in
+`DATA.MET`; they are not stored in `*_stats.dat`. **Export...** writes the selected PNG without
+alteration. **Replace...** accepts PNG, BMP, JPG, or JPEG files, converts the image to PNG, and
+fits it onto the existing portrait's original pixel dimensions without stretching, and writes it to the
+archive entry after creating a timestamped `DATA.MET` backup. Images must be between 1 and 4096
+pixels in each dimension. If the replacement is larger, the shared MET
+rebuilder preserves 2048-byte sector alignment and updates later offsets.
+
+The 178 `clone*_stats.dat` records have eight appearance selectors but no matching polaroid entry.
+The game assembles their 3D appearance from shared assets at runtime, so the editor cannot assign
+an in-game clone portrait without adding a new game reference. Barry Bonds and Eric Estrada also
+have no stored polaroid in the retail USA archive.

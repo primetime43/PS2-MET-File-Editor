@@ -1222,12 +1222,15 @@ namespace PS2_DATA_File_Extractor
             {
                 PlayerStatsArchive archive = PlayerStatsArchive.Load(_dataMetPath);
                 using PlayerEditorForm editor = new PlayerEditorForm(archive, _dataMetPath);
-                if (editor.ShowDialog(this) != DialogResult.OK)
+                DialogResult result = editor.ShowDialog(this);
+                if (result == DialogResult.OK)
                 {
-                    return;
+                    ReloadMetAfterStructuredEdit("Player changes saved; DATA.MET directory reloaded.");
                 }
-
-                ReloadMetAfterStructuredEdit("Player changes saved; DATA.MET directory reloaded.");
+                else if (editor.ArchiveWasModified)
+                {
+                    ReloadMetAfterStructuredEdit("Player portrait saved; DATA.MET directory reloaded.");
+                }
             }
             catch (Exception exception)
             {

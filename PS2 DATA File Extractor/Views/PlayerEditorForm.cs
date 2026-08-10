@@ -50,7 +50,8 @@ public sealed class PlayerEditorForm : Form
     };
 
     private readonly PlayerStatsArchive _archive;
-    private readonly PlayerPortraitArchive _portraits;
+    private readonly string _metPath;
+    private PlayerPortraitArchive _portraits;
     private readonly TextBox _search = new() { Dock = DockStyle.Top, PlaceholderText = "Search players..." };
     private readonly ListBox _playerList = new() { Dock = DockStyle.Fill, IntegralHeight = false };
     private readonly PictureBox _portrait = new()
@@ -67,6 +68,14 @@ public sealed class PlayerEditorForm : Form
         TextAlign = ContentAlignment.MiddleCenter
     };
     private readonly ToolTip _portraitToolTip = new();
+    private readonly Button _exportPortraitButton = new()
+    {
+        Text = "Export...", Dock = DockStyle.Fill, Margin = new Padding(2, 3, 2, 3)
+    };
+    private readonly Button _replacePortraitButton = new()
+    {
+        Text = "Replace...", Dock = DockStyle.Fill, Margin = new Padding(2, 3, 2, 3)
+    };
     private readonly TextBox _firstName = new() { Width = 145, MaxLength = PlayerStatsRecord.MaxNameLength };
     private readonly TextBox _nickname = new() { Width = 145, MaxLength = PlayerStatsRecord.MaxNameLength };
     private readonly TextBox _lastName = new() { Width = 145, MaxLength = PlayerStatsRecord.MaxNameLength };
@@ -85,11 +94,15 @@ public sealed class PlayerEditorForm : Form
     private readonly DataGridView _cloneGrid;
     private readonly TabPage _clonePage = new("Clone Appearance");
     private PlayerStatsRecord? _current;
+    private PlayerPortrait? _currentPortrait;
     private bool _loading;
+
+    public bool ArchiveWasModified { get; private set; }
 
     public PlayerEditorForm(PlayerStatsArchive archive, string metPath)
     {
         _archive = archive;
+        _metPath = metPath;
         _portraits = PlayerPortraitArchive.Load(metPath);
         Text = "Player Editor - DATA.MET";
         StartPosition = FormStartPosition.CenterParent;
@@ -185,6 +198,8 @@ public sealed class PlayerEditorForm : Form
         _search.TextChanged += (_, _) => PopulatePlayerList();
         _playerList.SelectedIndexChanged += (_, _) => LoadSelectedPlayer();
         HookIdentityEvents();
+        _exportPortraitButton.Click += ExportPortrait_Click;
+        _replacePortraitButton.Click += ReplacePortrait_Click;
         PopulatePlayerList();
         Shown += (_, _) => SetInitialPlayerListWidth(split);
         FormClosed += (_, _) =>
@@ -200,13 +215,13 @@ public sealed class PlayerEditorForm : Form
         TableLayoutPanel area = new()
         {
             Dock = DockStyle.Top,
-            Height = 170,
+            Height = 205,
             ColumnCount = 2,
             RowCount = 1,
             Padding = new Padding(4)
         };
         area.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-        area.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 170F));
+        area.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 220F));
         area.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
 
         FlowLayoutPanel identity = BuildIdentityPanel();
@@ -214,17 +229,31 @@ public sealed class PlayerEditorForm : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 2,
+            RowCount = 3,
             Margin = new Padding(8, 0, 0, 0)
         };
         portraitPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
         portraitPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 20F));
         portraitPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+        portraitPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 34F));
         portraitPanel.Controls.Add(new Label { Text = "Player image", Dock = DockStyle.Fill }, 0, 0);
         Panel imageHost = new() { Dock = DockStyle.Fill };
         imageHost.Controls.Add(_portrait);
         imageHost.Controls.Add(_portraitMessage);
         portraitPanel.Controls.Add(imageHost, 0, 1);
+        TableLayoutPanel portraitButtons = new()
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 1,
+            Padding = Padding.Empty
+        };
+        portraitButtons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+        portraitButtons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+        portraitButtons.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+        portraitButtons.Controls.Add(_exportPortraitButton, 0, 0);
+        portraitButtons.Controls.Add(_replacePortraitButton, 1, 0);
+        portraitPanel.Controls.Add(portraitButtons, 0, 2);
         area.Controls.Add(identity, 0, 0);
         area.Controls.Add(portraitPanel, 1, 0);
         return area;
@@ -326,6 +355,9 @@ public sealed class PlayerEditorForm : Form
 
     private void LoadPlayerPortrait()
     {
+        _currentPortrait = null;
+        _exportPortraitButton.Enabled = false;
+        _replacePortraitButton.Enabled = false;
         Image? oldImage = _portrait.Image;
         _portrait.Image = null;
         oldImage?.Dispose();
@@ -339,6 +371,9 @@ public sealed class PlayerEditorForm : Form
 
         PlayerPortrait? portrait = _portraits.GetPortrait(_current);
         if (portrait == null) return;
+        _currentPortrait = portrait;
+        _exportPortraitButton.Enabled = true;
+        _replacePortraitButton.Enabled = true;
         try
         {
             using MemoryStream stream = new(portrait.Data, writable: false);
@@ -351,6 +386,113 @@ public sealed class PlayerEditorForm : Form
         {
             _portraitMessage.Text = "Portrait could not\nbe loaded";
         }
+    }
+
+    private void ExportPortrait_Click(object? sender, EventArgs e)
+    {
+        if (_currentPortrait == null) return;
+        using SaveFileDialog dialog = new()
+        {
+            Title = "Export player portrait",
+            Filter = "PNG image (*.png)|*.png|All files (*.*)|*.*",
+            FileName = Path.GetFileName(_currentPortrait.SourcePath),
+            AddExtension = true,
+            DefaultExt = "png"
+        };
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+
+        try
+        {
+            File.WriteAllBytes(dialog.FileName, _currentPortrait.Data);
+            _status.Text = $"Exported portrait to {dialog.FileName}.";
+        }
+        catch (Exception exception)
+        {
+            MessageBox.Show(this, $"The portrait could not be exported.\n\n{exception.Message}",
+                "Unable to Export Portrait", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
+    private void ReplacePortrait_Click(object? sender, EventArgs e)
+    {
+        if (_current == null || _currentPortrait == null) return;
+        using OpenFileDialog dialog = new()
+        {
+            Title = "Choose a replacement player portrait",
+            Filter = "Image files (*.png;*.bmp;*.jpg;*.jpeg)|*.png;*.bmp;*.jpg;*.jpeg|All files (*.*)|*.*"
+        };
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+
+        byte[] pngData;
+        try
+        {
+            using Image source = Image.FromFile(dialog.FileName);
+            if (source.Width > 4096 || source.Height > 4096)
+                throw new InvalidDataException("Portrait dimensions cannot exceed 4096 by 4096 pixels.");
+            int targetWidth = _portrait.Image?.Width ?? source.Width;
+            int targetHeight = _portrait.Image?.Height ?? source.Height;
+            using Bitmap fitted = FitPortrait(source, targetWidth, targetHeight);
+            using MemoryStream stream = new();
+            fitted.Save(stream, System.Drawing.Imaging.ImageFormat.Png);
+            pngData = stream.ToArray();
+        }
+        catch (Exception exception)
+        {
+            MessageBox.Show(this, $"The selected image could not be read.\n\n{exception.Message}",
+                "Invalid Portrait Image", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return;
+        }
+
+        if (MessageBox.Show(this,
+                $"Replace {_currentPortrait.SourcePath} with this image?\n\n" +
+                "The change is written to DATA.MET immediately and a timestamped backup is created first.",
+                "Replace Player Portrait", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+            return;
+
+        try
+        {
+            UseWaitCursor = true;
+            PlayerPortraitSaveResult result = _portraits.ReplaceWithBackup(_current, pngData);
+            ArchiveWasModified = true;
+            _portraits = PlayerPortraitArchive.Load(_metPath);
+            LoadPlayerPortrait();
+            string rebuild = result.RebuiltArchive
+                ? "\nThe archive was resized with sector alignment preserved."
+                : string.Empty;
+            MessageBox.Show(this,
+                $"Replaced {result.SourcePath}.\n\nBackup: {result.BackupPath}{rebuild}",
+                "Portrait Replaced", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            _status.Text = $"Replaced portrait for {_current.DisplayName}.";
+        }
+        catch (Exception exception)
+        {
+            MessageBox.Show(this,
+                $"The portrait could not be replaced. The archive was restored if a backup was created.\n\n{exception.Message}",
+                "Unable to Replace Portrait", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+        finally
+        {
+            UseWaitCursor = false;
+        }
+    }
+
+    private static Bitmap FitPortrait(Image source, int targetWidth, int targetHeight)
+    {
+        Bitmap result = new(targetWidth, targetHeight, System.Drawing.Imaging.PixelFormat.Format24bppRgb);
+        using Graphics graphics = Graphics.FromImage(result);
+        graphics.Clear(Color.White);
+        graphics.CompositingQuality = System.Drawing.Drawing2D.CompositingQuality.HighQuality;
+        graphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+        graphics.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighQuality;
+        graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.HighQuality;
+
+        double scale = Math.Min((double)targetWidth / source.Width, (double)targetHeight / source.Height);
+        int width = Math.Max(1, (int)Math.Round(source.Width * scale));
+        int height = Math.Max(1, (int)Math.Round(source.Height * scale));
+        int left = (targetWidth - width) / 2;
+        int top = (targetHeight - height) / 2;
+        graphics.DrawImage(source, new Rectangle(left, top, width, height));
+        return result;
     }
 
     private static decimal Clamp(short value, decimal minimum, decimal maximum) =>
