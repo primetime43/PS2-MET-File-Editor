@@ -40,7 +40,10 @@ namespace PS2_DATA_File_Extractor
             editSaveMenuItem.Click += editSaveMenuItem_Click;
             ToolStripMenuItem gameplayTweaksMenuItem = new ToolStripMenuItem("Gameplay Tweaks...");
             gameplayTweaksMenuItem.Click += gameplayTweaksMenuItem_Click;
+            ToolStripMenuItem playerEditorMenuItem = new ToolStripMenuItem("Player Editor...");
+            playerEditorMenuItem.Click += playerEditorMenuItem_Click;
             editToolStripMenuItem.DropDownItems.Add(new ToolStripSeparator());
+            editToolStripMenuItem.DropDownItems.Add(playerEditorMenuItem);
             editToolStripMenuItem.DropDownItems.Add(gameplayTweaksMenuItem);
             editToolStripMenuItem.DropDownItems.Add(patchGameMenuItem);
             editToolStripMenuItem.DropDownItems.Add(editSaveMenuItem);
@@ -1211,6 +1214,41 @@ namespace PS2_DATA_File_Extractor
             }
         }
 
+        private void playerEditorMenuItem_Click(object? sender, EventArgs e)
+        {
+            if (string.IsNullOrWhiteSpace(_dataMetPath) || _metFileStructure == null)
+            {
+                MessageBox.Show(this, "Open DATA.MET before editing players.",
+                    "No MET File Loaded", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            if (_hasUnsavedChanges)
+            {
+                MessageBox.Show(this,
+                    "Save or discard the currently selected file's changes before opening the Player Editor.",
+                    "Unsaved File Changes", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            try
+            {
+                PlayerStatsArchive archive = PlayerStatsArchive.Load(_dataMetPath);
+                using PlayerEditorForm editor = new PlayerEditorForm(archive, _dataMetPath);
+                if (editor.ShowDialog(this) != DialogResult.OK)
+                {
+                    return;
+                }
+
+                ReloadMetAfterStructuredEdit("Player changes saved; DATA.MET directory reloaded.");
+            }
+            catch (Exception exception)
+            {
+                MessageBox.Show(this, exception.Message, "Unable to Open Player Editor",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
         private void gameplayTweaksMenuItem_Click(object? sender, EventArgs e)
         {
             if (string.IsNullOrWhiteSpace(_dataMetPath) || _metFileStructure == null)
@@ -1237,21 +1275,7 @@ namespace PS2_DATA_File_Extractor
                     return;
                 }
 
-                _metFileStructure = METFileReader.ReadMETFile(_dataMetPath);
-                PopulateTreeView();
-                _selectedEntry = null!;
-                _currentFileData = Array.Empty<byte>();
-                _leadingUnprintableBytes = Array.Empty<byte>();
-                textEditorControl1.Text = string.Empty;
-                richTextBox1.Clear();
-                if (pictureBox1.Image != null)
-                {
-                    pictureBox1.Image.Dispose();
-                    pictureBox1.Image = null;
-                }
-                _hasUnsavedChanges = false;
-                UpdateUIState();
-                SetStatusMessage("Gameplay tweaks saved; DATA.MET directory reloaded.");
+                ReloadMetAfterStructuredEdit("Gameplay tweaks saved; DATA.MET directory reloaded.");
             }
             catch (Exception exception)
             {
@@ -1259,6 +1283,26 @@ namespace PS2_DATA_File_Extractor
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
+
+        private void ReloadMetAfterStructuredEdit(string statusMessage)
+        {
+            _metFileStructure = METFileReader.ReadMETFile(_dataMetPath);
+            PopulateTreeView();
+            _selectedEntry = null!;
+            _currentFileData = Array.Empty<byte>();
+            _leadingUnprintableBytes = Array.Empty<byte>();
+            textEditorControl1.Text = string.Empty;
+            richTextBox1.Clear();
+            if (pictureBox1.Image != null)
+            {
+                pictureBox1.Image.Dispose();
+                pictureBox1.Image = null;
+            }
+            _hasUnsavedChanges = false;
+            UpdateUIState();
+            SetStatusMessage(statusMessage);
+        }
+
         private void editSaveMenuItem_Click(object? sender, EventArgs e)
         {
             using OpenFileDialog dialog = new OpenFileDialog

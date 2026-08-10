@@ -14,6 +14,9 @@ To access the .MET files, you need to extract the game files from the ISO using 
 
 ## Modding and unlock editing
 
+- **Edit > Player Editor...** edits all 230 retail and clone `*_stats.dat` records, including names,
+  batting/running/fielding components, all 12 pitch ratings, identity data, and clone appearance slots.
+  The reversed layout and executable addresses are in [`docs/PLAYER_STATS.md`](docs/PLAYER_STATS.md).
 - **Edit > Gameplay Tweaks...** provides validated tabs for 285 ball, bat/power-up, field physics,
   simulation, practice/cheat, and game-default values stored in `DATA.MET`.
 - **Edit > Patch Game Executable Unlocks...** forces selected players, fields, Darts, and Aquadome unlocked in the game itself.
@@ -34,13 +37,15 @@ patch makes selected content available to every save in the rebuilt ISO. See
 
 ### Step 2: Modify the game files
 1. Open `DATA.MET` in the MET File Editor and make any archive changes.
-2. For structured game tuning, choose **Edit > Gameplay Tweaks...**, edit values in the category
+2. Choose **Edit > Player Editor...** to modify player names, skills, pitch ratings, identity, or
+   clone appearance values directly in the game's `*_stats.dat` records.
+3. For structured game tuning, choose **Edit > Gameplay Tweaks...**, edit values in the category
    tabs, and select **Save to DATA.MET**. Comments and unsupported INI keys are preserved.
-3. Save any other MET changes; resizing and backups are handled automatically.
-4. Choose **Edit > Patch Game Executable Unlocks...**.
-5. Select the extracted USA executable `SLUS_208.65`.
-6. Select individual content or **Unlock All**, then apply the patch.
-7. Keep the patched executable beside the other extracted game files.
+4. Save any other MET changes; resizing and backups are handled automatically.
+5. Choose **Edit > Patch Game Executable Unlocks...**.
+6. Select the extracted USA executable `SLUS_208.65`.
+7. Select individual content or **Unlock All**, then apply the patch.
+8. Keep the patched executable beside the other extracted game files.
 
 ### Step 3: Rebuild the ISO in the editor
 
