@@ -5,6 +5,7 @@ public partial class Form1
     private Label _gameFileStatusLabel = null!;
     private Button _playerEditorMainButton = null!;
     private Button _gameplayMainButton = null!;
+    private Button _stadiumMainButton = null!;
 
     private void BuildMainWindowTools()
     {
@@ -75,6 +76,10 @@ public partial class Form1
         _playerEditorMainButton.Name = "playerEditorMainButton";
         _playerEditorMainButton.Click += (_, _) => playerEditorMenuItem_Click(this, EventArgs.Empty);
 
+        _stadiumMainButton = CreateMainToolButton("Stadium Editor...");
+        _stadiumMainButton.Name = "stadiumEditorMainButton";
+        _stadiumMainButton.Click += (_, _) => stadiumEnvironmentMenuItem_Click(this, EventArgs.Empty);
+
         _gameplayMainButton = CreateMainToolButton("Gameplay Tweaks...");
         _gameplayMainButton.Name = "gameplayTweaksMainButton";
         _gameplayMainButton.Click += (_, _) => gameplayTweaksMenuItem_Click(this, EventArgs.Empty);
@@ -93,7 +98,7 @@ public partial class Form1
 
         actions.Controls.AddRange(new Control[]
         {
-            openMet, _playerEditorMainButton, _gameplayMainButton, unlocks, iso, saveUnlocks
+            openMet, _playerEditorMainButton, _stadiumMainButton, _gameplayMainButton, unlocks, iso, saveUnlocks
         });
         panel.Controls.Add(actions);
         panel.Controls.Add(_gameFileStatusLabel);
@@ -119,11 +124,12 @@ public partial class Form1
         if (_gameFileStatusLabel == null) return;
         bool hasArchive = !string.IsNullOrWhiteSpace(_dataMetPath) && _metFileStructure != null;
         _playerEditorMainButton.Enabled = hasArchive && !_hasUnsavedChanges;
+        _stadiumMainButton.Enabled = hasArchive && !_hasUnsavedChanges;
         _gameplayMainButton.Enabled = hasArchive && !_hasUnsavedChanges;
 
         if (!hasArchive)
         {
-            _gameFileStatusLabel.Text = "No DATA.MET loaded. Open the extracted game archive to enable player and gameplay editing.";
+            _gameFileStatusLabel.Text = "No DATA.MET loaded. Open the extracted game archive to enable player, stadium, and gameplay editing.";
             return;
         }
 

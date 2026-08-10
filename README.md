@@ -21,6 +21,9 @@ To access the .MET files, you need to extract the game files from the ISO using 
 - **Player Editor...** on the main tool row edits all 230 retail and clone `*_stats.dat` records, including names,
   batting/running/fielding components, all 12 pitch ratings, identity data, and clone appearance slots.
   The reversed layout and executable addresses are in [`docs/PLAYER_STATS.md`](docs/PLAYER_STATS.md).
+- **Stadium Editor...** edits lighting, cameras, collision tags, and ambient models, particles,
+  positions, animations, and speeds across all 15 `fielddata.txt` stadium variants. Loader details are
+  documented in [`docs/STADIUM_ENVIRONMENTS.md`](docs/STADIUM_ENVIRONMENTS.md).
 - **Gameplay Tweaks...** on the main tool row provides validated tabs for 285 ball, bat/power-up, field physics,
   simulation, practice/cheat, and game-default values stored in `DATA.MET`.
 - **Unlock Game Content...** patches selected players, fields, Darts, and Aquadome unlocked in the game itself.
@@ -43,13 +46,14 @@ patch makes selected content available to every save in the rebuilt ISO. See
 1. Open `DATA.MET` in the MET File Editor and make any archive changes.
 2. Select **Player Editor...** in the main window to modify player names, skills, pitch ratings, identity, or
    clone appearance values directly in the game's `*_stats.dat` records.
-3. For structured game tuning, select **Gameplay Tweaks...**, edit values in the category
+3. Select **Stadium Editor...** to edit field lighting, cameras, collisions, and ambient objects.
+4. For structured game tuning, select **Gameplay Tweaks...**, edit values in the category
    tabs, and select **Save to DATA.MET**. Comments and unsupported INI keys are preserved.
-4. Save any other MET changes; resizing and backups are handled automatically.
-5. Select **Unlock Game Content...** in the main window.
-6. Select the extracted USA executable `SLUS_208.65`.
-7. Select individual content or **Unlock All**, then apply the patch.
-8. Keep the patched executable beside the other extracted game files.
+5. Save any other MET changes; resizing and backups are handled automatically.
+6. Select **Unlock Game Content...** in the main window.
+7. Select the extracted USA executable `SLUS_208.65`.
+8. Select individual content or **Unlock All**, then apply the patch.
+9. Keep the patched executable beside the other extracted game files.
 
 ### Step 3: Rebuild the ISO in the editor
 
