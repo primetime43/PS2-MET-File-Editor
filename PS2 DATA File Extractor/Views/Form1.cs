@@ -29,7 +29,7 @@ namespace PS2_DATA_File_Extractor
             fileToolStripMenuItem.DropDownItems.Insert(exitIndex, new ToolStripSeparator());
             fileToolStripMenuItem.DropDownItems.Insert(exitIndex, rebuildIsoMenuItem);
 
-            BuildMainWindowTools();
+            BuildTabbedWorkspace();
             UpdateUIState();
         }
 
@@ -81,7 +81,7 @@ namespace PS2_DATA_File_Extractor
                 saveFileChangesToolStripMenuItem.Text = "Save File Changes";
             }
 
-            UpdateDashboardState();
+            UpdateWorkspaceState();
         }
 
         /// <summary>

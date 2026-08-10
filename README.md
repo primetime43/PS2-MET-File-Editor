@@ -18,15 +18,16 @@ To access the .MET files, you need to extract the game files from the ISO using 
 
 ## Modding and unlock editing
 
-- **Player Editor...** on the main tool row edits all 230 retail and clone `*_stats.dat` records, including names,
+- **Player Editor...** on the **Game Tools** tab edits all 230 retail and clone `*_stats.dat` records, including names,
   batting/running/fielding components, all 12 pitch ratings, identity data, and clone appearance slots.
   The reversed layout and executable addresses are in [`docs/PLAYER_STATS.md`](docs/PLAYER_STATS.md).
 - **Stadium Editor...** edits lighting, cameras, collision tags, and ambient models, particles,
   positions, animations, and speeds across all 15 `fielddata.txt` stadium variants. Loader details are
   documented in [`docs/STADIUM_ENVIRONMENTS.md`](docs/STADIUM_ENVIRONMENTS.md).
-- **Gameplay Tweaks...** on the main tool row provides validated tabs for 285 ball, bat/power-up, field physics,
+- **Gameplay Tweaks...** on the **Game Tools** tab provides validated tabs for 285 ball, bat/power-up, field physics,
   simulation, practice/cheat, and game-default values stored in `DATA.MET`.
 - **Unlock Game Content...** patches selected players, fields, Darts, and Aquadome unlocked in the game itself.
+- The **DATA.MET Browser** tab contains the file tree, raw preview/editor, and visible Save, Import, and Export actions.
 - **View > Hex Editor** edits any selected archive payload as validated byte pairs.
 - **Import File** preserves replacement files byte-for-byte, including binary data and trailing zeros.
 - MET, executable, and optional save-file edits create timestamped backups.
