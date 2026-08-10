@@ -312,7 +312,7 @@ namespace PS2_DATA_File_Extractor
             Controls.Add(menuStrip1);
             MainMenuStrip = menuStrip1;
             Name = "Form1";
-            Text = "PS2 MET File Editor v0.3";
+            Text = "Backyard Baseball PS2 Editor v0.4";
             ((System.ComponentModel.ISupportInitialize)pictureBox1).EndInit();
             splitContainer1.Panel1.ResumeLayout(false);
             splitContainer1.Panel2.ResumeLayout(false);

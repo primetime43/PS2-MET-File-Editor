@@ -6,7 +6,11 @@
     <RootNamespace>PS2_DATA_File_Extractor</RootNamespace>
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
-    <Version>0.3.0</Version>
+    <Version>0.4.0</Version>
+    <AssemblyName>Backyard Baseball PS2 Editor</AssemblyName>
+    <Product>Backyard Baseball PS2 Editor</Product>
+    <Title>Backyard Baseball PS2 Editor</Title>
+    <Description>Editor for Backyard Baseball game data on PlayStation 2.</Description>
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
 

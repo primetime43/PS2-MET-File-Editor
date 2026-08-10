@@ -15,38 +15,22 @@ namespace PS2_DATA_File_Extractor
         private bool _isLoadingEditorContent;
         private byte[] _currentFileData;
         private byte[] _leadingUnprintableBytes = Array.Empty<byte>();
+        private const string ApplicationTitle = "Backyard Baseball PS2 Editor v0.4";
 
         public Form1()
         {
             InitializeComponent();
-            // Make sure to hook up the BeforeExpand and AfterSelect events
-            treeView1.BeforeExpand += treeView1_BeforeExpand;
-            treeView1.AfterSelect += treeView1_AfterSelect;
-
-            // Hook up FormClosing event to check for unsaved changes
-            this.FormClosing += Form1_FormClosing;
-
+            FormClosing += Form1_FormClosing;
             textEditorControl1.SetHighlighting("XML");
 
-            ToolStripMenuItem rebuildIsoMenuItem = new ToolStripMenuItem("Rebuild Game ISO...");
+            ToolStripMenuItem rebuildIsoMenuItem = new ToolStripMenuItem("Build Modded Game ISO...");
             rebuildIsoMenuItem.Click += rebuildIsoMenuItem_Click;
             int exitIndex = fileToolStripMenuItem.DropDownItems.IndexOf(exitToolStripMenuItem);
             fileToolStripMenuItem.DropDownItems.Insert(exitIndex, new ToolStripSeparator());
             fileToolStripMenuItem.DropDownItems.Insert(exitIndex, rebuildIsoMenuItem);
 
-            ToolStripMenuItem patchGameMenuItem = new ToolStripMenuItem("Patch Game Executable Unlocks...");
-            patchGameMenuItem.Click += patchGameMenuItem_Click;
-            ToolStripMenuItem editSaveMenuItem = new ToolStripMenuItem("Edit Exported Save Unlocks (Optional)...");
-            editSaveMenuItem.Click += editSaveMenuItem_Click;
-            ToolStripMenuItem gameplayTweaksMenuItem = new ToolStripMenuItem("Gameplay Tweaks...");
-            gameplayTweaksMenuItem.Click += gameplayTweaksMenuItem_Click;
-            ToolStripMenuItem playerEditorMenuItem = new ToolStripMenuItem("Player Editor...");
-            playerEditorMenuItem.Click += playerEditorMenuItem_Click;
-            editToolStripMenuItem.DropDownItems.Add(new ToolStripSeparator());
-            editToolStripMenuItem.DropDownItems.Add(playerEditorMenuItem);
-            editToolStripMenuItem.DropDownItems.Add(gameplayTweaksMenuItem);
-            editToolStripMenuItem.DropDownItems.Add(patchGameMenuItem);
-            editToolStripMenuItem.DropDownItems.Add(editSaveMenuItem);
+            BuildMainWindowTools();
+            UpdateUIState();
         }
 
         /// <summary>
@@ -55,7 +39,7 @@ namespace PS2_DATA_File_Extractor
         private void UpdateUIState()
         {
             // Update window title
-            string baseTitle = "PS2 MET File Editor v0.3";
+            string baseTitle = ApplicationTitle;
             if (!string.IsNullOrEmpty(_dataMetPath))
             {
                 string fileName = Path.GetFileName(_dataMetPath);
@@ -96,6 +80,8 @@ namespace PS2_DATA_File_Extractor
             {
                 saveFileChangesToolStripMenuItem.Text = "Save File Changes";
             }
+
+            UpdateDashboardState();
         }
 
         /// <summary>
@@ -770,10 +756,11 @@ namespace PS2_DATA_File_Extractor
         {
             using (OpenFileDialog openFileDialog = new OpenFileDialog())
             {
-                openFileDialog.Filter = "MET files (*.met)|*.met|All files (*.*)|*.*";
-                openFileDialog.Title = "Open data.met file";
+                openFileDialog.Filter = "Backyard Baseball DATA.MET (DATA.MET)|DATA.MET|MET files (*.met)|*.met|All files (*.*)|*.*";
+                openFileDialog.Title = "Open extracted Backyard Baseball DATA.MET";
+                openFileDialog.FileName = "DATA.MET";
 
-                if (openFileDialog.ShowDialog() == DialogResult.OK)
+                if (openFileDialog.ShowDialog(this) == DialogResult.OK)
                 {
                     _dataMetPath = openFileDialog.FileName;
                     try

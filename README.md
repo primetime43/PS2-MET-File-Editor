@@ -1,6 +1,10 @@
-The tool can open, view, modify, import, and export files within the .MET files of Backyard Baseball 2004 for the PlayStation 2.
+# Backyard Baseball PS2 Editor
 
-v0.3 (editable hex and unlock editor)
+A focused Windows modding workspace for Backyard Baseball on PlayStation 2. It provides dedicated
+player, gameplay, unlock, and ISO-building tools while retaining an advanced DATA.MET browser for
+raw archive work.
+
+v0.4 (game-specific tools and player editor)
 <img width="1920" height="1032" alt="image" src="https://github.com/user-attachments/assets/4ebd29d0-fe77-4be8-ac36-88f9123f96cc" />
 
 # Features
@@ -14,12 +18,12 @@ To access the .MET files, you need to extract the game files from the ISO using 
 
 ## Modding and unlock editing
 
-- **Edit > Player Editor...** edits all 230 retail and clone `*_stats.dat` records, including names,
+- **Player Editor...** on the main tool row edits all 230 retail and clone `*_stats.dat` records, including names,
   batting/running/fielding components, all 12 pitch ratings, identity data, and clone appearance slots.
   The reversed layout and executable addresses are in [`docs/PLAYER_STATS.md`](docs/PLAYER_STATS.md).
-- **Edit > Gameplay Tweaks...** provides validated tabs for 285 ball, bat/power-up, field physics,
+- **Gameplay Tweaks...** on the main tool row provides validated tabs for 285 ball, bat/power-up, field physics,
   simulation, practice/cheat, and game-default values stored in `DATA.MET`.
-- **Edit > Patch Game Executable Unlocks...** forces selected players, fields, Darts, and Aquadome unlocked in the game itself.
+- **Unlock Game Content...** patches selected players, fields, Darts, and Aquadome unlocked in the game itself.
 - **View > Hex Editor** edits any selected archive payload as validated byte pairs.
 - **Import File** preserves replacement files byte-for-byte, including binary data and trailing zeros.
 - MET, executable, and optional save-file edits create timestamped backups.
@@ -37,12 +41,12 @@ patch makes selected content available to every save in the rebuilt ISO. See
 
 ### Step 2: Modify the game files
 1. Open `DATA.MET` in the MET File Editor and make any archive changes.
-2. Choose **Edit > Player Editor...** to modify player names, skills, pitch ratings, identity, or
+2. Select **Player Editor...** in the main window to modify player names, skills, pitch ratings, identity, or
    clone appearance values directly in the game's `*_stats.dat` records.
-3. For structured game tuning, choose **Edit > Gameplay Tweaks...**, edit values in the category
+3. For structured game tuning, select **Gameplay Tweaks...**, edit values in the category
    tabs, and select **Save to DATA.MET**. Comments and unsupported INI keys are preserved.
 4. Save any other MET changes; resizing and backups are handled automatically.
-5. Choose **Edit > Patch Game Executable Unlocks...**.
+5. Select **Unlock Game Content...** in the main window.
 6. Select the extracted USA executable `SLUS_208.65`.
 7. Select individual content or **Unlock All**, then apply the patch.
 8. Keep the patched executable beside the other extracted game files.

@@ -44,7 +44,7 @@ jobs:
       - name: Upload dev build
         uses: actions/upload-artifact@v7
         with:
-          name: PS2-MET-File-Editor-dev-${{ github.sha }}
+          name: Backyard-Baseball-PS2-Editor-dev-${{ github.sha }}
           path: artifacts/dev-build
           if-no-files-found: error
           retention-days: 14
