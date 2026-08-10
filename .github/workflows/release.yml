@@ -1,0 +1,66 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_NOLOGO: true
+
+jobs:
+  release:
+    name: Test, package, and release
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore dependencies
+        run: dotnet restore "PS2 DATA File Extractor.sln"
+
+      - name: Run tests
+        run: dotnet test "PS2 DATA File Extractor.sln" --configuration Release --no-restore
+
+      - name: Publish Windows x64 release
+        run: >-
+          dotnet publish "PS2 DATA File Extractor/PS2 DATA File Extractor.csproj"
+          --configuration Release
+          --runtime win-x64
+          --self-contained true
+          --output artifacts/publish
+
+      - name: Create release archive
+        shell: pwsh
+        run: |
+          $archiveName = "PS2-MET-File-Editor-$env:GITHUB_REF_NAME-win-x64.zip"
+          $archivePath = Join-Path "artifacts" $archiveName
+          Compress-Archive -Path "artifacts/publish/*" -DestinationPath $archivePath
+          "RELEASE_ARCHIVE=$archivePath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Create GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view $env:GITHUB_REF_NAME --json tagName *> $null
+
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $env:GITHUB_REF_NAME $env:RELEASE_ARCHIVE --clobber
+          }
+          else {
+            gh release create $env:GITHUB_REF_NAME $env:RELEASE_ARCHIVE `
+              --verify-tag `
+              --generate-notes `
+              --title $env:GITHUB_REF_NAME
+          }
