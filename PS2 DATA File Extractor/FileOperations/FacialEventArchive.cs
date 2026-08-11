@@ -11,15 +11,18 @@ public sealed class FacialEventArchive
 {
     private readonly string _metPath;
     private readonly METFileStructure _structure;
+    private readonly IReadOnlyDictionary<string, FacialTextureCatalog> _textureCatalogs;
 
     private FacialEventArchive(
         string metPath,
         METFileStructure structure,
-        List<FacialEventFile> files)
+        List<FacialEventFile> files,
+        IReadOnlyDictionary<string, FacialTextureCatalog> textureCatalogs)
     {
         _metPath = metPath;
         _structure = structure;
         Files = files;
+        _textureCatalogs = textureCatalogs;
     }
 
     public IReadOnlyList<FacialEventFile> Files { get; }
@@ -55,7 +58,33 @@ public sealed class FacialEventArchive
 
         files.Sort((left, right) =>
             StringComparer.OrdinalIgnoreCase.Compare(left.SourcePath, right.SourcePath));
-        return new FacialEventArchive(metPath, structure, files);
+        return new FacialEventArchive(metPath, structure, files, BuildTextureCatalogs(structure));
+    }
+
+    public FacialEventTextureSet? LoadTextureSet(FacialEventFile file)
+    {
+        ArgumentNullException.ThrowIfNull(file);
+        string path = NormalizePath(file.SourcePath);
+        const string battingRoot = "data/batting/";
+        if (!path.StartsWith(battingRoot, StringComparison.OrdinalIgnoreCase)) return null;
+        int directoryEnd = path.IndexOf('/', battingRoot.Length);
+        if (directoryEnd < 0) return null;
+        string characterCode = path[battingRoot.Length..directoryEnd];
+        if (!_textureCatalogs.TryGetValue(characterCode, out FacialTextureCatalog? catalog)) return null;
+
+        Dictionary<int, FacialEventTexture> eyes = new();
+        Dictionary<int, FacialEventTexture> mouths = new();
+        using FileStream stream = new(_metPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+        foreach (FacialTextureEntry item in catalog.Entries)
+        {
+            stream.Position = item.Entry.Offset;
+            byte[] data = new byte[item.Entry.OriginalSize];
+            stream.ReadExactly(data);
+            FacialEventTexture texture = new(item.Entry.Path, item.Pose, data);
+            (item.IsEyes ? eyes : mouths)[item.Pose] = texture;
+        }
+
+        return new FacialEventTextureSet(characterCode, catalog.CharacterName, eyes, mouths);
     }
 
     public Ps2AudioInfo? InspectPairedAudio(FacialEventFile file)
@@ -93,7 +122,45 @@ public sealed class FacialEventArchive
             NormalizePath(entry.Path).Equals(file.PairedVagPath, StringComparison.OrdinalIgnoreCase));
     }
 
+    private static IReadOnlyDictionary<string, FacialTextureCatalog> BuildTextureCatalogs(
+        METFileStructure structure)
+    {
+        Dictionary<string, List<FacialTextureEntry>> entries =
+            new(StringComparer.OrdinalIgnoreCase);
+        Dictionary<string, string> names = new(StringComparer.OrdinalIgnoreCase);
+        Regex pattern = new(
+            @"^data/batting/(?<code>[^/]+)/(?<name>.+)_(?<kind>eyes|mouth)_tx\.(?<pose>\d+)\.png$",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        foreach (FileEntry entry in structure.AllEntries)
+        {
+            Match match = pattern.Match(NormalizePath(entry.Path));
+            if (!match.Success ||
+                !int.TryParse(match.Groups["pose"].Value, NumberStyles.None,
+                    CultureInfo.InvariantCulture, out int pose) || pose <= 0) continue;
+            string code = match.Groups["code"].Value;
+            if (!entries.TryGetValue(code, out List<FacialTextureEntry>? characterEntries))
+            {
+                characterEntries = new List<FacialTextureEntry>();
+                entries[code] = characterEntries;
+            }
+            characterEntries.Add(new FacialTextureEntry(
+                entry, pose,
+                match.Groups["kind"].Value.Equals("eyes", StringComparison.OrdinalIgnoreCase)));
+            names.TryAdd(code, match.Groups["name"].Value);
+        }
+
+        return entries.ToDictionary(
+            pair => pair.Key,
+            pair => new FacialTextureCatalog(
+                names.GetValueOrDefault(pair.Key, pair.Key),
+                pair.Value.OrderBy(item => item.IsEyes ? 0 : 1).ThenBy(item => item.Pose).ToList()),
+            StringComparer.OrdinalIgnoreCase);
+    }
+
     private static string NormalizePath(string path) => path.Replace('\\', '/');
+
+    private sealed record FacialTextureEntry(FileEntry Entry, int Pose, bool IsEyes);
+    private sealed record FacialTextureCatalog(string CharacterName, IReadOnlyList<FacialTextureEntry> Entries);
 }
 
 public sealed class FacialEventFile

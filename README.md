@@ -29,7 +29,8 @@ To access the .MET files, you need to extract the game files from the ISO using 
   simulation, practice/cheat, and game-default values stored in `DATA.MET`.
 - **Facial Event Editor...** edits all 2,169 EVT timelines. Talkie lip sync plays its paired VAG
   dialogue while a face and event timeline preview the active mouth shape; batting eye/mouth events
-  can also be edited and previewed by pose number. See [EVT facial events](docs/EVT_FACIAL_EVENTS.md).
+  use the character's actual numbered PNG textures from `DATA.MET`. See
+  [EVT facial events](docs/EVT_FACIAL_EVENTS.md).
 - **Unlock Game Content...** patches selected players, fields, Darts, and Aquadome unlocked in the game itself.
 - The **DATA.MET Browser** tab contains the file tree, raw preview/editor, and visible Save, Import, and Export actions.
 - EVT files are recognized as their original XML/pseudo-XML text. Double-click a selected EVT in the

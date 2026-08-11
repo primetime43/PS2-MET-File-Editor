@@ -66,7 +66,8 @@ public sealed class FacialEventEditorForm : Form
             Height = 55,
             Padding = new Padding(12, 8, 12, 4),
             Text = "Edit EVT facial-animation timelines. Talkie files play their matching VAG voice clip while the " +
-                   "mouth-shape preview follows the event timestamps. Numbered batting eye/mouth poses are shown by ID."
+                   "mouth-shape preview follows the event timestamps. Batting EVT files preview the character's " +
+                   "actual numbered eye and mouth textures from DATA.MET."
         };
         Label path = new()
         {
@@ -546,6 +547,7 @@ public sealed class FacialEventEditorForm : Form
     private void UpdateFileInfo()
     {
         _preview.EventFile = _current;
+        _preview.TextureSet = null;
         if (_current == null)
         {
             _fileInfo.Text = "No EVT file selected.";
@@ -558,8 +560,22 @@ public sealed class FacialEventEditorForm : Form
         string audioText = audio == null
             ? "No same-name VAG; timeline-only preview"
             : $"Paired VAG: {audio.SampleRate:N0} Hz, {audio.DurationSeconds:0.000} s";
+        FacialEventTextureSet? textures = null;
+        string textureText;
+        try
+        {
+            textures = _archive.LoadTextureSet(_current);
+            textureText = textures == null
+                ? (_current.IsTalkie ? "drawn phoneme preview" : "no matching face textures")
+                : $"game textures: {textures.Eyes.Count} eye, {textures.Mouths.Count} mouth poses";
+        }
+        catch (Exception exception)
+        {
+            textureText = $"texture preview unavailable: {exception.Message}";
+        }
+        _preview.TextureSet = textures;
         _fileInfo.Text = $"{_current.SourcePath}\n{_current.Kind} — {_current.Events.Count:N0} events, " +
-                         $"last event {_current.DurationSeconds:0.000} s — {audioText}";
+                         $"last event {_current.DurationSeconds:0.000} s — {audioText} — {textureText}";
         _play.Enabled = _current.Events.Count > 0;
     }
 

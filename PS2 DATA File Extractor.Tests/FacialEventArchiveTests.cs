@@ -117,6 +117,36 @@ public sealed class FacialEventArchiveTests : IDisposable
         Assert.Equal(4, reparsed.Events.Count);
     }
 
+    [Fact]
+    public void LoadsNumberedBattingTexturesForTheSelectedCharacter()
+    {
+        Directory.CreateDirectory(_tempDirectory);
+        string metPath = Path.Combine(_tempDirectory, "DATA.MET");
+        byte[] eyesOne = { 1, 2, 3 };
+        byte[] eyesThree = { 3, 2, 1 };
+        byte[] mouthTwo = { 9, 8, 7 };
+        CreateArchive(metPath, new[]
+        {
+            ("data/batting/test/test_swing.evt", Encoding.UTF8.GetBytes(CreateAnimationXml())),
+            ("data/batting/test/slugger_eyes_tx.001.png", eyesOne),
+            ("data/batting/test/slugger_eyes_tx.003.png", eyesThree),
+            ("data/batting/test/slugger_mouth_tx.002.png", mouthTwo),
+            ("data/batting/other/other_eyes_tx.001.png", new byte[] { 4, 5, 6 })
+        });
+
+        FacialEventArchive archive = FacialEventArchive.Load(metPath);
+        FacialEventTextureSet textures = Assert.IsType<FacialEventTextureSet>(
+            archive.LoadTextureSet(Assert.Single(archive.Files)));
+
+        Assert.Equal("test", textures.CharacterCode);
+        Assert.Equal("slugger", textures.CharacterName);
+        Assert.Equal(new[] { 1, 3 }, textures.Eyes.Keys.OrderBy(value => value));
+        Assert.Equal(new[] { 2 }, textures.Mouths.Keys);
+        Assert.Equal(eyesThree, textures.Eyes[3].Data);
+        Assert.Equal("data/batting/test/slugger_mouth_tx.002.png", textures.Mouths[2].SourcePath);
+        Assert.False(textures.TryGetMouth(1, out _));
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_tempDirectory))
@@ -176,18 +206,31 @@ public sealed class FacialEventArchiveTests : IDisposable
 
     private static void CreateArchive(string path, byte[] evt)
     {
-        const int dataOffset = 2048;
         const string entryPath = "data/audio/talkies/test/test_00001.evt";
+        CreateArchive(path, new[] { (entryPath, evt) });
+    }
+
+    private static void CreateArchive(string path, IReadOnlyList<(string Path, byte[] Data)> entries)
+    {
+        const int dataOffset = 2048;
+        int totalLength = dataOffset + (entries.Count - 1) * 2048 + entries[^1].Data.Length;
         using FileStream stream = new(path, FileMode.Create, FileAccess.ReadWrite);
         using BinaryWriter writer = new(stream);
         writer.Write(dataOffset);
-        writer.Write(evt.Length);
-        byte[] pathBytes = Encoding.ASCII.GetBytes(entryPath);
-        writer.Write(dataOffset);
-        writer.Write(evt.Length);
-        writer.Write(pathBytes.Length);
-        writer.Write(pathBytes);
+        writer.Write(totalLength - dataOffset);
+        for (int index = 0; index < entries.Count; index++)
+        {
+            byte[] pathBytes = Encoding.ASCII.GetBytes(entries[index].Path);
+            writer.Write(dataOffset + index * 2048);
+            writer.Write(entries[index].Data.Length);
+            writer.Write(pathBytes.Length);
+            writer.Write(pathBytes);
+        }
         writer.Write(new byte[dataOffset - checked((int)stream.Position)]);
-        writer.Write(evt);
+        for (int index = 0; index < entries.Count; index++)
+        {
+            stream.Position = dataOffset + index * 2048;
+            writer.Write(entries[index].Data);
+        }
     }
 }

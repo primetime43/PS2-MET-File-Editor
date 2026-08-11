@@ -24,15 +24,26 @@ The editor provides:
 - An editable timestamp, class, type, value, and element-ID grid.
 - Add, delete, per-file reset, and reset-all actions.
 - A face preview and color-coded event timeline.
+- The character's actual eye and mouth PNGs for numbered batting poses, loaded directly from
+  `DATA.MET`.
 - Synchronized playback of the matching VAG for talkie files.
 - Timeline-only playback for batting and blink animation files.
 - Validation of event types, non-negative values, and ascending timestamps within each facial class.
 - A warning when a talkie event extends past its VAG duration.
 - One timestamped `DATA.MET` backup when changes are saved.
 
-The preview draws the known talkie mouth groups directly. Batting eye and mouth events are rendered
-as numbered pose approximations because the exact 1-25 pose-to-model mapping has not yet been
-recovered. The stored pose number remains visible and editable.
+The preview draws the known talkie mouth groups directly. Numbered batting events map directly to
+the PNG number in the same character directory:
+
+```text
+CLASS_EYES  pose N  ->  *_eyes_tx.NNN.png
+CLASS_MOUTH pose N  ->  *_mouth_tx.NNN.png
+```
+
+For example, eye pose `3` uses `*_eyes_tx.003.png`. Pose counts are character-specific: most players
+have 10 eye poses and 19 mouth poses, while some have more and Mr. Clanky has only eye textures.
+The editor shows a missing-asset message when an EVT references a PNG that is not present. Talkie
+visemes keep the drawn preview because their named phoneme groups do not use this numeric mapping.
 
 ## Retail pseudo-XML quirk
 

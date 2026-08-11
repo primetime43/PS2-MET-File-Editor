@@ -1,4 +1,5 @@
 using System.Drawing.Drawing2D;
+using System.Runtime.InteropServices;
 using PS2_DATA_File_Extractor.FileOperations;
 
 namespace PS2_DATA_File_Extractor;
@@ -6,6 +7,11 @@ namespace PS2_DATA_File_Extractor;
 public sealed class FacialEventPreviewControl : Control
 {
     private FacialEventFile? _file;
+    private FacialEventTextureSet? _textureSet;
+    private readonly Dictionary<string, Bitmap> _textureImages =
+        new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _invalidTextureImages =
+        new(StringComparer.OrdinalIgnoreCase);
     private double _positionSeconds;
     private double _timelineDuration;
 
@@ -25,6 +31,18 @@ public sealed class FacialEventPreviewControl : Control
             _file = value;
             _positionSeconds = 0;
             _timelineDuration = value?.DurationSeconds ?? 0;
+            Invalidate();
+        }
+    }
+
+    public FacialEventTextureSet? TextureSet
+    {
+        get => _textureSet;
+        set
+        {
+            if (ReferenceEquals(_textureSet, value)) return;
+            ClearTextureImages();
+            _textureSet = value;
             Invalidate();
         }
     }
@@ -65,7 +83,7 @@ public sealed class FacialEventPreviewControl : Control
             return;
         }
 
-        int faceWidth = Math.Min(190, Math.Max(130, Width / 5));
+        int faceWidth = Math.Min(245, Math.Max(190, Width / 4));
         Rectangle faceArea = new(18, 16, faceWidth, Math.Max(120, Height - 34));
         DrawFace(graphics, faceArea);
         Rectangle timeline = new(faceArea.Right + 22, 34,
@@ -75,6 +93,12 @@ public sealed class FacialEventPreviewControl : Control
 
     private void DrawFace(Graphics graphics, Rectangle area)
     {
+        if (_textureSet != null && !_file!.IsTalkie)
+        {
+            DrawGameTexturePreview(graphics, area);
+            return;
+        }
+
         int diameter = Math.Min(area.Width - 20, area.Height - 40);
         Rectangle face = new(area.Left + (area.Width - diameter) / 2, area.Top + 4, diameter, diameter);
         using Brush skin = new SolidBrush(Color.FromArgb(255, 224, 186));
@@ -102,6 +126,160 @@ public sealed class FacialEventPreviewControl : Control
             new Rectangle(area.Left, face.Bottom + 5, area.Width, 24), ForeColor,
             TextFormatFlags.HorizontalCenter | TextFormatFlags.EndEllipsis);
     }
+
+    private void DrawGameTexturePreview(Graphics graphics, Rectangle area)
+    {
+        const int titleHeight = 19;
+        const int stateHeight = 22;
+        TextRenderer.DrawText(graphics,
+            $"{_textureSet!.CharacterName} game textures", Font,
+            new Rectangle(area.Left, area.Top, area.Width, titleHeight), ForeColor,
+            TextFormatFlags.HorizontalCenter | TextFormatFlags.EndEllipsis);
+
+        int contentTop = area.Top + titleHeight;
+        int contentHeight = Math.Max(70, area.Height - titleHeight - stateHeight);
+        int eyeHeight = Math.Max(42, contentHeight * 3 / 5);
+        Rectangle eyesArea = new(area.Left, contentTop, area.Width, eyeHeight);
+        Rectangle mouthArea = new(
+            area.Left, eyesArea.Bottom + 3, area.Width,
+            Math.Max(30, contentHeight - eyeHeight - 3));
+
+        FacialEvent? activeEyes = _file!.GetActiveEvent("CLASS_EYES", _positionSeconds);
+        FacialEvent? activeMouth = _file.GetActiveEvent("CLASS_MOUTH", _positionSeconds);
+        int? eyePose = NumericPose(activeEyes?.EventType) ?? DefaultPose(_textureSet.Eyes);
+        int? mouthPose = NumericPose(activeMouth?.EventType) ?? DefaultPose(_textureSet.Mouths);
+        FacialEventTexture? eyes = eyePose.HasValue &&
+                                   _textureSet.TryGetEyes(eyePose.Value, out FacialEventTexture eyeTexture)
+            ? eyeTexture
+            : null;
+        FacialEventTexture? mouth = mouthPose.HasValue &&
+                                    _textureSet.TryGetMouth(mouthPose.Value, out FacialEventTexture mouthTexture)
+            ? mouthTexture
+            : null;
+
+        DrawTextureSlot(graphics, eyesArea, "Eyes", eyePose, eyes);
+        DrawTextureSlot(graphics, mouthArea, "Mouth", mouthPose, mouth);
+
+        string state = $"Actual PNG poses — eyes {PoseText(eyePose)}, mouth {PoseText(mouthPose)}";
+        TextRenderer.DrawText(graphics, state, Font,
+            new Rectangle(area.Left, area.Bottom - stateHeight + 2, area.Width, stateHeight),
+            ForeColor, TextFormatFlags.HorizontalCenter | TextFormatFlags.EndEllipsis);
+    }
+
+    private void DrawTextureSlot(
+        Graphics graphics,
+        Rectangle area,
+        string label,
+        int? pose,
+        FacialEventTexture? texture)
+    {
+        using Pen border = new(SystemColors.ControlDark);
+        graphics.DrawRectangle(border, area.X, area.Y, Math.Max(0, area.Width - 1),
+            Math.Max(0, area.Height - 1));
+
+        const int labelHeight = 18;
+        Rectangle imageArea = new(
+            area.Left + 2, area.Top + labelHeight,
+            Math.Max(1, area.Width - 4), Math.Max(1, area.Height - labelHeight - 2));
+        DrawCheckerboard(graphics, imageArea);
+
+        string fileName = texture == null ? string.Empty : Path.GetFileName(texture.SourcePath);
+        string title = pose.HasValue
+            ? $"{label} {pose.Value}" + (fileName.Length > 0 ? $" — {fileName}" : string.Empty)
+            : $"{label} — no texture set";
+        TextRenderer.DrawText(graphics, title, Font,
+            new Rectangle(area.Left + 4, area.Top + 1, Math.Max(1, area.Width - 8), labelHeight - 1),
+            ForeColor, TextFormatFlags.Left | TextFormatFlags.EndEllipsis);
+
+        if (texture == null)
+        {
+            string message = pose.HasValue ? $"Pose {pose.Value} is not in DATA.MET" : "No mouth textures";
+            TextRenderer.DrawText(graphics, message, Font, imageArea, SystemColors.GrayText,
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter |
+                TextFormatFlags.EndEllipsis);
+            return;
+        }
+        if (!TryGetTextureImage(texture, out Bitmap? image) || image == null)
+        {
+            TextRenderer.DrawText(graphics, "PNG preview unavailable", Font, imageArea,
+                SystemColors.GrayText,
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+            return;
+        }
+
+        Rectangle destination = Fit(image.Size, Rectangle.Inflate(imageArea, -2, -2));
+        InterpolationMode previousInterpolation = graphics.InterpolationMode;
+        PixelOffsetMode previousPixelOffset = graphics.PixelOffsetMode;
+        graphics.InterpolationMode = InterpolationMode.NearestNeighbor;
+        graphics.PixelOffsetMode = PixelOffsetMode.Half;
+        graphics.DrawImage(image, destination);
+        graphics.InterpolationMode = previousInterpolation;
+        graphics.PixelOffsetMode = previousPixelOffset;
+    }
+
+    private bool TryGetTextureImage(FacialEventTexture texture, out Bitmap? bitmap)
+    {
+        if (_textureImages.TryGetValue(texture.SourcePath, out bitmap)) return true;
+        if (_invalidTextureImages.Contains(texture.SourcePath))
+        {
+            bitmap = null;
+            return false;
+        }
+        try
+        {
+            using MemoryStream stream = new(texture.Data, writable: false);
+            using Image source = Image.FromStream(stream, useEmbeddedColorManagement: false,
+                validateImageData: true);
+            bitmap = new Bitmap(source);
+            _textureImages[texture.SourcePath] = bitmap;
+            return true;
+        }
+        catch (Exception exception) when (
+            exception is ArgumentException or ExternalException or OutOfMemoryException)
+        {
+            _invalidTextureImages.Add(texture.SourcePath);
+            bitmap = null;
+            return false;
+        }
+    }
+
+    private static Rectangle Fit(Size image, Rectangle bounds)
+    {
+        if (image.Width <= 0 || image.Height <= 0 || bounds.Width <= 0 || bounds.Height <= 0)
+            return bounds;
+        double scale = Math.Min(bounds.Width / (double)image.Width, bounds.Height / (double)image.Height);
+        int width = Math.Max(1, (int)Math.Round(image.Width * scale));
+        int height = Math.Max(1, (int)Math.Round(image.Height * scale));
+        return new Rectangle(
+            bounds.Left + (bounds.Width - width) / 2,
+            bounds.Top + (bounds.Height - height) / 2,
+            width, height);
+    }
+
+    private static void DrawCheckerboard(Graphics graphics, Rectangle area)
+    {
+        const int cell = 8;
+        using Brush light = new SolidBrush(Color.FromArgb(242, 242, 242));
+        using Brush dark = new SolidBrush(Color.FromArgb(218, 218, 218));
+        graphics.FillRectangle(light, area);
+        for (int y = area.Top; y < area.Bottom; y += cell)
+        {
+            for (int x = area.Left; x < area.Right; x += cell)
+            {
+                if ((((x - area.Left) / cell) + ((y - area.Top) / cell)) % 2 != 0)
+                    graphics.FillRectangle(dark, x, y,
+                        Math.Min(cell, area.Right - x), Math.Min(cell, area.Bottom - y));
+            }
+        }
+    }
+
+    private static int? NumericPose(string? type) =>
+        int.TryParse(type, out int pose) && pose > 0 ? pose : null;
+
+    private static int? DefaultPose(IReadOnlyDictionary<int, FacialEventTexture> textures) =>
+        textures.ContainsKey(1) ? 1 : textures.Keys.OrderBy(value => value).Cast<int?>().FirstOrDefault();
+
+    private static string PoseText(int? pose) => pose?.ToString() ?? "none";
 
     private static void DrawEye(Graphics graphics, int x, int y, float openness)
     {
@@ -218,5 +396,18 @@ public sealed class FacialEventPreviewControl : Control
         int height = Math.Max(5, area.Height * (1 + value % 3) / 3);
         return new Rectangle(area.Left + (area.Width - width) / 2,
             area.Top + (area.Height - height) / 2, width, height);
+    }
+
+    private void ClearTextureImages()
+    {
+        foreach (Bitmap image in _textureImages.Values) image.Dispose();
+        _textureImages.Clear();
+        _invalidTextureImages.Clear();
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing) ClearTextureImages();
+        base.Dispose(disposing);
     }
 }
