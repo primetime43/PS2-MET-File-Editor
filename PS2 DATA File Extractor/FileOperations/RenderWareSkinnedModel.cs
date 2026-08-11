@@ -65,6 +65,16 @@ public sealed class RenderWareSkinnedModel
 
     public void AddTexture(string name, RenderWareTexture texture) => _textures[name] = texture;
 
+    public void ReplaceTextureSource(string sourcePath, RenderWareTexture replacement)
+    {
+        foreach (string key in _textures
+                     .Where(pair => pair.Value.SourcePath.Equals(sourcePath,
+                         StringComparison.OrdinalIgnoreCase))
+                     .Select(pair => pair.Key)
+                     .ToList())
+            _textures[key] = replacement;
+    }
+
     public RenderWareTexture? ResolveTexture(
         RenderWareMaterial material,
         FacialEventFile? facialEvent,
@@ -363,18 +373,22 @@ public sealed record RenderWareMaterial(string? TextureName, Color Color);
 
 public sealed class RenderWareTexture
 {
-    private RenderWareTexture(int width, int height, int[] pixels)
+    private RenderWareTexture(string sourcePath, int width, int height, int[] pixels)
     {
+        SourcePath = sourcePath;
         Width = width;
         Height = height;
         Pixels = pixels;
     }
 
+    public string SourcePath { get; }
     public int Width { get; }
     public int Height { get; }
     public int[] Pixels { get; }
 
-    public static RenderWareTexture Decode(ReadOnlySpan<byte> png)
+    public static RenderWareTexture Decode(ReadOnlySpan<byte> png) => Decode(string.Empty, png);
+
+    public static RenderWareTexture Decode(string sourcePath, ReadOnlySpan<byte> png)
     {
         using MemoryStream stream = new(png.ToArray(), writable: false);
         using Image source = Image.FromStream(stream);
@@ -387,7 +401,7 @@ public sealed class RenderWareTexture
         {
             int[] pixels = new int[bitmap.Width * bitmap.Height];
             Marshal.Copy(locked.Scan0, pixels, 0, pixels.Length);
-            return new RenderWareTexture(bitmap.Width, bitmap.Height, pixels);
+            return new RenderWareTexture(sourcePath, bitmap.Width, bitmap.Height, pixels);
         }
         finally
         {

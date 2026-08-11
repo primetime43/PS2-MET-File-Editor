@@ -102,7 +102,8 @@ public sealed class RenderWareSkeletonResolver
                 string stem = Path.GetFileNameWithoutExtension(textureEntry.Path);
                 try
                 {
-                    model.AddTexture(stem, RenderWareTexture.Decode(ReadEntry(textureEntry)));
+                    model.AddTexture(stem,
+                        RenderWareTexture.Decode(textureEntry.Path, ReadEntry(textureEntry)));
                 }
                 catch (Exception exception) when (exception is ArgumentException or
                                                    System.Runtime.InteropServices.ExternalException)
@@ -183,6 +184,27 @@ public sealed class RenderWareSkeletonResolver
         byte[] data = new byte[entry.OriginalSize];
         stream.ReadExactly(data);
         return data;
+    }
+
+    internal byte[] ReadEntry(string sourcePath)
+    {
+        FileEntry entry = _entries.FirstOrDefault(candidate =>
+            Normalize(candidate.Path).Equals(Normalize(sourcePath),
+                StringComparison.OrdinalIgnoreCase))
+            ?? throw new InvalidDataException($"DATA.MET does not contain '{sourcePath}'.");
+        return ReadEntry(entry);
+    }
+
+    internal void ReplaceCachedTexture(string sourcePath, RenderWareTexture replacement)
+    {
+        foreach (RenderWareSkinnedModel model in _modelCache.Values.OfType<RenderWareSkinnedModel>())
+            model.ReplaceTextureSource(sourcePath, replacement);
+    }
+
+    internal void ReloadCachedTexture(string sourcePath)
+    {
+        RenderWareTexture original = RenderWareTexture.Decode(sourcePath, ReadEntry(sourcePath));
+        ReplaceCachedTexture(sourcePath, original);
     }
 
     private static int Score(

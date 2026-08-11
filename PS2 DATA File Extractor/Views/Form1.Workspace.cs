@@ -8,6 +8,7 @@ public partial class Form1
     private Label _workspaceArchiveStatus = null!;
     private Label _workspaceArchivePath = null!;
     private Button _workspacePlayerButton = null!;
+    private Button _workspaceAppearanceButton = null!;
     private Button _workspaceStadiumButton = null!;
     private Button _workspaceGameplayButton = null!;
     private Button _workspaceAnimationButton = null!;
@@ -177,24 +178,27 @@ public partial class Form1
         {
             Text = "Game Editors",
             Dock = DockStyle.Fill,
-            Height = 296,
+            Height = 350,
             Margin = new Padding(3, 3, 3, 10),
             Padding = new Padding(10, 8, 10, 9)
         };
-        TableLayoutPanel table = CreateToolTable(5);
+        TableLayoutPanel table = CreateToolTable(6);
         _workspacePlayerButton = AddToolRow(table, 0, "Player Editor...",
             "Edit player names, batting, running, fielding, pitching, identity, and clone appearance values.");
         _workspacePlayerButton.Click += (_, _) => playerEditorMenuItem_Click(this, EventArgs.Empty);
-        _workspaceStadiumButton = AddToolRow(table, 1, "Stadium Editor...",
+        _workspaceAppearanceButton = AddToolRow(table, 1, "3D Player Appearance Editor...",
+            "Preview animated player models and export, replace, or reset their clothing, face, hair, and equipment textures.");
+        _workspaceAppearanceButton.Click += playerAppearanceButton_Click;
+        _workspaceStadiumButton = AddToolRow(table, 2, "Stadium Editor...",
             "Edit field lighting, cameras, collision tags, ambient objects, particles, animations, and movement.");
         _workspaceStadiumButton.Click += (_, _) => stadiumEnvironmentMenuItem_Click(this, EventArgs.Empty);
-        _workspaceGameplayButton = AddToolRow(table, 2, "Gameplay Tweaks...",
+        _workspaceGameplayButton = AddToolRow(table, 3, "Gameplay Tweaks...",
             "Edit ball, bat, power-up, field physics, simulation, practice, cheat, and game-default values.");
         _workspaceGameplayButton.Click += (_, _) => gameplayTweaksMenuItem_Click(this, EventArgs.Empty);
-        _workspaceAnimationButton = AddToolRow(table, 3, "Animation Viewer / Editor...",
+        _workspaceAnimationButton = AddToolRow(table, 4, "Animation Viewer / Editor...",
             "View all ANM tracks and keyframes, synchronize paired EVT expressions, and edit speed or timing.");
         _workspaceAnimationButton.Click += animationEditorButton_Click;
-        _workspaceFacialEventButton = AddToolRow(table, 4, "Facial Event Editor...",
+        _workspaceFacialEventButton = AddToolRow(table, 5, "Facial Event Editor...",
             "Edit and preview talkie lip sync, eye events, and mouth events; play paired VAG dialogue.");
         _workspaceFacialEventButton.Click += (_, _) => facialEventEditorMenuItem_Click(this, EventArgs.Empty);
         group.Controls.Add(table);
@@ -323,6 +327,7 @@ public partial class Form1
         bool structuredEditorsAvailable = hasArchive && !_hasUnsavedChanges;
 
         _workspacePlayerButton.Enabled = structuredEditorsAvailable;
+        _workspaceAppearanceButton.Enabled = structuredEditorsAvailable;
         _workspaceStadiumButton.Enabled = structuredEditorsAvailable;
         _workspaceGameplayButton.Enabled = structuredEditorsAvailable;
         _workspaceAnimationButton.Enabled = structuredEditorsAvailable;

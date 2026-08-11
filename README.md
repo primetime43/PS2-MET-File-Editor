@@ -22,6 +22,11 @@ To access the .MET files, you need to extract the game files from the ISO using 
   batting/running/fielding components, all 12 pitch ratings, identity data, and clone appearance slots.
   The image dropdown and arrow buttons cycle through the selected player's own assets: their static polaroid plus the Breathe, Breathe + Blink, and Pick Me selection animations when present. Polaroids accept PNG, BMP, or JPEG replacements and update the packed menu textures; animations can be exported or replaced as compatible 256-by-256 PS2 PSS files.
   The reversed layout and executable addresses are in [`docs/PLAYER_STATS.md`](docs/PLAYER_STATS.md).
+- **3D Player Appearance Editor...** groups the retail batting, fielding, baserunning, player-card,
+  and interview models by player. It previews the real animated skinned DFF, lists every resolved
+  clothing, skin, hair, face, hat, shoe, and equipment PNG, and can export, replace, preview, reset,
+  and batch-save textures. PNG, BMP, and JPEG imports are converted and resized to the original game
+  texture dimensions. See [3D player appearances](docs/PLAYER_APPEARANCE.md).
 - **Stadium Editor...** edits lighting, cameras, collision tags, and ambient models, particles,
   positions, animations, and speeds across all 15 `fielddata.txt` stadium variants. Loader details are
   documented in [`docs/STADIUM_ENVIRONMENTS.md`](docs/STADIUM_ENVIRONMENTS.md).

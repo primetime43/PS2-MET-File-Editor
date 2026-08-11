@@ -223,6 +223,51 @@ public sealed class RenderWareAnimationArchiveTests : IDisposable
         Assert.Equal(0.5, Assert.Single(reloadedTarget.PairedEvent!.Events).Timestamp, 3);
     }
 
+    [Fact]
+    public void ResizesStagesResetsAndSavesModelTexture()
+    {
+        Directory.CreateDirectory(_tempDirectory);
+        string metPath = Path.Combine(_tempDirectory, "DATA.MET");
+        byte[] originalTexture = CreatePng(4, 4, Color.Red);
+        CreateArchive(metPath, new[]
+        {
+            ("data/batting/test/test_swing.anm", CreateStandardAnimation()),
+            ("data/batting/test/testbatting.dff", CreateSkeletonDff()),
+            ("data/batting/test/test_tx.png", originalTexture)
+        });
+        RenderWareAnimationArchive archive = RenderWareAnimationArchive.Load(metPath);
+        RenderWareAnimationFile animation = Assert.Single(archive.Files);
+        RenderWareAnimationBinding binding = Assert.IsType<RenderWareAnimationBinding>(
+            archive.ResolveSkeleton(animation));
+        RenderWareSkinnedModel model = Assert.IsType<RenderWareSkinnedModel>(archive.LoadModel(binding));
+        RenderWareTexture texture = Assert.IsType<RenderWareTexture>(model.Textures["test_tx"]);
+
+        TextureReplacementResult staged = archive.StageTextureReplacement(
+            texture, CreatePng(9, 7, Color.Blue));
+        Assert.True(staged.WasResized);
+        Assert.Equal(4, staged.TargetWidth);
+        Assert.Equal(1, archive.ChangedTextureCount);
+        using (Image image = Image.FromStream(new MemoryStream(archive.GetTextureBytes(texture))))
+            Assert.Equal(new Size(4, 4), image.Size);
+
+        archive.ResetTexture(texture.SourcePath);
+        Assert.Equal(0, archive.ChangedTextureCount);
+        Assert.Equal(originalTexture, archive.GetTextureBytes(texture));
+
+        texture = model.Textures["test_tx"];
+        archive.StageTextureReplacement(texture, CreatePng(9, 7, Color.Blue));
+        AnimationSaveResult saved = archive.SaveTextureChangesWithBackup();
+        Assert.Equal(1, saved.ChangedFileCount);
+        RenderWareAnimationArchive reloaded = RenderWareAnimationArchive.Load(metPath);
+        RenderWareAnimationFile reloadedAnimation = Assert.Single(reloaded.Files);
+        RenderWareAnimationBinding reloadedBinding = Assert.IsType<RenderWareAnimationBinding>(
+            reloaded.ResolveSkeleton(reloadedAnimation));
+        RenderWareSkinnedModel reloadedModel = Assert.IsType<RenderWareSkinnedModel>(
+            reloaded.LoadModel(reloadedBinding));
+        RenderWareTexture reloadedTexture = reloadedModel.Textures["test_tx"];
+        Assert.Equal(Color.Blue.ToArgb(), reloadedTexture.Pixels[0]);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_tempDirectory))
@@ -258,6 +303,15 @@ public sealed class RenderWareAnimationArchiveTests : IDisposable
 
     private static void WriteSingle(byte[] data, int offset, float value) =>
         BitConverter.GetBytes(value).CopyTo(data, offset);
+
+    private static byte[] CreatePng(int width, int height, Color color)
+    {
+        using Bitmap bitmap = new(width, height);
+        using (Graphics graphics = Graphics.FromImage(bitmap)) graphics.Clear(color);
+        using MemoryStream stream = new();
+        bitmap.Save(stream, System.Drawing.Imaging.ImageFormat.Png);
+        return stream.ToArray();
+    }
 
     private static void WriteStandardFrame(
         BinaryWriter writer, float time, float tx, float ty, int previousOffset)
@@ -392,12 +446,17 @@ public sealed class RenderWareAnimationArchiveTests : IDisposable
             writer.Write(0);
             writer.Write(new byte[] { 255, 190, 95, 255 });
             writer.Write(0);
-            writer.Write(0);
+            writer.Write(1);
             writer.Write(1F); writer.Write(1F); writer.Write(1F);
             materialStructure = RwChunk(0x01, stream.ToArray());
         }
+        byte[] texture = RwChunk(0x06, Combine(
+            RwChunk(0x01, new byte[4]),
+            RwChunk(0x02, Encoding.ASCII.GetBytes("test_tx\0")),
+            RwChunk(0x02, new byte[4]),
+            RwChunk(0x03, Array.Empty<byte>())));
         byte[] material = RwChunk(0x07, Combine(
-            materialStructure, RwChunk(0x03, Array.Empty<byte>())));
+            materialStructure, texture, RwChunk(0x03, Array.Empty<byte>())));
         byte[] materialListStructure;
         using (MemoryStream stream = new())
         using (BinaryWriter writer = new(stream))

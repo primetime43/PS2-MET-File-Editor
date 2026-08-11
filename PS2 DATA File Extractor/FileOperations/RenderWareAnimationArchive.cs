@@ -1,4 +1,6 @@
 using System.Buffers.Binary;
+using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
 using PS2_DATA_File_Extractor.Models;
 
 namespace PS2_DATA_File_Extractor.FileOperations;
@@ -7,6 +9,8 @@ public sealed class RenderWareAnimationArchive
 {
     private readonly string _metPath;
     private readonly RenderWareSkeletonResolver _skeletonResolver;
+    private readonly Dictionary<string, byte[]> _textureReplacements =
+        new(StringComparer.OrdinalIgnoreCase);
 
     private RenderWareAnimationArchive(
         string metPath,
@@ -21,7 +25,8 @@ public sealed class RenderWareAnimationArchive
     public IReadOnlyList<RenderWareAnimationFile> Files { get; }
     public int ChangedAnimationCount => Files.Count(file => file.IsChanged);
     public int ChangedEventCount => PairedEvents.Count(file => file.IsChanged);
-    public int ChangedFileCount => ChangedAnimationCount + ChangedEventCount;
+    public int ChangedTextureCount => _textureReplacements.Count;
+    public int ChangedFileCount => ChangedAnimationCount + ChangedEventCount + ChangedTextureCount;
     public int PairedEventCount => Files.Count(file => file.PairedEvent != null);
 
     private IReadOnlyList<FacialEventFile> PairedEvents => Files
@@ -41,6 +46,97 @@ public sealed class RenderWareAnimationArchive
     {
         ArgumentNullException.ThrowIfNull(binding);
         return _skeletonResolver.LoadModel(binding);
+    }
+
+    public byte[] GetTextureBytes(RenderWareTexture texture)
+    {
+        ArgumentNullException.ThrowIfNull(texture);
+        if (string.IsNullOrWhiteSpace(texture.SourcePath))
+            throw new InvalidDataException("This model texture has no DATA.MET source path.");
+        return _textureReplacements.TryGetValue(texture.SourcePath, out byte[]? replacement)
+            ? replacement.ToArray()
+            : _skeletonResolver.ReadEntry(texture.SourcePath);
+    }
+
+    public TextureReplacementResult StageTextureReplacement(
+        RenderWareTexture target,
+        byte[] sourceImage)
+    {
+        ArgumentNullException.ThrowIfNull(sourceImage);
+        return StageTextureReplacementCore(target, sourceImage);
+    }
+
+    private TextureReplacementResult StageTextureReplacementCore(
+        RenderWareTexture target,
+        ReadOnlySpan<byte> sourceImage)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        if (string.IsNullOrWhiteSpace(target.SourcePath))
+            throw new InvalidDataException("This model texture has no replaceable DATA.MET source path.");
+        if (sourceImage.IsEmpty || sourceImage.Length > 64 * 1024 * 1024)
+            throw new InvalidDataException("The replacement image is empty or larger than 64 MB.");
+
+        byte[] converted;
+        int sourceWidth;
+        int sourceHeight;
+        try
+        {
+            using MemoryStream input = new(sourceImage.ToArray(), writable: false);
+            using Image source = Image.FromStream(input, useEmbeddedColorManagement: false,
+                validateImageData: true);
+            sourceWidth = source.Width;
+            sourceHeight = source.Height;
+            using Bitmap bitmap = new(target.Width, target.Height, PixelFormat.Format32bppArgb);
+            using (Graphics graphics = Graphics.FromImage(bitmap))
+            {
+                graphics.Clear(Color.Transparent);
+                graphics.CompositingMode = CompositingMode.SourceCopy;
+                graphics.CompositingQuality = CompositingQuality.HighQuality;
+                graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                using ImageAttributes attributes = new();
+                attributes.SetWrapMode(WrapMode.TileFlipXY);
+                graphics.DrawImage(source, new Rectangle(0, 0, target.Width, target.Height),
+                    0, 0, source.Width, source.Height, GraphicsUnit.Pixel, attributes);
+            }
+            using MemoryStream output = new();
+            bitmap.Save(output, ImageFormat.Png);
+            converted = output.ToArray();
+        }
+        catch (Exception exception) when (exception is ArgumentException or
+                                           System.Runtime.InteropServices.ExternalException)
+        {
+            throw new InvalidDataException("The selected file is not a readable PNG, BMP, or JPEG image.", exception);
+        }
+
+        byte[] original = _skeletonResolver.ReadEntry(target.SourcePath);
+        AssetReplacementValidation validation = AssetReplacementValidator.Validate(
+            target.SourcePath, original, converted);
+        if (!validation.IsValid)
+            throw new InvalidDataException(validation.FormatErrors());
+        RenderWareTexture replacement = RenderWareTexture.Decode(target.SourcePath, converted);
+        _textureReplacements[target.SourcePath] = converted;
+        _skeletonResolver.ReplaceCachedTexture(target.SourcePath, replacement);
+        return new TextureReplacementResult(target.SourcePath, sourceWidth, sourceHeight,
+            target.Width, target.Height, sourceWidth != target.Width || sourceHeight != target.Height,
+            validation.Warnings);
+    }
+
+    public bool IsTextureChanged(string sourcePath) =>
+        _textureReplacements.ContainsKey(sourcePath);
+
+    public void ResetTexture(string sourcePath)
+    {
+        if (!_textureReplacements.Remove(sourcePath)) return;
+        _skeletonResolver.ReloadCachedTexture(sourcePath);
+    }
+
+    public AnimationSaveResult SaveTextureChangesWithBackup()
+    {
+        METArchiveBatchSaveResult result = METArchiveBatchEditor.SaveWithBackup(
+            _metPath, _textureReplacements, "player-appearance");
+        return new AnimationSaveResult(result.BackupPath, result.ChangedEntryCount,
+            result.RebuiltArchive);
     }
 
     public AnimationReplacementCompatibility GetReplacementCompatibility(
@@ -151,6 +247,8 @@ public sealed class RenderWareAnimationArchive
                 StringComparer.OrdinalIgnoreCase);
         foreach (FacialEventFile file in PairedEvents.Where(file => file.IsChanged))
             replacements[file.SourcePath] = file.Serialize();
+        foreach ((string path, byte[] data) in _textureReplacements)
+            replacements[path] = data;
         METArchiveBatchSaveResult result = METArchiveBatchEditor.SaveWithBackup(
             _metPath, replacements, "animations");
         return new AnimationSaveResult(result.BackupPath, result.ChangedEntryCount,
@@ -161,6 +259,7 @@ public sealed class RenderWareAnimationArchive
     {
         foreach (RenderWareAnimationFile file in Files) file.Reset();
         foreach (FacialEventFile file in PairedEvents) file.Reset();
+        foreach (string path in _textureReplacements.Keys.ToList()) ResetTexture(path);
     }
 
     private static bool CanCopyEvent(FacialEventFile? source, FacialEventFile? target)
@@ -666,3 +765,12 @@ public sealed record AnimationReplacementResult(
     float DurationSeconds,
     int FrameCount,
     bool EventCopied);
+
+public sealed record TextureReplacementResult(
+    string SourcePath,
+    int SourceWidth,
+    int SourceHeight,
+    int TargetWidth,
+    int TargetHeight,
+    bool WasResized,
+    IReadOnlyList<string> Warnings);
