@@ -13,6 +13,7 @@ public partial class Form1
     private Button _workspaceGameplayButton = null!;
     private Button _workspaceAnimationButton = null!;
     private Button _workspaceFacialEventButton = null!;
+    private Button _workspaceRenderWareButton = null!;
     private Button _workspaceOpenBrowserButton = null!;
     private Button _workspaceSaveFileButton = null!;
     private Button _workspaceImportFileButton = null!;
@@ -178,11 +179,11 @@ public partial class Form1
         {
             Text = "Game Editors",
             Dock = DockStyle.Fill,
-            Height = 350,
+            Height = 404,
             Margin = new Padding(3, 3, 3, 10),
             Padding = new Padding(10, 8, 10, 9)
         };
-        TableLayoutPanel table = CreateToolTable(6);
+        TableLayoutPanel table = CreateToolTable(7);
         _workspacePlayerButton = AddToolRow(table, 0, "Player Editor...",
             "Edit player names, batting, running, fielding, pitching, identity, and clone appearance values.");
         _workspacePlayerButton.Click += (_, _) => playerEditorMenuItem_Click(this, EventArgs.Empty);
@@ -201,6 +202,9 @@ public partial class Form1
         _workspaceFacialEventButton = AddToolRow(table, 5, "Facial Event Editor...",
             "Edit and preview talkie lip sync, eye events, and mouth events; play paired VAG dialogue.");
         _workspaceFacialEventButton.Click += (_, _) => facialEventEditorMenuItem_Click(this, EventArgs.Empty);
+        _workspaceRenderWareButton = AddToolRow(table, 6, "3D Model and Stadium Viewer...",
+            "Browse all 1,170 DFF models and 26 RWS scenes, inspect stadium sectors and materials, and export OBJ geometry or textures.");
+        _workspaceRenderWareButton.Click += renderWareViewerButton_Click;
         group.Controls.Add(table);
         return group;
     }
@@ -255,6 +259,9 @@ public partial class Form1
                 facialEventEditorMenuItem_Click(this, EventArgs.Empty);
             else if (extension.Equals(".anm", StringComparison.OrdinalIgnoreCase))
                 animationEditorButton_Click(this, EventArgs.Empty);
+            else if (extension.Equals(".dff", StringComparison.OrdinalIgnoreCase) ||
+                     extension.Equals(".rws", StringComparison.OrdinalIgnoreCase))
+                renderWareViewerButton_Click(this, EventArgs.Empty);
         };
         toolbar.Controls.AddRange(new Control[]
         {
@@ -332,6 +339,7 @@ public partial class Form1
         _workspaceGameplayButton.Enabled = structuredEditorsAvailable;
         _workspaceAnimationButton.Enabled = structuredEditorsAvailable;
         _workspaceFacialEventButton.Enabled = structuredEditorsAvailable;
+        _workspaceRenderWareButton.Enabled = structuredEditorsAvailable;
         _workspaceOpenBrowserButton.Enabled = hasArchive;
         _workspaceSaveFileButton.Enabled = selectedFile && _hasUnsavedChanges;
         _workspaceImportFileButton.Enabled = selectedFile;

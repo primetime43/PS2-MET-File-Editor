@@ -44,11 +44,17 @@ To access the .MET files, you need to extract the game files from the ISO using 
   mouth-shape mapping; batting eye/mouth events animate the matching player's model and actual
   numbered PNG textures from `DATA.MET`. See
   [EVT facial events](docs/EVT_FACIAL_EVENTS.md).
+- **3D Model and Stadium Viewer...** catalogs all 1,170 RenderWare DFF assets and 26 RWS scenes.
+  It renders rigid and skinned-model base geometry, reconstructs RWS stadium BSP world sectors and
+  embedded clumps, lists materials/texture assignments and stream chunks, and exports raw assets,
+  Wavefront OBJ/MTL geometry, decoded archive PNGs, or a CSV texture map. Double-click a `.dff` or
+  `.rws` in the archive browser to open it directly. See [RenderWare models and stadiums](docs/RENDERWARE_MODELS.md).
 - **Unlock Game Content...** patches selected players, fields, Darts, and Aquadome unlocked in the game itself.
 - The **DATA.MET Browser** tab contains the file tree, raw preview/editor, and visible Save, Import, and Export actions.
 - EVT files are recognized as their original XML/pseudo-XML text. Double-click a selected EVT in the
   archive tree to open it directly in the Facial Event Editor.
 - Double-click an `.anm` entry to open it directly in the Animation Viewer / Editor.
+- Double-click a `.dff` or `.rws` entry to open it directly in the 3D Model and Stadium Viewer.
 - Selecting a `.mih`, `.mib`, or `.vag` audio entry shows its decoded stream metadata instead of a
   generic binary-file message. **Export Selected** can write a playable PCM WAV; streamed music can
   also be exported as its original matching MIH/MIB pair. See [PS2 audio parsing and export](docs/PS2_AUDIO.md).
