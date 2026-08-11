@@ -86,9 +86,18 @@ namespace PS2_DATA_File_Extractor.FileOperations
         /// </summary>
         /// <param name="dataMetPath">The path to the data.met file.</param>
         /// <param name="entry">The file entry to save.</param>
-        public static void SaveSelectedFileDialog(string dataMetPath, FileEntry entry)
+        public static void SaveSelectedFileDialog(
+            string dataMetPath,
+            FileEntry entry,
+            METFileStructure? structure = null)
         {
-            SaveFileDialog saveFileDialog = new SaveFileDialog();
+            if (structure != null && Ps2AudioArchive.IsSupported(entry.Path))
+            {
+                SavePs2AudioDialog(dataMetPath, entry, structure);
+                return;
+            }
+
+            using SaveFileDialog saveFileDialog = new();
             // Replace / with - in the file name
             saveFileDialog.FileName = entry.Path.Replace('/', '-');
 
@@ -109,6 +118,75 @@ namespace PS2_DATA_File_Extractor.FileOperations
             }
         }
 
+        private static void SavePs2AudioDialog(
+            string dataMetPath,
+            FileEntry entry,
+            METFileStructure structure)
+        {
+            try
+            {
+                Ps2AudioInfo info = Ps2AudioArchive.Inspect(dataMetPath, entry, structure);
+                bool pair = info.Kind == Ps2AudioKind.MibMih;
+                string baseName = Path.GetFileNameWithoutExtension(entry.Path);
+                using SaveFileDialog dialog = new()
+                {
+                    Title = pair
+                        ? "Export streamed PS2 audio"
+                        : "Export PlayStation VAG audio",
+                    FileName = baseName + ".wav",
+                    Filter = pair
+                        ? "Decoded PCM WAV (*.wav)|*.wav|Original MIH/MIB pair (*.mib;*.mih)|*.mib"
+                        : "Decoded PCM WAV (*.wav)|*.wav|Original VAG file (*.vag)|*.vag",
+                    AddExtension = true,
+                    DefaultExt = "wav"
+                };
+                if (dialog.ShowDialog() != DialogResult.OK) return;
+
+                if (dialog.FilterIndex == 1)
+                {
+                    byte[] wave = Ps2AudioArchive.DecodeToWave(dataMetPath, entry, structure);
+                    File.WriteAllBytes(dialog.FileName, wave);
+                    MessageBox.Show(
+                        $"Decoded {info.Channels}-channel, {info.SampleRate:N0} Hz audio to:\n{dialog.FileName}",
+                        "Audio Exported",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Information);
+                    return;
+                }
+
+                if (pair)
+                {
+                    string mibPath = Path.ChangeExtension(dialog.FileName, ".mib");
+                    string mihPath = Path.ChangeExtension(dialog.FileName, ".mih");
+                    if ((File.Exists(mibPath) || File.Exists(mihPath)) &&
+                        MessageBox.Show(
+                            $"One or both output files already exist:\n{mibPath}\n{mihPath}\n\nReplace both MIH and MIB files?",
+                            "Replace Audio Pair",
+                            MessageBoxButtons.YesNo,
+                            MessageBoxIcon.Warning) != DialogResult.Yes)
+                        return;
+
+                    Ps2AudioArchive.ExportRawPair(dataMetPath, entry, structure, dialog.FileName);
+                    MessageBox.Show(
+                        $"Original pair exported to:\n{mibPath}\n{mihPath}",
+                        "Audio Pair Exported",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Information);
+                }
+                else
+                {
+                    SaveSelectedFileLocally(dataMetPath, entry, dialog.FileName, true);
+                }
+            }
+            catch (Exception exception)
+            {
+                MessageBox.Show(
+                    $"The PS2 audio could not be exported.\n\n{exception.Message}",
+                    "Unable to Export Audio",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+            }
+        }
         /// <summary>
         /// Saves the selected file entry to the specified destination path.
         /// </summary>

@@ -29,6 +29,9 @@ To access the .MET files, you need to extract the game files from the ISO using 
   simulation, practice/cheat, and game-default values stored in `DATA.MET`.
 - **Unlock Game Content...** patches selected players, fields, Darts, and Aquadome unlocked in the game itself.
 - The **DATA.MET Browser** tab contains the file tree, raw preview/editor, and visible Save, Import, and Export actions.
+- Selecting a `.mih`, `.mib`, or `.vag` audio entry shows its decoded stream metadata instead of a
+  generic binary-file message. **Export Selected** can write a playable PCM WAV; streamed music can
+  also be exported as its original matching MIH/MIB pair. See [PS2 audio parsing and export](docs/PS2_AUDIO.md).
 - **View > Hex Editor** edits any selected archive payload as validated byte pairs.
 - **Import File** preserves replacement files byte-for-byte, including binary data and trailing zeros.
   PNG/BMP textures are checked for valid headers and matching dimensions; VAG audio is checked for

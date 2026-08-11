@@ -344,6 +344,30 @@ namespace PS2_DATA_File_Extractor
 
                     _selectedEntry.CurrentSize = data.Length;
                 }
+                else if (Ps2AudioArchive.IsSupported(entry.Path))
+                {
+                    if (pictureBox1.Image != null)
+                    {
+                        pictureBox1.Image.Dispose();
+                        pictureBox1.Image = null;
+                    }
+
+                    textEditorControl1.IsReadOnly = true;
+                    try
+                    {
+                        Ps2AudioInfo info = Ps2AudioArchive.Inspect(
+                            _dataMetPath, entry, _metFileStructure);
+                        textEditorControl1.Text = Ps2AudioArchive.FormatDescription(info);
+                    }
+                    catch (Exception exception)
+                    {
+                        textEditorControl1.Text =
+                            $"[PS2 audio file: {Path.GetFileName(entry.Path)}]\n\n" +
+                            $"The audio metadata could not be parsed.\n\n{exception.Message}\n\n" +
+                            "Raw import and export remain available.";
+                    }
+                    _selectedEntry.CurrentSize = data.Length;
+                }
                 // Binary file that's not an image - don't display in text editor
                 else
                 {
@@ -1177,7 +1201,7 @@ namespace PS2_DATA_File_Extractor
         {
             if (_selectedEntry != null)
             {
-                FileExport.SaveSelectedFileDialog(_dataMetPath, _selectedEntry);
+                FileExport.SaveSelectedFileDialog(_dataMetPath, _selectedEntry, _metFileStructure);
             }
             else
             {
