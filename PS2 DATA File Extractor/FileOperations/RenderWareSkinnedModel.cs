@@ -399,7 +399,8 @@ public readonly record struct RenderWareSkinnedVertex(
 
 public readonly record struct RenderWareTriangle(int First, int Second, int Third, int MaterialIndex);
 
-public sealed record RenderWareMaterial(string? TextureName, Color Color);
+public sealed record RenderWareMaterial(string? TextureName, Color Color,
+    byte FilterMode = 0, byte AddressU = 1, byte AddressV = 1);
 
 public sealed class RenderWareTexture
 {
@@ -417,6 +418,13 @@ public sealed class RenderWareTexture
     public int[] Pixels { get; }
 
     public static RenderWareTexture Decode(ReadOnlySpan<byte> png) => Decode(string.Empty, png);
+
+    internal static RenderWareTexture FromArgb(string sourcePath, int width, int height, int[] pixels)
+    {
+        if (width <= 0 || height <= 0 || pixels.Length != checked(width * height))
+            throw new ArgumentException("The decoded texture dimensions do not match its pixels.", nameof(pixels));
+        return new RenderWareTexture(sourcePath, width, height, pixels);
+    }
 
     public static RenderWareTexture Decode(string sourcePath, ReadOnlySpan<byte> png)
     {

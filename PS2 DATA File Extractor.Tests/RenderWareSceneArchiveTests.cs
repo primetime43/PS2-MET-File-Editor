@@ -1,3 +1,4 @@
+using System.Drawing;
 using System.Numerics;
 using System.Windows.Forms;
 using PS2_DATA_File_Extractor;
@@ -33,6 +34,20 @@ public sealed class RenderWareSceneArchiveTests : IDisposable
         Assert.Equal(3, scene.VertexCount);
         Assert.Equal(1, scene.TriangleCount);
         Assert.Equal(Vector3.UnitX, scene.Meshes[0].Vertices[1].Position);
+    }
+
+    [Fact]
+    public void DecodesPlatformIndependentTextureDictionary()
+    {
+        RenderWareScene scene = RenderWareSceneParser.Parse("data/fields/test/test.rws",
+            RenderWareAssetKind.RwsScene, CreatePiTextureDictionary());
+
+        RenderWareTexture texture = Assert.Single(scene.Textures).Value;
+        Assert.Equal("grass00", Assert.Single(scene.NativeTextureNames));
+        Assert.Equal(2, texture.Width);
+        Assert.Equal(2, texture.Height);
+        Assert.Equal(Color.FromArgb(255, 10, 20, 30).ToArgb(), texture.Pixels[0]);
+        Assert.Equal(Color.FromArgb(128, 90, 80, 70).ToArgb(), texture.Pixels[1]);
     }
 
     [Fact]
@@ -154,6 +169,36 @@ public sealed class RenderWareSceneArchiveTests : IDisposable
         return Chunk(0x0B, writer =>
         {
             writer.Write(worldStruct); writer.Write(sector); writer.Write(Chunk(0x03, _ => { }));
+        });
+    }
+
+    private static byte[] CreatePiTextureDictionary()
+    {
+        byte[] image = Chunk(0x18, writer =>
+        {
+            writer.Write(Chunk(0x01, structure =>
+            {
+                structure.Write(2); structure.Write(2); structure.Write(8); structure.Write(4);
+            }));
+            writer.Write(new byte[] { 1, 2, 0, 0, 2, 1, 0, 0 });
+            byte[] palette = new byte[256 * 4];
+            palette[4] = 10; palette[5] = 20; palette[6] = 30; palette[7] = 255;
+            palette[8] = 90; palette[9] = 80; palette[10] = 70; palette[11] = 128;
+            writer.Write(palette);
+        });
+        byte[] texture = Chunk(0x06, writer =>
+        {
+            writer.Write(Chunk(0x01, structure => structure.Write(0x00001106)));
+            writer.Write(Chunk(0x02, name => name.Write(System.Text.Encoding.ASCII.GetBytes("grass00\0"))));
+            writer.Write(Chunk(0x02, name => name.Write((byte)0)));
+            writer.Write(Chunk(0x03, _ => { }));
+        });
+        return Chunk(0x23, writer =>
+        {
+            writer.Write(0x00010001);
+            writer.Write(1);
+            writer.Write(image);
+            writer.Write(texture);
         });
     }
 

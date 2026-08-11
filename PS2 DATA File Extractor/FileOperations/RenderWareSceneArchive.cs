@@ -190,6 +190,9 @@ public sealed class RenderWareScene
     public int VertexCount => Meshes.Sum(mesh => mesh.Vertices.Count);
     public int TriangleCount => Meshes.Sum(mesh => mesh.Triangles.Count);
     public int MaterialCount => Meshes.Sum(mesh => mesh.Materials.Count);
+    public int UniqueMaterialCount => Meshes.SelectMany(mesh => mesh.Materials)
+        .DistinctBy(material => (material.TextureName?.ToUpperInvariant(), material.Color.ToArgb(),
+            material.FilterMode, material.AddressU, material.AddressV)).Count();
     public void AddTexture(string name, RenderWareTexture texture) => _textures[name] = texture;
     public RenderWareTexture? ResolveTexture(RenderWareMaterial material) =>
         string.IsNullOrWhiteSpace(material.TextureName) ? null : _textures.GetValueOrDefault(material.TextureName);
@@ -216,6 +219,7 @@ internal static class RenderWareSceneParser
         List<RenderWareChunkInfo> chunks = new();
         List<string> warnings = new();
         HashSet<string> nativeTextures = new(StringComparer.OrdinalIgnoreCase);
+        Dictionary<string, RenderWareTexture> embeddedTextures = new(StringComparer.OrdinalIgnoreCase);
         int planeSectors = 0, worldSectors = 0, embeddedClumps = 0;
         for (int offset = 0; offset < data.Length; offset = ChunkEnd(data, offset))
         {
@@ -235,16 +239,27 @@ internal static class RenderWareSceneParser
                     planeSectors += result.PlaneSectors;
                     worldSectors += result.WorldSectors;
                 }
-                else if (id is PiTextureDictionary or TextureDictionary)
+                else if (id == PiTextureDictionary)
+                {
+                    foreach (DecodedEmbeddedTexture texture in DecodePiTextureDictionary(data, offset, sourcePath))
+                    {
+                        nativeTextures.Add(texture.Name);
+                        embeddedTextures[texture.Name] = texture.Texture;
+                    }
+                }
+                else if (id == TextureDictionary)
                     CollectNativeTextureNames(data, offset, nativeTextures);
             }
             catch (InvalidDataException exception) { warnings.Add(exception.Message); }
         }
         if (meshes.Count == 0)
             warnings.Add("This asset has no renderable triangle geometry (it may contain cameras, particle emitters, or flyby markers only).");
-        return new RenderWareScene(sourcePath, kind, meshes, chunks, planeSectors, worldSectors,
+        RenderWareScene scene = new(sourcePath, kind, meshes, chunks, planeSectors, worldSectors,
             kind == RenderWareAssetKind.RwsScene ? embeddedClumps : 0,
             nativeTextures.OrderBy(name => name, StringComparer.OrdinalIgnoreCase).ToList(), warnings);
+        foreach ((string name, RenderWareTexture texture) in embeddedTextures)
+            scene.AddTexture(name, texture);
+        return scene;
     }
 
     private static IReadOnlyList<RenderWareSceneMesh> ParseClump(string sourcePath, ReadOnlySpan<byte> data, int clump)
@@ -464,24 +479,127 @@ internal static class RenderWareSceneParser
         if (U32(data, structure) != Struct)
             throw new InvalidDataException($"'{sourcePath}' has an invalid material list.");
         int count = I32(data, structure + 12);
-        List<RenderWareMaterial> materials = new(Math.Max(0, count));
+        if (count < 0 || count > 100_000 || I32(data, structure + 4) < 4 + count * 4)
+            throw new InvalidDataException($"'{sourcePath}' has an invalid material count.");
+        List<int> materialChunks = new();
         for (int child = ChunkEnd(data, structure); child < end; child = ChunkEnd(data, child))
+            if (U32(data, child) == Material) materialChunks.Add(child);
+        int nextChunk = 0;
+        List<RenderWareMaterial> materials = new(Math.Max(0, count));
+        for (int slot = 0; slot < count; slot++)
         {
-            if (U32(data, child) != Material) continue;
-            int materialEnd = ChunkEnd(data, child), materialStruct = child + 12, p = materialStruct + 12;
-            Color color = Color.FromArgb(data[p + 7], data[p + 4], data[p + 5], data[p + 6]);
-            int texture = FindChild(data, ChunkEnd(data, materialStruct), materialEnd, Texture);
-            string? name = null;
-            if (texture >= 0)
+            int shared = I32(data, structure + 16 + slot * 4);
+            if (shared >= 0 && shared < materials.Count)
             {
-                int textureStruct = texture + 12;
-                int nameChunk = FindChild(data, ChunkEnd(data, textureStruct), ChunkEnd(data, texture), String);
-                if (nameChunk >= 0) name = ReadString(data.Slice(nameChunk + 12, I32(data, nameChunk + 4))).Trim();
+                materials.Add(materials[shared]);
+                continue;
             }
-            materials.Add(new RenderWareMaterial(name, color));
+            materials.Add(nextChunk < materialChunks.Count
+                ? ParseMaterial(data, materialChunks[nextChunk++])
+                : new RenderWareMaterial(null, Color.LightGray));
         }
-        while (materials.Count < count) materials.Add(new RenderWareMaterial(null, Color.LightGray));
         return materials;
+    }
+
+    private static RenderWareMaterial ParseMaterial(ReadOnlySpan<byte> data, int material)
+    {
+        int materialEnd = ChunkEnd(data, material), materialStruct = material + 12, p = materialStruct + 12;
+        Color color = Color.FromArgb(data[p + 7], data[p + 4], data[p + 5], data[p + 6]);
+        int texture = FindChild(data, ChunkEnd(data, materialStruct), materialEnd, Texture);
+        if (texture < 0) return new RenderWareMaterial(null, color);
+        int textureStruct = texture + 12;
+        uint sampling = I32(data, textureStruct + 4) >= 4 ? U32(data, textureStruct + 12) : 0;
+        int nameChunk = FindChild(data, ChunkEnd(data, textureStruct), ChunkEnd(data, texture), String);
+        string? name = nameChunk < 0 ? null :
+            ReadString(data.Slice(nameChunk + 12, I32(data, nameChunk + 4))).Trim();
+        return new RenderWareMaterial(name, color, (byte)sampling,
+            (byte)((sampling >> 8) & 0x0F), (byte)((sampling >> 12) & 0x0F));
+    }
+
+    private static IReadOnlyList<DecodedEmbeddedTexture> DecodePiTextureDictionary(
+        ReadOnlySpan<byte> data, int dictionary, string sourcePath)
+    {
+        int end = ChunkEnd(data, dictionary), offset = dictionary + 12;
+        if (offset + 4 > end) throw new InvalidDataException($"'{sourcePath}' has a truncated texture dictionary.");
+        uint dictionaryHeader = U32(data, offset);
+        int textureCount = (int)(dictionaryHeader & 0xFFFF);
+        if (textureCount < 0 || textureCount > 10_000)
+            throw new InvalidDataException($"'{sourcePath}' has an invalid embedded texture count.");
+        offset += 4;
+        List<DecodedEmbeddedTexture> result = new(textureCount);
+        for (int textureIndex = 0; textureIndex < textureCount; textureIndex++)
+        {
+            if (offset + 4 > end) throw new InvalidDataException($"'{sourcePath}' has a truncated texture record.");
+            int mipCount = I32(data, offset);
+            if (mipCount <= 0 || mipCount > 32)
+                throw new InvalidDataException($"'{sourcePath}' has an invalid embedded mip count.");
+            offset += 4;
+            DecodedRwImage? baseImage = null;
+            for (int mip = 0; mip < mipCount; mip++)
+            {
+                if (offset >= end || U32(data, offset) != 0x18)
+                    throw new InvalidDataException($"'{sourcePath}' has a malformed embedded image.");
+                if (mip == 0) baseImage = DecodeRwImage(data, offset, sourcePath);
+                offset = ChunkEnd(data, offset);
+            }
+            if (offset >= end || U32(data, offset) != Texture)
+                throw new InvalidDataException($"'{sourcePath}' has an embedded image without texture metadata.");
+            int textureEnd = ChunkEnd(data, offset);
+            int textureStruct = offset + 12;
+            int nameChunk = FindChild(data, ChunkEnd(data, textureStruct), textureEnd, String);
+            string name = nameChunk < 0 ? string.Empty :
+                ReadString(data.Slice(nameChunk + 12, I32(data, nameChunk + 4))).Trim();
+            if (name.Length > 0 && baseImage != null)
+            {
+                string embeddedPath = $"{sourcePath} :: embedded/{name}";
+                result.Add(new DecodedEmbeddedTexture(name, RenderWareTexture.FromArgb(embeddedPath,
+                    baseImage.Width, baseImage.Height, baseImage.Pixels)));
+            }
+            offset = textureEnd;
+        }
+        if (offset != end)
+            throw new InvalidDataException($"'{sourcePath}' has trailing data in its embedded texture dictionary.");
+        return result;
+    }
+
+    private static DecodedRwImage DecodeRwImage(ReadOnlySpan<byte> data, int image, string sourcePath)
+    {
+        int imageEnd = ChunkEnd(data, image), structure = image + 12;
+        if (U32(data, structure) != Struct || I32(data, structure + 4) < 16)
+            throw new InvalidDataException($"'{sourcePath}' has an invalid embedded RwImage.");
+        int p = structure + 12;
+        int width = I32(data, p), height = I32(data, p + 4), depth = I32(data, p + 8), stride = I32(data, p + 12);
+        if (width <= 0 || height <= 0 || width > 8192 || height > 8192 || stride <= 0)
+            throw new InvalidDataException($"'{sourcePath}' has invalid embedded image dimensions.");
+        int pixelsOffset = ChunkEnd(data, structure);
+        int pixelBytes = checked(stride * height);
+        int paletteEntries = depth == 4 ? 16 : depth == 8 ? 256 : 0;
+        if (pixelsOffset + pixelBytes + paletteEntries * 4 > imageEnd || depth is not (4 or 8 or 24 or 32))
+            throw new InvalidDataException($"'{sourcePath}' uses an unsupported embedded image layout.");
+        int paletteOffset = pixelsOffset + pixelBytes;
+        int[] pixels = new int[checked(width * height)];
+        for (int y = 0; y < height; y++)
+        for (int x = 0; x < width; x++)
+        {
+            int source = pixelsOffset + y * stride;
+            if (depth == 4)
+            {
+                byte packed = data[source + x / 2];
+                int index = (x & 1) == 0 ? packed & 0x0F : packed >> 4;
+                pixels[y * width + x] = ReadRgba(data, paletteOffset + index * 4);
+            }
+            else if (depth == 8)
+                pixels[y * width + x] = ReadRgba(data, paletteOffset + data[source + x] * 4);
+            else
+                pixels[y * width + x] = ReadRgba(data, source + x * (depth / 8), depth == 32);
+        }
+        return new DecodedRwImage(width, height, pixels);
+    }
+
+    private static int ReadRgba(ReadOnlySpan<byte> data, int offset, bool hasAlpha = true)
+    {
+        int alpha = hasAlpha ? data[offset + 3] : 255;
+        return (alpha << 24) | (data[offset] << 16) | (data[offset + 1] << 8) | data[offset + 2];
     }
 
     private static void CollectNativeTextureNames(ReadOnlySpan<byte> data, int dictionary, ISet<string> result)
@@ -577,4 +695,6 @@ internal static class RenderWareSceneParser
     private sealed record GeometryData(IReadOnlyList<RenderWareSceneVertex> Vertices,
         IReadOnlyList<RenderWareTriangle> Triangles, IReadOnlyList<RenderWareMaterial> Materials);
     private sealed record WorldResult(IReadOnlyList<RenderWareSceneMesh> Meshes, int PlaneSectors, int WorldSectors);
+    private sealed record DecodedEmbeddedTexture(string Name, RenderWareTexture Texture);
+    private sealed record DecodedRwImage(int Width, int Height, int[] Pixels);
 }

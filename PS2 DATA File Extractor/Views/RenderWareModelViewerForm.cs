@@ -176,7 +176,7 @@ public sealed class RenderWareModelViewerForm : Form
             _scene = _archive.LoadScene(_selectedAsset);
             _preview.Scene = _scene;
             _summary.Text = $"{_scene.SourcePath}  |  {_scene.VertexCount:N0} vertices  |  {_scene.TriangleCount:N0} triangles  |  " +
-                            $"{_scene.MaterialCount:N0} material slots" +
+                            $"{_scene.UniqueMaterialCount:N0} materials  |  {_scene.Textures.Count:N0} textures" +
                             (_scene.Kind == RenderWareAssetKind.RwsScene
                                 ? $"  |  {_scene.WorldSectorCount:N0} world sectors  |  {_scene.EmbeddedClumpCount:N0} clumps" : string.Empty);
             PopulateDetails();
@@ -205,18 +205,23 @@ public sealed class RenderWareModelViewerForm : Form
         foreach (RenderWareSceneMesh mesh in _scene!.Meshes)
             _meshes.Rows.Add(mesh.Name, mesh.SourceType, mesh.Vertices.Count.ToString("N0"),
                 mesh.Triangles.Count.ToString("N0"), mesh.Materials.Count.ToString("N0"));
-        _materials.Columns.Add("mesh", "Mesh / sector"); _materials.Columns.Add("index", "Index");
-        _materials.Columns.Add("texture", "Texture name"); _materials.Columns.Add("color", "RGBA");
-        _materials.Columns.Add("source", "Resolved source");
-        foreach (RenderWareSceneMesh mesh in _scene.Meshes)
-            for (int index = 0; index < mesh.Materials.Count; index++)
-            {
-                RenderWareMaterial material = mesh.Materials[index];
-                RenderWareTexture? texture = _scene.ResolveTexture(material);
-                _materials.Rows.Add(mesh.Name, index, material.TextureName ?? "(none)",
-                    $"{material.Color.R}, {material.Color.G}, {material.Color.B}, {material.Color.A}",
-                    texture?.SourcePath ?? (_scene.Kind == RenderWareAssetKind.RwsScene ? "Embedded PS2 raster / not decoded" : "Not found"));
-            }
+        _materials.Columns.Add("uses", "Used by"); _materials.Columns.Add("texture", "Texture name");
+        _materials.Columns.Add("size", "Image size"); _materials.Columns.Add("color", "RGBA");
+        _materials.Columns.Add("sampling", "Sampling"); _materials.Columns.Add("source", "Resolved source");
+        var materialGroups = _scene.Meshes.SelectMany(mesh => mesh.Materials.Select(material => (mesh, material)))
+            .GroupBy(item => (Name: item.material.TextureName?.ToUpperInvariant(),
+                Color: item.material.Color.ToArgb(), item.material.FilterMode, item.material.AddressU, item.material.AddressV));
+        foreach (var group in materialGroups)
+        {
+            RenderWareMaterial material = group.First().material;
+            RenderWareTexture? texture = _scene.ResolveTexture(material);
+            int meshCount = group.Select(item => item.mesh.Name).Distinct(StringComparer.OrdinalIgnoreCase).Count();
+            _materials.Rows.Add($"{meshCount:N0} mesh{(meshCount == 1 ? string.Empty : "es")}",
+                material.TextureName ?? "(none)", texture == null ? "—" : $"{texture.Width} × {texture.Height}",
+                $"{material.Color.R}, {material.Color.G}, {material.Color.B}, {material.Color.A}",
+                $"filter {material.FilterMode}, U {AddressName(material.AddressU)}, V {AddressName(material.AddressV)}",
+                texture?.SourcePath ?? "Not found");
+        }
         _chunks.Columns.Add("offset", "Offset"); _chunks.Columns.Add("id", "ID");
         _chunks.Columns.Add("name", "Chunk"); _chunks.Columns.Add("length", "Payload bytes");
         _chunks.Columns.Add("version", "Version");
@@ -278,6 +283,7 @@ public sealed class RenderWareModelViewerForm : Form
     }
 
     private static string Csv(string value) => '"' + value.Replace("\"", "\"\"") + '"';
+    private static string AddressName(byte value) => value switch { 1 => "wrap", 2 => "mirror", 3 => "clamp", 4 => "border", _ => "default" };
     private static Button Button(string text) => new() { Text = text, AutoSize = true, Height = 29, Margin = new Padding(4, 1, 0, 1) };
     private static DataGridView Grid() => new()
     {

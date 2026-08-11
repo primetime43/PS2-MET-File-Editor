@@ -46,8 +46,9 @@ To access the .MET files, you need to extract the game files from the ISO using 
   [EVT facial events](docs/EVT_FACIAL_EVENTS.md).
 - **3D Model and Stadium Viewer...** catalogs all 1,170 RenderWare DFF assets and 26 RWS scenes.
   It renders rigid and skinned-model base geometry, reconstructs RWS stadium BSP world sectors and
-  embedded clumps, lists materials/texture assignments and stream chunks, and exports raw assets,
-  Wavefront OBJ/MTL geometry, decoded archive PNGs, or a CSV texture map. Double-click a `.dff` or
+  embedded clumps, decodes all 1,154 embedded RWS textures with material/vertex lighting and sampling
+  modes, lists material assignments and stream chunks, and exports raw assets, Wavefront OBJ/MTL
+  geometry, decoded PNGs, or a CSV texture map. Double-click a `.dff` or
   `.rws` in the archive browser to open it directly. See [RenderWare models and stadiums](docs/RENDERWARE_MODELS.md).
 - **Unlock Game Content...** patches selected players, fields, Darts, and Aquadome unlocked in the game itself.
 - The **DATA.MET Browser** tab contains the file tree, raw preview/editor, and visible Save, Import, and Export actions.

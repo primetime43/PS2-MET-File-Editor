@@ -101,7 +101,7 @@ public sealed class RenderWareScenePreviewControl : Control
                 ProjectedPoint p = Rotate(vertex.Position);
                 return new ScreenVertex(projection.CenterX + (p.X - projection.ModelCenterX) * projection.Scale,
                     projection.CenterY - (p.Y - projection.ModelCenterY) * projection.Scale,
-                    p.Depth, vertex.TextureCoordinate.X, vertex.TextureCoordinate.Y);
+                    p.Depth, vertex.TextureCoordinate.X, vertex.TextureCoordinate.Y, vertex.Color.ToArgb());
             }).ToArray();
             foreach (RenderWareTriangle triangle in mesh.Triangles)
             {
@@ -184,26 +184,42 @@ public sealed class RenderWareScenePreviewControl : Control
             float z = a.Depth * w0 + b.Depth * w1 + c.Depth * w2;
             int pixel = y * width + x;
             if (z <= depth[pixel]) continue;
-            int color = texture == null ? material.Color.ToArgb() : Sample(texture,
-                a.U * w0 + b.U * w1 + c.U * w2, a.V * w0 + b.V * w1 + c.V * w2);
-            int alpha = (color >>> 24) & 0xFF;
+            int color = texture == null ? unchecked((int)0xFFFFFFFF) : Sample(texture,
+                a.U * w0 + b.U * w1 + c.U * w2, a.V * w0 + b.V * w1 + c.V * w2,
+                material.AddressU, material.AddressV);
+            float vertexRed = InterpolateChannel(a.Color, b.Color, c.Color, 16, w0, w1, w2) / 255F;
+            float vertexGreen = InterpolateChannel(a.Color, b.Color, c.Color, 8, w0, w1, w2) / 255F;
+            float vertexBlue = InterpolateChannel(a.Color, b.Color, c.Color, 0, w0, w1, w2) / 255F;
+            float vertexAlpha = InterpolateChannel(a.Color, b.Color, c.Color, 24, w0, w1, w2) / 255F;
+            int alpha = (int)(((color >>> 24) & 0xFF) * material.Color.A / 255F * vertexAlpha);
             if (alpha < 24) continue;
-            int red = (int)(((color >>> 16) & 0xFF) * material.Color.R / 255F * shade);
-            int green = (int)(((color >>> 8) & 0xFF) * material.Color.G / 255F * shade);
-            int blue = (int)((color & 0xFF) * material.Color.B / 255F * shade);
+            int red = (int)(((color >>> 16) & 0xFF) * material.Color.R / 255F * vertexRed * shade);
+            int green = (int)(((color >>> 8) & 0xFF) * material.Color.G / 255F * vertexGreen * shade);
+            int blue = (int)((color & 0xFF) * material.Color.B / 255F * vertexBlue * shade);
             pixels[pixel] = (alpha << 24) | (Math.Clamp(red, 0, 255) << 16) |
                             (Math.Clamp(green, 0, 255) << 8) | Math.Clamp(blue, 0, 255);
             depth[pixel] = z;
         }
     }
 
-    private static int Sample(RenderWareTexture texture, float u, float v)
+    private static int Sample(RenderWareTexture texture, float u, float v, byte addressU, byte addressV)
     {
-        u -= MathF.Floor(u); v -= MathF.Floor(v);
+        u = Address(u, addressU); v = Address(v, addressV);
         int x = Math.Clamp((int)(u * texture.Width), 0, texture.Width - 1);
         int y = Math.Clamp((int)(v * texture.Height), 0, texture.Height - 1);
         return texture.Pixels[y * texture.Width + x];
     }
+
+    private static float Address(float value, byte mode) => mode switch
+    {
+        2 => 1F - MathF.Abs(value % 2F - 1F),
+        3 or 4 => Math.Clamp(value, 0F, 0.999999F),
+        _ => value - MathF.Floor(value)
+    };
+
+    private static float InterpolateChannel(int a, int b, int c, int shift,
+        float w0, float w1, float w2) =>
+        ((a >>> shift) & 0xFF) * w0 + ((b >>> shift) & 0xFF) * w1 + ((c >>> shift) & 0xFF) * w2;
 
     private static bool Valid(RenderWareTriangle t, int count) =>
         t.First >= 0 && t.Second >= 0 && t.Third >= 0 && t.First < count && t.Second < count && t.Third < count;
@@ -233,6 +249,6 @@ public sealed class RenderWareScenePreviewControl : Control
         TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.WordBreak);
 
     private readonly record struct ProjectedPoint(float X, float Y, float Depth);
-    private readonly record struct ScreenVertex(float X, float Y, float Depth, float U, float V);
+    private readonly record struct ScreenVertex(float X, float Y, float Depth, float U, float V, int Color);
     private readonly record struct Projection(float CenterX, float CenterY, float ModelCenterX, float ModelCenterY, float Scale);
 }

@@ -35,20 +35,21 @@ they remain selectable so their stream metadata and original bytes can still be 
 - Double-click the preview or select **Reset View** to restore the default camera.
 - **Wireframe** makes BSP sector density and overlapping geometry easier to inspect.
 
-The solid renderer uses resolved PNG textures when a DFF material has a matching archive texture.
-Stadium RWS files keep their textures in PS2 Graphics Synthesizer raster data inside the `0x23`
-dictionary. Their material-to-texture names are parsed and exported, but the swizzled embedded raster
-pixels are not decoded or rewritten yet; the stadium preview therefore uses material colors.
+The solid renderer uses resolved archive PNG textures for DFF materials and decodes the RWS file's
+embedded platform-independent texture dictionary. All 1,154 retail RWS textures are supported. The
+decoder reads the highest-resolution mip image, 4-bit and 8-bit RGBA palettes, 24/32-bit pixels, row
+stride, material color, pre-lit vertex color, and RenderWare wrap/mirror/clamp addressing. The
+**Materials and textures** table shows each unique material, image dimensions, sampling state, use
+count, and exact source. Embedded texture rewriting is not implemented yet.
 
 ## Export actions
 
 - **Export Raw...** writes the selected DFF/RWS byte-for-byte.
 - **Export OBJ...** writes Wavefront OBJ geometry plus its MTL material file. Vertex positions,
   normals, UVs, object/sector boundaries, material assignments, and frame transforms are preserved.
-- **Export Textures...** writes resolved archive PNG textures for the selected DFF.
+- **Export Textures...** writes resolved archive PNG textures or every decoded embedded RWS texture.
 - **Export Texture Map...** writes a CSV of mesh/sector, material index, RGBA color, texture name,
-  and resolved source. This is useful for matching a stadium material to its embedded raster before
-  PS2 raster decoding is implemented.
+  and resolved source.
 
 OBJ is an interchange export. Importing an arbitrary OBJ is not currently safe because RenderWare
 world rebuilding must also regenerate BSP partitioning, material windows, plugins, collision data,
@@ -58,6 +59,12 @@ and PS2-native texture/raster state.
 
 Chunk headers are 12 bytes: 32-bit chunk ID, payload length, and RenderWare build/version value.
 The retail streams use version value `0x1803FFFF`.
+
+The `0x23` texture dictionary starts with a packed texture-count/platform word (`platform = 1`).
+Each texture record contains a mip count, that many `RwImage` (`0x18`) chunks, and a Texture (`0x06`)
+chunk carrying its sampling flags and name. Each `RwImage` struct stores width, height, bit depth, and
+row stride, followed by pixels and an RGBA palette for indexed images. This is a platform-independent
+image stream rather than raw Graphics Synthesizer VRAM, which is why it can be decoded losslessly.
 
 The 64-byte World struct used by the retail RWS files contains:
 
@@ -79,5 +86,5 @@ legacy fields, followed by attribute arrays controlled by the World flags. Pre-3
 16-bit values in `material, vertex0, vertex1, vertex2` order.
 
 This parser and exporter are the foundation for later geometry replacement and map cloning. Safe
-editing should be added only with BSP rebuilding and full PS2 texture-dictionary support, rather than
-copying raw RWS chunks and producing a scene the game cannot stream.
+editing should be added only with BSP rebuilding and texture-dictionary writing, rather than copying
+raw RWS chunks and producing a scene the game cannot stream.
