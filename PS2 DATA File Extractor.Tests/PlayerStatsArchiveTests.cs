@@ -9,8 +9,12 @@ public sealed class PlayerStatsArchiveTests : IDisposable
     private const int FirstOffset = 2048;
     private const int CloneOffset = 4096;
     private const int PortraitOffset = 6144;
+    private const int BreatheOffset = 8192;
+    private const int BreatheBlinkOffset = 10240;
+    private const int PickMeOffset = 12288;
     private static readonly byte[] FakePortrait = Convert.FromBase64String(
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=");
+    private static readonly byte[] FakePss = CreateFakePss();
     private readonly string _tempDirectory = Path.Combine(Path.GetTempPath(), $"player-stats-tests-{Guid.NewGuid():N}");
 
     [Fact]
@@ -100,11 +104,21 @@ public sealed class PlayerStatsArchiveTests : IDisposable
         PlayerStatsArchive players = PlayerStatsArchive.Load(metPath);
         PlayerPortraitArchive portraits = PlayerPortraitArchive.Load(metPath);
 
-        PlayerPortrait portrait = Assert.IsType<PlayerPortrait>(
-            portraits.GetPortrait(players.Players.Single(player => player.FirstName == "Abner")));
+        PlayerPortraitInfo info = Assert.Single(portraits.Portraits);
+        Assert.Equal("abner", info.Code);
+        PlayerPortrait portrait = Assert.IsType<PlayerPortrait>(portraits.GetPortrait(info.Code));
 
         Assert.Equal("data/polaroids/abner.png", portrait.SourcePath);
         Assert.Equal(FakePortrait, portrait.Data);
+
+        PlayerStatsRecord abner = players.Players.Single(player => !player.IsClone);
+        Assert.Collection(
+            portraits.GetPlayerImages(abner),
+            item => Assert.Equal(PlayerImageKind.Polaroid, item.Kind),
+            item => Assert.Equal(PlayerImageKind.Breathe, item.Kind),
+            item => Assert.Equal(PlayerImageKind.BreatheBlink, item.Kind),
+            item => Assert.Equal(PlayerImageKind.PickMe, item.Kind));
+        Assert.Empty(portraits.GetPlayerImages(players.Players.Single(player => player.IsClone)));
         Assert.Null(portraits.GetPortrait(players.Players.Single(player => player.IsClone)));
     }
 
@@ -118,12 +132,38 @@ public sealed class PlayerStatsArchiveTests : IDisposable
         PlayerPortraitArchive portraits = PlayerPortraitArchive.Load(metPath);
         byte[] replacement = FakePortrait.Concat(new byte[] { 0 }).ToArray();
 
-        PlayerPortraitSaveResult result = portraits.ReplaceWithBackup(player, replacement);
+        PlayerPortraitSaveResult result = portraits.ReplaceWithBackup("abner", replacement);
 
         Assert.NotNull(result.BackupPath);
         Assert.True(File.Exists(result.BackupPath));
         Assert.Equal("data/polaroids/abner.png", result.SourcePath);
         Assert.Equal(replacement, PlayerPortraitArchive.Load(metPath).GetPortrait(player)!.Data);
+        Assert.True(METFileReader.ReadMETFile(metPath).ValidateStructure().IsValid);
+    }
+
+    [Fact]
+    public void ReplacingSelectionAnimationValidatesAndWritesPss()
+    {
+        Directory.CreateDirectory(_tempDirectory);
+        string metPath = Path.Combine(_tempDirectory, "DATA.MET");
+        CreateArchive(metPath);
+        PlayerStatsRecord player = PlayerStatsArchive.Load(metPath).Players.Single(item => !item.IsClone);
+        PlayerPortraitArchive portraits = PlayerPortraitArchive.Load(metPath);
+        PlayerImageInfo breathe = portraits.GetPlayerImages(player)
+            .Single(item => item.Kind == PlayerImageKind.Breathe);
+
+        Assert.Throws<InvalidDataException>(() =>
+            portraits.ReplacePlayerImageWithBackup(breathe, new byte[128]));
+
+        byte[] replacement = FakePss.Concat(new byte[] { 0x55 }).ToArray();
+        PlayerPortraitSaveResult result = portraits.ReplacePlayerImageWithBackup(breathe, replacement);
+
+        Assert.NotNull(result.BackupPath);
+        Assert.True(File.Exists(result.BackupPath));
+        PlayerPortraitArchive reloaded = PlayerPortraitArchive.Load(metPath);
+        PlayerImageInfo savedInfo = reloaded.GetPlayerImages(player)
+            .Single(item => item.Kind == PlayerImageKind.Breathe);
+        Assert.Equal(replacement, reloaded.GetPlayerImage(savedInfo)!.Data);
         Assert.True(METFileReader.ReadMETFile(metPath).ValidateStructure().IsValid);
     }
 
@@ -177,7 +217,7 @@ public sealed class PlayerStatsArchiveTests : IDisposable
         short[] cloneValues = Enumerable.Repeat((short)40, PlayerStatsRecord.BaseFieldCount).ToArray();
         byte[] normal = CreateRecord(normalValues, Array.Empty<short>(), "Abner", "Ace", "Dubbleplay");
         byte[] clone = CreateRecord(cloneValues, new short[8], "Zena", "", "Fromme");
-        int totalLength = PortraitOffset + FakePortrait.Length;
+        int totalLength = PickMeOffset + FakePss.Length;
         using FileStream stream = new(path, FileMode.Create, FileAccess.ReadWrite);
         using BinaryWriter writer = new(stream);
         writer.Write(FirstOffset);
@@ -185,6 +225,9 @@ public sealed class PlayerStatsArchiveTests : IDisposable
         WriteEntry(writer, FirstOffset, normal.Length, "data/kids/stats/Abner_stats.dat");
         WriteEntry(writer, CloneOffset, clone.Length, "data/kids/stats/Clone1_stats.dat");
         WriteEntry(writer, PortraitOffset, FakePortrait.Length, "data/polaroids/abner.png");
+        WriteEntry(writer, BreatheOffset, FakePss.Length, "data/video/pickplayer/abner_breathe.pss");
+        WriteEntry(writer, BreatheBlinkOffset, FakePss.Length, "data/video/pickplayer/abner_breatheblink.pss");
+        WriteEntry(writer, PickMeOffset, FakePss.Length, "data/video/pickplayer/abner_pickme.pss");
         writer.Write(new byte[12]);
         stream.Position = FirstOffset;
         writer.Write(normal);
@@ -192,6 +235,33 @@ public sealed class PlayerStatsArchiveTests : IDisposable
         writer.Write(clone);
         stream.Position = PortraitOffset;
         writer.Write(FakePortrait);
+        stream.Position = BreatheOffset;
+        writer.Write(FakePss);
+        stream.Position = BreatheBlinkOffset;
+        writer.Write(FakePss);
+        stream.Position = PickMeOffset;
+        writer.Write(FakePss);
+    }
+
+    private static byte[] CreateFakePss()
+    {
+        byte[] data = new byte[2048];
+        data[0] = 0x00;
+        data[1] = 0x00;
+        data[2] = 0x01;
+        data[3] = 0xba;
+        data[8] = 0x00;
+        data[9] = 0x00;
+        data[10] = 0x01;
+        data[11] = 0xe0;
+        data[16] = 0x00;
+        data[17] = 0x00;
+        data[18] = 0x01;
+        data[19] = 0xb3;
+        data[20] = 0x10;
+        data[21] = 0x01;
+        data[22] = 0x00;
+        return data;
     }
 
     private static void WriteEntry(BinaryWriter writer, int offset, int size, string path)

@@ -71,6 +71,17 @@ portraits are packed into 73 shared 256-by-256 pages named `data/menus/polaroids
 four rectangular regions on those pages. Overflow strips and corners from different portraits can
 share the same page, which is why the numbered PNGs can look like unrelated image fragments.
 
+The player editor's image dropdown and previous/next buttons are scoped to the selected player. A retail
+player can have up to four entries: the static polaroid and three 256-by-256 selection animations named
+`<code>_breathe.pss`, `<code>_breatheblink.pss`, and `<code>_pickme.pss` under
+`data/video/pickplayer/`. For example, Derek Jeter uses `jete.png` plus `jete_breathe.pss`,
+`jete_breatheblink.pss`, and `jete_pickme.pss`. Clone records do not have dedicated fixed image entries.
+
+The editor shows a representative frame for PSS animations when a local MPEG decoder is available.
+**Export PSS...** preserves the original animation bytes. **Replace PSS...** accepts a compatible
+256-by-256 PS2 PSS file and validates its MPEG program-stream and sequence headers before updating
+`DATA.MET`. If a preview decoder is unavailable, PSS export and replacement remain available.
+
 **Export...** writes the clean source PNG without alteration. **Replace...** accepts PNG, BMP, JPG,
 or JPEG files, converts and fits the image to the source portrait's original dimensions without
 stretching, then updates both the source PNG and every region referenced by `polaroids.imp` in one

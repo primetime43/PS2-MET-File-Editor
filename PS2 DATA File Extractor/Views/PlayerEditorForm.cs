@@ -68,6 +68,22 @@ public sealed class PlayerEditorForm : Form
         TextAlign = ContentAlignment.MiddleCenter
     };
     private readonly ToolTip _portraitToolTip = new();
+    private readonly ComboBox _portraitSelector = new()
+    {
+        Dock = DockStyle.Fill,
+        DropDownStyle = ComboBoxStyle.DropDownList,
+        DropDownWidth = 360,
+        IntegralHeight = false,
+        MaxDropDownItems = 18
+    };
+    private readonly Button _previousPortraitButton = new()
+    {
+        Text = "<", Dock = DockStyle.Fill, Margin = new Padding(0, 1, 2, 1)
+    };
+    private readonly Button _nextPortraitButton = new()
+    {
+        Text = ">", Dock = DockStyle.Fill, Margin = new Padding(2, 1, 0, 1)
+    };
     private readonly Button _exportPortraitButton = new()
     {
         Text = "Export...", Dock = DockStyle.Fill, Margin = new Padding(2, 3, 2, 3)
@@ -94,7 +110,9 @@ public sealed class PlayerEditorForm : Form
     private readonly DataGridView _cloneGrid;
     private readonly TabPage _clonePage = new("Clone Appearance");
     private PlayerStatsRecord? _current;
-    private PlayerPortrait? _currentPortrait;
+    private PlayerImage? _currentPlayerImage;
+    private readonly Dictionary<string, Bitmap> _animationPreviewCache =
+        new(StringComparer.OrdinalIgnoreCase);
     private bool _loading;
 
     public bool ArchiveWasModified { get; private set; }
@@ -200,11 +218,18 @@ public sealed class PlayerEditorForm : Form
         HookIdentityEvents();
         _exportPortraitButton.Click += ExportPortrait_Click;
         _replacePortraitButton.Click += ReplacePortrait_Click;
+        _portraitSelector.SelectedIndexChanged += (_, _) =>
+        {
+            if (!_loading) LoadSelectedPlayerImage();
+        };
+        _previousPortraitButton.Click += (_, _) => MovePortrait(-1);
+        _nextPortraitButton.Click += (_, _) => MovePortrait(1);
         PopulatePlayerList();
         Shown += (_, _) => SetInitialPlayerListWidth(split);
         FormClosed += (_, _) =>
         {
             _portrait.Image?.Dispose();
+            foreach (Bitmap preview in _animationPreviewCache.Values) preview.Dispose();
             _portraitToolTip.Dispose();
         };
         _status.Text = $"Loaded {_archive.Players.Count} players ({_archive.Players.Count(player => player.IsClone)} clones) and {_portraits.PortraitCount} portraits ({_portraits.PackedPortraitCount} game-texture mappings).";
@@ -215,13 +240,13 @@ public sealed class PlayerEditorForm : Form
         TableLayoutPanel area = new()
         {
             Dock = DockStyle.Top,
-            Height = 205,
+            Height = 235,
             ColumnCount = 2,
             RowCount = 1,
             Padding = new Padding(4)
         };
         area.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-        area.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 220F));
+        area.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 270F));
         area.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
 
         FlowLayoutPanel identity = BuildIdentityPanel();
@@ -229,18 +254,33 @@ public sealed class PlayerEditorForm : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 3,
+            RowCount = 4,
             Margin = new Padding(8, 0, 0, 0)
         };
         portraitPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
         portraitPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 20F));
+        portraitPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 31F));
         portraitPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
         portraitPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 34F));
-        portraitPanel.Controls.Add(new Label { Text = "Player polaroid", Dock = DockStyle.Fill }, 0, 0);
+        portraitPanel.Controls.Add(new Label { Text = "Player images", Dock = DockStyle.Fill }, 0, 0);
+        TableLayoutPanel portraitNavigation = new()
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 3,
+            RowCount = 1,
+            Margin = Padding.Empty
+        };
+        portraitNavigation.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 30F));
+        portraitNavigation.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        portraitNavigation.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 30F));
+        portraitNavigation.Controls.Add(_previousPortraitButton, 0, 0);
+        portraitNavigation.Controls.Add(_portraitSelector, 1, 0);
+        portraitNavigation.Controls.Add(_nextPortraitButton, 2, 0);
+        portraitPanel.Controls.Add(portraitNavigation, 0, 1);
         Panel imageHost = new() { Dock = DockStyle.Fill };
         imageHost.Controls.Add(_portrait);
         imageHost.Controls.Add(_portraitMessage);
-        portraitPanel.Controls.Add(imageHost, 0, 1);
+        portraitPanel.Controls.Add(imageHost, 0, 2);
         TableLayoutPanel portraitButtons = new()
         {
             Dock = DockStyle.Fill,
@@ -253,7 +293,7 @@ public sealed class PlayerEditorForm : Form
         portraitButtons.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
         portraitButtons.Controls.Add(_exportPortraitButton, 0, 0);
         portraitButtons.Controls.Add(_replacePortraitButton, 1, 0);
-        portraitPanel.Controls.Add(portraitButtons, 0, 2);
+        portraitPanel.Controls.Add(portraitButtons, 0, 3);
         area.Controls.Add(identity, 0, 0);
         area.Controls.Add(portraitPanel, 1, 0);
         return area;
@@ -344,7 +384,7 @@ public sealed class PlayerEditorForm : Form
         SelectChoice(_batHand, _current.BaseValues[29]);
         SelectChoice(_throwHand, _current.BaseValues[30]);
         _source.Text = _current.SourcePath;
-        LoadPlayerPortrait();
+        PopulatePlayerImages();
         LoadGridValues(_coreGrid);
         LoadGridValues(_pitchGrid);
         LoadGridValues(_cloneGrid);
@@ -353,34 +393,118 @@ public sealed class PlayerEditorForm : Form
         UpdateSummaryAndStatus();
     }
 
-    private void LoadPlayerPortrait()
+    private void PopulatePlayerImages(string? selectedPath = null)
     {
-        _currentPortrait = null;
+        bool wasLoading = _loading;
+        _loading = true;
+        _portraitSelector.BeginUpdate();
+        _portraitSelector.Items.Clear();
+        if (_current != null)
+        {
+            foreach (PlayerImageInfo info in _portraits.GetPlayerImages(_current))
+                _portraitSelector.Items.Add(new PlayerImageListItem(info));
+        }
+        _portraitSelector.EndUpdate();
+
+        int selectedIndex = selectedPath == null
+            ? -1
+            : _portraitSelector.Items.Cast<PlayerImageListItem>().ToList()
+                .FindIndex(item => item.Info.SourcePath.Equals(selectedPath, StringComparison.OrdinalIgnoreCase));
+        _portraitSelector.SelectedIndex = selectedIndex >= 0
+            ? selectedIndex
+            : (_portraitSelector.Items.Count > 0 ? 0 : -1);
+        _loading = wasLoading;
+        UpdatePortraitNavigationButtons();
+        LoadSelectedPlayerImage();
+    }
+
+    private void MovePortrait(int direction)
+    {
+        int count = _portraitSelector.Items.Count;
+        if (count == 0) return;
+        int index = _portraitSelector.SelectedIndex;
+        _portraitSelector.SelectedIndex = index < 0
+            ? (direction < 0 ? count - 1 : 0)
+            : (index + direction + count) % count;
+    }
+
+    private void LoadSelectedPlayerImage()
+    {
+        _currentPlayerImage = null;
         _exportPortraitButton.Enabled = false;
         _replacePortraitButton.Enabled = false;
+        _exportPortraitButton.Text = "Export...";
+        _replacePortraitButton.Text = "Replace...";
+
         Image? oldImage = _portrait.Image;
         _portrait.Image = null;
         oldImage?.Dispose();
         _portraitMessage.Visible = true;
         _portraitMessage.Text = _current?.IsClone == true
-            ? "No stored portrait\nfor clone players"
-            : "No portrait found";
+            ? "No dedicated images\nfor clone players"
+            : "No stored player images";
         _portraitMessage.BringToFront();
         _portraitToolTip.SetToolTip(_portrait, string.Empty);
-        if (_current == null) return;
+        UpdatePortraitNavigationButtons();
 
-        PlayerPortrait? portrait = _portraits.GetPortrait(_current);
-        if (portrait == null) return;
-        _currentPortrait = portrait;
+        if (_portraitSelector.SelectedItem is not PlayerImageListItem selected) return;
+        PlayerImage? image = _portraits.GetPlayerImage(selected.Info);
+        if (image == null)
+        {
+            _portraitMessage.Text = "Player image entry not found";
+            return;
+        }
+
+        _currentPlayerImage = image;
         _exportPortraitButton.Enabled = true;
         _replacePortraitButton.Enabled = true;
+        _exportPortraitButton.Text = image.Info.IsAnimated ? "Export PSS..." : "Export...";
+        _replacePortraitButton.Text = image.Info.IsAnimated ? "Replace PSS..." : "Replace...";
+
+        if (image.Info.IsAnimated)
+        {
+            try
+            {
+                if (_animationPreviewCache.TryGetValue(image.Info.SourcePath, out Bitmap? cached))
+                {
+                    _portrait.Image = new Bitmap(cached);
+                    _portraitMessage.Visible = false;
+                }
+                else if (PssPreview.TryCreate(image.Data, out Bitmap? preview, out string? reason) &&
+                         preview != null)
+                {
+                    _animationPreviewCache[image.Info.SourcePath] = new Bitmap(preview);
+                    _portrait.Image = preview;
+                    _portraitMessage.Visible = false;
+                }
+                else
+                {
+                    _portraitMessage.Text = reason ?? "Animation preview unavailable";
+                }
+            }
+            catch (Exception)
+            {
+                _portraitMessage.Text = "Animation preview unavailable\nThe PSS can still be exported.";
+            }
+
+            _portraitToolTip.SetToolTip(
+                _portrait,
+                $"{image.Info.SourcePath}\nAnimated 256 x 256 player-selection portrait.");
+            return;
+        }
+
         try
         {
-            using MemoryStream stream = new(portrait.Data, writable: false);
+            using MemoryStream stream = new(image.Data, writable: false);
             using Image source = Image.FromStream(stream);
             _portrait.Image = new Bitmap(source);
             _portraitMessage.Visible = false;
-            _portraitToolTip.SetToolTip(_portrait, portrait.SourcePath + (portrait.HasPackedGameTexture ? "\nReplacement also updates the packed textures used in-game." : string.Empty));
+            _portraitToolTip.SetToolTip(
+                _portrait,
+                image.Info.SourcePath +
+                (image.Info.HasPackedGameTexture
+                    ? "\nReplacement also updates the packed textures used in-game."
+                    : string.Empty));
         }
         catch (ArgumentException)
         {
@@ -388,97 +512,137 @@ public sealed class PlayerEditorForm : Form
         }
     }
 
+    private void UpdatePortraitNavigationButtons()
+    {
+        bool canMove = _portraitSelector.Items.Count > 1;
+        _previousPortraitButton.Enabled = canMove;
+        _nextPortraitButton.Enabled = canMove;
+    }
+
     private void ExportPortrait_Click(object? sender, EventArgs e)
     {
-        if (_currentPortrait == null) return;
+        if (_currentPlayerImage == null) return;
+        bool animated = _currentPlayerImage.Info.IsAnimated;
         using SaveFileDialog dialog = new()
         {
-            Title = "Export player portrait",
-            Filter = "PNG image (*.png)|*.png|All files (*.*)|*.*",
-            FileName = Path.GetFileName(_currentPortrait.SourcePath),
+            Title = animated ? "Export player selection animation" : "Export player polaroid",
+            Filter = animated
+                ? "PlayStation 2 PSS video (*.pss)|*.pss|All files (*.*)|*.*"
+                : "PNG image (*.png)|*.png|All files (*.*)|*.*",
+            FileName = Path.GetFileName(_currentPlayerImage.Info.SourcePath),
             AddExtension = true,
-            DefaultExt = "png"
+            DefaultExt = animated ? "pss" : "png"
         };
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
 
         try
         {
-            File.WriteAllBytes(dialog.FileName, _currentPortrait.Data);
-            _status.Text = $"Exported portrait to {dialog.FileName}.";
+            File.WriteAllBytes(dialog.FileName, _currentPlayerImage.Data);
+            _status.Text = $"Exported {Path.GetFileName(_currentPlayerImage.Info.SourcePath)} to {dialog.FileName}.";
         }
         catch (Exception exception)
         {
-            MessageBox.Show(this, $"The portrait could not be exported.\n\n{exception.Message}",
-                "Unable to Export Portrait", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show(this, $"The player image could not be exported.\n\n{exception.Message}",
+                "Unable to Export Player Image", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 
     private void ReplacePortrait_Click(object? sender, EventArgs e)
     {
-        if (_current == null || _currentPortrait == null) return;
+        if (_currentPlayerImage == null ||
+            _portraitSelector.SelectedItem is not PlayerImageListItem selected)
+            return;
+
+        bool animated = selected.Info.IsAnimated;
         using OpenFileDialog dialog = new()
         {
-            Title = "Choose a replacement player portrait",
-            Filter = "Image files (*.png;*.bmp;*.jpg;*.jpeg)|*.png;*.bmp;*.jpg;*.jpeg|All files (*.*)|*.*"
+            Title = animated
+                ? "Choose a replacement 256 x 256 PSS animation"
+                : "Choose a replacement player polaroid",
+            Filter = animated
+                ? "PlayStation 2 PSS video (*.pss)|*.pss|All files (*.*)|*.*"
+                : "Image files (*.png;*.bmp;*.jpg;*.jpeg)|*.png;*.bmp;*.jpg;*.jpeg|All files (*.*)|*.*"
         };
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
 
-        byte[] pngData;
+        byte[] replacementData;
         try
         {
-            using Image source = Image.FromFile(dialog.FileName);
-            if (source.Width > 4096 || source.Height > 4096)
-                throw new InvalidDataException("Portrait dimensions cannot exceed 4096 by 4096 pixels.");
-            int targetWidth = _portrait.Image?.Width ?? source.Width;
-            int targetHeight = _portrait.Image?.Height ?? source.Height;
-            using Bitmap fitted = FitPortrait(source, targetWidth, targetHeight);
-            using MemoryStream stream = new();
-            fitted.Save(stream, System.Drawing.Imaging.ImageFormat.Png);
-            pngData = stream.ToArray();
+            if (animated)
+            {
+                replacementData = File.ReadAllBytes(dialog.FileName);
+            }
+            else
+            {
+                using Image source = Image.FromFile(dialog.FileName);
+                if (source.Width > 4096 || source.Height > 4096)
+                    throw new InvalidDataException("Portrait dimensions cannot exceed 4096 by 4096 pixels.");
+                int targetWidth = _portrait.Image?.Width ?? source.Width;
+                int targetHeight = _portrait.Image?.Height ?? source.Height;
+                using Bitmap fitted = FitPortrait(source, targetWidth, targetHeight);
+                using MemoryStream stream = new();
+                fitted.Save(stream, System.Drawing.Imaging.ImageFormat.Png);
+                replacementData = stream.ToArray();
+            }
         }
         catch (Exception exception)
         {
-            MessageBox.Show(this, $"The selected image could not be read.\n\n{exception.Message}",
-                "Invalid Portrait Image", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show(
+                this,
+                $"The selected {(animated ? "PSS video" : "image")} could not be read.\n\n{exception.Message}",
+                animated ? "Invalid PSS Video" : "Invalid Portrait Image",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
             return;
         }
 
+        string detail = animated
+            ? "The replacement must be a compatible 256 x 256 PS2 PSS animation. Motion and audio are kept from the imported PSS."
+            : selected.Info.HasPackedGameTexture
+                ? "The raw polaroid and its packed in-game texture regions will both be updated."
+                : "The raw polaroid will be updated.";
         if (MessageBox.Show(this,
-                $"Replace {_currentPortrait.SourcePath} with this image?\n\n" +
-                (_currentPortrait.HasPackedGameTexture ? "The raw portrait and its packed in-game texture regions will both be updated.\n\n" : string.Empty) +
+                $"Replace {selected.Info.SourcePath}?\n\n{detail}\n\n" +
                 "The change is written to DATA.MET immediately and a timestamped backup is created first.",
-                "Replace Player Portrait", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+                "Replace Player Image", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
             return;
 
         try
         {
             UseWaitCursor = true;
-            PlayerPortraitSaveResult result = _portraits.ReplaceWithBackup(_current, pngData);
+            PlayerPortraitSaveResult result =
+                _portraits.ReplacePlayerImageWithBackup(selected.Info, replacementData);
             ArchiveWasModified = true;
+
+            if (_animationPreviewCache.Remove(selected.Info.SourcePath, out Bitmap? oldPreview))
+                oldPreview.Dispose();
+
+            string selectedPath = selected.Info.SourcePath;
             _portraits = PlayerPortraitArchive.Load(_metPath);
-            LoadPlayerPortrait();
+            PopulatePlayerImages(selectedPath);
             string rebuild = result.RebuiltArchive
                 ? "\nThe archive was resized with sector alignment preserved."
                 : string.Empty;
             MessageBox.Show(this,
                 $"Replaced {result.SourcePath}.\n" +
-                (result.PackedTextureCount > 0 ? $"Updated {result.PackedTextureCount} packed in-game texture page{(result.PackedTextureCount == 1 ? string.Empty : "s")}.\n\n" : "\n") +
+                (result.PackedTextureCount > 0
+                    ? $"Updated {result.PackedTextureCount} packed in-game texture page{(result.PackedTextureCount == 1 ? string.Empty : "s")}.\n\n"
+                    : "\n") +
                 $"Backup: {result.BackupPath}{rebuild}",
-                "Portrait Replaced", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            _status.Text = $"Replaced portrait for {_current.DisplayName}.";
+                "Player Image Replaced", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            _status.Text = $"Replaced {Path.GetFileName(result.SourcePath)}.";
         }
         catch (Exception exception)
         {
             MessageBox.Show(this,
-                $"The portrait could not be replaced. The archive was restored if a backup was created.\n\n{exception.Message}",
-                "Unable to Replace Portrait", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                $"The player image could not be replaced. The archive was restored if a backup was created.\n\n{exception.Message}",
+                "Unable to Replace Player Image", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
         finally
         {
             UseWaitCursor = false;
         }
     }
-
     private static Bitmap FitPortrait(Image source, int targetWidth, int targetHeight)
     {
         Bitmap result = new(targetWidth, targetHeight, System.Drawing.Imaging.PixelFormat.Format24bppRgb);
@@ -719,6 +883,11 @@ public sealed class PlayerEditorForm : Form
     {
         public override string ToString() => Name;
     }
+    private sealed record PlayerImageListItem(PlayerImageInfo Info)
+    {
+        public override string ToString() => Info.Label;
+    }
+
     private sealed record PlayerListItem(PlayerStatsRecord Player)
     {
         public override string ToString() => Player.DisplayName + (Player.IsClone ? "  [clone]" : string.Empty);

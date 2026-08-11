@@ -7,6 +7,7 @@ namespace PS2_DATA_File_Extractor.FileOperations;
 public sealed class PlayerPortraitArchive
 {
     private const string PortraitDirectory = "data/polaroids/";
+    private const string SelectionVideoDirectory = "data/video/pickplayer/";
     private const string PackedImportPath = "data/menus/polaroids.imp";
     private const string PackedTextureDirectory = "data/menus/";
 
@@ -28,21 +29,28 @@ public sealed class PlayerPortraitArchive
         };
 
     private readonly string _metPath;
+    private readonly IReadOnlyDictionary<string, FileEntry> _allEntries;
     private readonly IReadOnlyDictionary<string, FileEntry> _portraitEntries;
     private readonly IReadOnlyDictionary<string, PackedPortraitDefinition> _packedPortraits;
 
     private PlayerPortraitArchive(
         string metPath,
+        IReadOnlyDictionary<string, FileEntry> allEntries,
         IReadOnlyDictionary<string, FileEntry> portraitEntries,
         IReadOnlyDictionary<string, PackedPortraitDefinition> packedPortraits)
     {
         _metPath = metPath;
+        _allEntries = allEntries;
         _portraitEntries = portraitEntries;
         _packedPortraits = packedPortraits;
     }
 
     public int PortraitCount => _portraitEntries.Count;
     public int PackedPortraitCount => _packedPortraits.Count;
+    public IReadOnlyList<PlayerPortraitInfo> Portraits => _portraitEntries
+        .Select(pair => CreatePortraitInfo(pair.Key, pair.Value))
+        .OrderBy(info => info.SourcePath, StringComparer.OrdinalIgnoreCase)
+        .ToArray();
 
     public static PlayerPortraitArchive Load(string metPath)
     {
@@ -64,29 +72,106 @@ public sealed class PlayerPortraitArchive
 
         IReadOnlyDictionary<string, PackedPortraitDefinition> packed =
             TryReadPackedPortraits(metPath, allEntries);
-        return new PlayerPortraitArchive(metPath, portraits, packed);
+        return new PlayerPortraitArchive(metPath, allEntries, portraits, packed);
+    }
+
+    public PlayerPortraitInfo? GetPortraitInfo(PlayerStatsRecord player)
+    {
+        ArgumentNullException.ThrowIfNull(player);
+        return TryGetEntry(player, out FileEntry? entry)
+            ? CreatePortraitInfo(Path.GetFileNameWithoutExtension(entry!.Path), entry)
+            : null;
     }
 
     public PlayerPortrait? GetPortrait(PlayerStatsRecord player)
     {
         ArgumentNullException.ThrowIfNull(player);
-        if (!TryGetEntry(player, out FileEntry? foundEntry)) return null;
-        FileEntry entry = foundEntry!;
-        string rawCode = Path.GetFileNameWithoutExtension(entry.Path);
+        return TryGetEntry(player, out FileEntry? entry)
+            ? ReadPortrait(Path.GetFileNameWithoutExtension(entry!.Path), entry)
+            : null;
+    }
 
-        return new PlayerPortrait(
-            entry.Path,
-            ReadEntry(_metPath, entry),
-            TryGetPackedDefinition(rawCode, out _));
+    public PlayerPortrait? GetPortrait(string portraitCode)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(portraitCode);
+        return _portraitEntries.TryGetValue(portraitCode, out FileEntry? entry)
+            ? ReadPortrait(portraitCode, entry)
+            : null;
+    }
+
+    public IReadOnlyList<PlayerImageInfo> GetPlayerImages(PlayerStatsRecord player)
+    {
+        ArgumentNullException.ThrowIfNull(player);
+        if (player.IsClone) return Array.Empty<PlayerImageInfo>();
+
+        string sourceCode = GetPlayerCode(player);
+        string assetCode = CodeAliases.TryGetValue(sourceCode, out string? alias) ? alias : sourceCode;
+        List<PlayerImageInfo> images = new(4);
+
+        if (_portraitEntries.TryGetValue(assetCode, out FileEntry? portraitEntry))
+        {
+            images.Add(new PlayerImageInfo(
+                assetCode,
+                portraitEntry.Path,
+                "Polaroid",
+                PlayerImageKind.Polaroid,
+                TryGetPackedDefinition(assetCode, out _)));
+        }
+
+        AddSelectionVideo(images, assetCode, "breathe", "Breathe", PlayerImageKind.Breathe);
+        AddSelectionVideo(images, assetCode, "breatheblink", "Breathe + Blink", PlayerImageKind.BreatheBlink);
+        AddSelectionVideo(images, assetCode, "pickme", "Pick Me", PlayerImageKind.PickMe);
+        return images;
+    }
+
+    public PlayerImage? GetPlayerImage(PlayerImageInfo info)
+    {
+        ArgumentNullException.ThrowIfNull(info);
+        string path = NormalizePath(info.SourcePath);
+        return _allEntries.TryGetValue(path, out FileEntry? entry)
+            ? new PlayerImage(info, ReadEntry(_metPath, entry))
+            : null;
+    }
+
+    public PlayerPortraitSaveResult ReplacePlayerImageWithBackup(PlayerImageInfo info, byte[] data)
+    {
+        ArgumentNullException.ThrowIfNull(info);
+        ArgumentNullException.ThrowIfNull(data);
+        if (info.Kind == PlayerImageKind.Polaroid)
+            return ReplaceWithBackup(info.Code, data);
+
+        string path = NormalizePath(info.SourcePath);
+        if (!_allEntries.TryGetValue(path, out FileEntry? entry))
+            throw new InvalidOperationException("This player selection video does not exist in DATA.MET.");
+
+        ValidateSelectionVideo(data);
+        METArchiveBatchSaveResult result = METArchiveBatchEditor.SaveWithBackup(
+            _metPath,
+            new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase) { [entry.Path] = data },
+            "player-image");
+        return new PlayerPortraitSaveResult(entry.Path, result.BackupPath, result.RebuiltArchive);
     }
 
     public PlayerPortraitSaveResult ReplaceWithBackup(PlayerStatsRecord player, byte[] pngData)
     {
         ArgumentNullException.ThrowIfNull(player);
         ArgumentNullException.ThrowIfNull(pngData);
-        if (!TryGetEntry(player, out FileEntry? foundEntry))
+        if (!TryGetEntry(player, out FileEntry? entry))
             throw new InvalidOperationException("This player has no replaceable portrait entry in DATA.MET.");
-        FileEntry entry = foundEntry!;
+        return ReplaceEntryWithBackup(entry!, pngData);
+    }
+
+    public PlayerPortraitSaveResult ReplaceWithBackup(string portraitCode, byte[] pngData)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(portraitCode);
+        ArgumentNullException.ThrowIfNull(pngData);
+        if (!_portraitEntries.TryGetValue(portraitCode, out FileEntry? entry))
+            throw new InvalidOperationException("This portrait entry does not exist in DATA.MET.");
+        return ReplaceEntryWithBackup(entry, pngData);
+    }
+
+    private PlayerPortraitSaveResult ReplaceEntryWithBackup(FileEntry entry, byte[] pngData)
+    {
         ValidatePng(pngData);
 
         Dictionary<string, byte[]> replacements = new(StringComparer.OrdinalIgnoreCase)
@@ -148,13 +233,36 @@ public sealed class PlayerPortraitArchive
         }
     }
 
+    private PlayerPortraitInfo CreatePortraitInfo(string code, FileEntry entry) =>
+        new(code, entry.Path, TryGetPackedDefinition(code, out _));
+
+    private PlayerPortrait ReadPortrait(string code, FileEntry entry) =>
+        new(entry.Path, ReadEntry(_metPath, entry), TryGetPackedDefinition(code, out _));
+
+    private void AddSelectionVideo(
+        ICollection<PlayerImageInfo> images,
+        string code,
+        string suffix,
+        string label,
+        PlayerImageKind kind)
+    {
+        string path = $"{SelectionVideoDirectory}{code}_{suffix}.pss";
+        if (_allEntries.ContainsKey(path))
+            images.Add(new PlayerImageInfo(code, path, label, kind, false));
+    }
+
+    private static string GetPlayerCode(PlayerStatsRecord player)
+    {
+        string code = Path.GetFileNameWithoutExtension(player.SourceName);
+        return code.EndsWith("_stats", StringComparison.OrdinalIgnoreCase) ? code[..^6] : code;
+    }
+
     private bool TryGetEntry(PlayerStatsRecord player, out FileEntry? entry)
     {
         entry = null;
         if (player.IsClone) return false;
 
-        string code = Path.GetFileNameWithoutExtension(player.SourceName);
-        if (code.EndsWith("_stats", StringComparison.OrdinalIgnoreCase)) code = code[..^6];
+        string code = GetPlayerCode(player);
         if (CodeAliases.TryGetValue(code, out string? alias)) code = alias;
         return _portraitEntries.TryGetValue(code, out entry);
     }
@@ -309,6 +417,36 @@ public sealed class PlayerPortraitArchive
     private static uint ReadBigEndian(ReadOnlySpan<byte> value) =>
         ((uint)value[0] << 24) | ((uint)value[1] << 16) | ((uint)value[2] << 8) | value[3];
 
+    private static void ValidateSelectionVideo(byte[] data)
+    {
+        if (data.Length < 1024 ||
+            !data.AsSpan(0, 4).SequenceEqual(new byte[] { 0x00, 0x00, 0x01, 0xba }))
+            throw new InvalidDataException("The replacement is not a valid PlayStation 2 PSS video.");
+
+        int searchLength = Math.Min(data.Length - 7, 1024 * 1024);
+        int sequence = -1;
+        bool hasVideoPacket = false;
+        for (int index = 0; index < searchLength; index++)
+        {
+            if (data[index] != 0x00 || data[index + 1] != 0x00 || data[index + 2] != 0x01)
+                continue;
+
+            if (data[index + 3] == 0xe0) hasVideoPacket = true;
+            if (sequence < 0 && data[index + 3] == 0xb3) sequence = index;
+            if (sequence >= 0 && hasVideoPacket) break;
+        }
+
+        if (!hasVideoPacket || sequence < 0)
+            throw new InvalidDataException(
+                "The PSS file does not contain the required MPEG video packet and sequence headers.");
+
+        int width = (data[sequence + 4] << 4) | (data[sequence + 5] >> 4);
+        int height = ((data[sequence + 5] & 0x0f) << 8) | data[sequence + 6];
+        if (width != 256 || height != 256)
+            throw new InvalidDataException(
+                $"Player selection videos must be 256 by 256 pixels; this file is {width} by {height}.");
+    }
+
     private sealed record PackedPortraitDefinition(
         string Name, int Width, int Height, IReadOnlyList<PackedPortraitPiece> Pieces);
 
@@ -322,6 +460,26 @@ public sealed class PlayerPortraitArchive
         int DestinationY);
 }
 
+public enum PlayerImageKind
+{
+    Polaroid,
+    Breathe,
+    BreatheBlink,
+    PickMe
+}
+
+public sealed record PlayerImageInfo(
+    string Code,
+    string SourcePath,
+    string Label,
+    PlayerImageKind Kind,
+    bool HasPackedGameTexture)
+{
+    public bool IsAnimated => Kind != PlayerImageKind.Polaroid;
+}
+
+public sealed record PlayerImage(PlayerImageInfo Info, byte[] Data);
+public sealed record PlayerPortraitInfo(string Code, string SourcePath, bool HasPackedGameTexture);
 public sealed record PlayerPortrait(string SourcePath, byte[] Data, bool HasPackedGameTexture = false);
 public sealed record PlayerPortraitSaveResult(
     string SourcePath, string? BackupPath, bool RebuiltArchive, int PackedTextureCount = 0);

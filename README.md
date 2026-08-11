@@ -20,7 +20,7 @@ To access the .MET files, you need to extract the game files from the ISO using 
 
 - **Player Editor...** on the **Game Tools** tab shows the stored player polaroids and edits all 230 retail and clone `*_stats.dat` records, including names,
   batting/running/fielding components, all 12 pitch ratings, identity data, and clone appearance slots.
-  Portraits with game entries can be exported or replaced from PNG, BMP, or JPEG images; imports are fitted to the original portrait dimensions and written to both the raw portrait and the packed menu textures used by the game.
+  The image dropdown and arrow buttons cycle through the selected player's own assets: their static polaroid plus the Breathe, Breathe + Blink, and Pick Me selection animations when present. Polaroids accept PNG, BMP, or JPEG replacements and update the packed menu textures; animations can be exported or replaced as compatible 256-by-256 PS2 PSS files.
   The reversed layout and executable addresses are in [`docs/PLAYER_STATS.md`](docs/PLAYER_STATS.md).
 - **Stadium Editor...** edits lighting, cameras, collision tags, and ambient models, particles,
   positions, animations, and speeds across all 15 `fielddata.txt` stadium variants. Loader details are
