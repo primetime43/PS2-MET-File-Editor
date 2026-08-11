@@ -29,7 +29,9 @@ public partial class Form1
                 ? _selectedEntry.Path
                 : null;
             FacialEventArchive archive = FacialEventArchive.Load(_dataMetPath);
-            using FacialEventEditorForm editor = new(archive, _dataMetPath, preferredPath);
+            RenderWareAnimationArchive animations = RenderWareAnimationArchive.Load(_dataMetPath);
+            using FacialEventEditorForm editor = new(
+                archive, _dataMetPath, preferredPath, animations);
             if (editor.ShowDialog(this) != DialogResult.OK) return;
             ReloadMetAfterStructuredEdit("Facial events saved; DATA.MET directory reloaded.");
         }

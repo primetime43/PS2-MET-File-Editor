@@ -8,6 +8,8 @@ namespace PS2_DATA_File_Extractor;
 public sealed class FacialEventEditorForm : Form
 {
     private readonly FacialEventArchive _archive;
+    private readonly RenderWareAnimationArchive? _animationArchive;
+    private readonly PlayerStatsArchive? _playerStats;
     private readonly string _metPath;
     private readonly TextBox _search = new() { Dock = DockStyle.Fill, PlaceholderText = "Search EVT files..." };
     private readonly ComboBox _filter = new() { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList };
@@ -19,7 +21,21 @@ public sealed class FacialEventEditorForm : Form
         Padding = new Padding(8, 5, 8, 3),
         AutoEllipsis = true
     };
-    private readonly FacialEventPreviewControl _preview = new() { Dock = DockStyle.Top, Height = 220 };
+    private readonly FacialEventPreviewControl _preview = new() { Dock = DockStyle.Fill };
+    private readonly AnimationPosePreviewControl _modelPreview = new()
+    {
+        Dock = DockStyle.Fill,
+        UpperBodyFraming = true
+    };
+    private readonly TableLayoutPanel _previewLayout = new()
+    {
+        Dock = DockStyle.Top,
+        Height = 250,
+        ColumnCount = 2,
+        RowCount = 1,
+        Margin = Padding.Empty,
+        Padding = Padding.Empty
+    };
     private readonly DataGridView _grid = CreateGrid();
     private readonly Label _position = new()
     {
@@ -46,13 +62,17 @@ public sealed class FacialEventEditorForm : Form
     private bool _gridDirty;
     private bool _saved;
     private double _playDuration;
+    private RenderWareAnimationFile? _previewAnimation;
 
     public FacialEventEditorForm(
         FacialEventArchive archive,
         string metPath,
-        string? preferredPath = null)
+        string? preferredPath = null,
+        RenderWareAnimationArchive? animationArchive = null)
     {
         _archive = archive;
+        _animationArchive = animationArchive;
+        _playerStats = LoadPlayerStatsForPreview(animationArchive, metPath);
         _metPath = metPath;
         Text = "Facial Event and Lip-Sync Editor - DATA.MET";
         StartPosition = FormStartPosition.CenterParent;
@@ -65,9 +85,9 @@ public sealed class FacialEventEditorForm : Form
             Dock = DockStyle.Top,
             Height = 55,
             Padding = new Padding(12, 8, 12, 4),
-            Text = "Edit EVT facial-animation timelines. Talkie files play their matching VAG voice clip while the " +
-                   "mouth-shape preview follows the event timestamps. Batting EVT files preview the character's " +
-                   "actual numbered eye and mouth textures from DATA.MET."
+            Text = "Edit EVT facial-animation timelines. The preview uses the character's textured 3D model when " +
+                   "a matching DFF/ANM pair exists, with its real eye and mouth textures driven by the event " +
+                   "timestamps. Talkie files also play their matching VAG voice clip."
         };
         Label path = new()
         {
@@ -162,6 +182,11 @@ public sealed class FacialEventEditorForm : Form
     private Control BuildEditorPanel()
     {
         Panel panel = new() { Dock = DockStyle.Fill };
+        _previewLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 44));
+        _previewLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 56));
+        _previewLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        _previewLayout.Controls.Add(_modelPreview, 0, 0);
+        _previewLayout.Controls.Add(_preview, 1, 0);
         FlowLayoutPanel eventButtons = new()
         {
             Dock = DockStyle.Bottom,
@@ -191,7 +216,7 @@ public sealed class FacialEventEditorForm : Form
         panel.Controls.Add(_grid);
         panel.Controls.Add(eventButtons);
         panel.Controls.Add(transport);
-        panel.Controls.Add(_preview);
+        panel.Controls.Add(_previewLayout);
         panel.Controls.Add(_fileInfo);
         return panel;
     }
@@ -473,7 +498,7 @@ public sealed class FacialEventEditorForm : Form
                 _soundPlayer.Load();
             }
             _preview.TimelineDuration = _playDuration;
-            _preview.PositionSeconds = 0;
+            SetPreviewPosition(0);
             _clock.Restart();
             _timer.Start();
             _soundPlayer?.Play();
@@ -491,7 +516,7 @@ public sealed class FacialEventEditorForm : Form
     private void PlaybackTick()
     {
         double elapsed = _clock.Elapsed.TotalSeconds;
-        _preview.PositionSeconds = Math.Min(elapsed, _playDuration);
+        SetPreviewPosition(Math.Min(elapsed, _playDuration));
         UpdatePositionLabel();
         SelectEventAtPosition(elapsed);
         if (elapsed >= _playDuration) StopPlayback(resetPosition: false);
@@ -510,7 +535,7 @@ public sealed class FacialEventEditorForm : Form
         _stop.Enabled = false;
         if (resetPosition)
         {
-            _preview.PositionSeconds = 0;
+            SetPreviewPosition(0);
             UpdatePositionLabel();
         }
     }
@@ -540,7 +565,7 @@ public sealed class FacialEventEditorForm : Form
         }
         int index = _grid.CurrentRow.Index;
         if (index >= 0 && index < _current.Events.Count)
-            _preview.PositionSeconds = _current.Events[index].Timestamp;
+            SetPreviewPosition(_current.Events[index].Timestamp);
         UpdatePositionLabel();
     }
 
@@ -548,12 +573,14 @@ public sealed class FacialEventEditorForm : Form
     {
         _preview.EventFile = _current;
         _preview.TextureSet = null;
+        ClearModelPreview();
         if (_current == null)
         {
             _fileInfo.Text = "No EVT file selected.";
             _play.Enabled = false;
             return;
         }
+        string? modelText = ConfigureModelPreview();
         Ps2AudioInfo? audio = GetAudioInfo(_current);
         double duration = Math.Max(_current.DurationSeconds, audio?.DurationSeconds ?? 0);
         _preview.TimelineDuration = duration;
@@ -566,7 +593,7 @@ public sealed class FacialEventEditorForm : Form
         {
             textures = _archive.LoadTextureSet(_current);
             textureText = textures == null
-                ? (_current.IsTalkie ? "drawn phoneme preview" : "no matching face textures")
+                ? (_current.IsTalkie ? "drawn phoneme fallback" : "no matching face textures")
                 : $"game textures: {textures.Eyes.Count} eye, {textures.Mouths.Count} mouth poses";
         }
         catch (Exception exception)
@@ -574,9 +601,191 @@ public sealed class FacialEventEditorForm : Form
             textureText = $"texture preview unavailable: {exception.Message}";
         }
         _preview.TextureSet = textures;
+        SetModelPreviewVisible(modelText != null);
         _fileInfo.Text = $"{_current.SourcePath}\n{_current.Kind} — {_current.Events.Count:N0} events, " +
-                         $"last event {_current.DurationSeconds:0.000} s — {audioText} — {textureText}";
+                         $"last event {_current.DurationSeconds:0.000} s — {audioText} — " +
+                         $"{modelText ?? textureText}" +
+                         (modelText != null && !_current.IsTalkie ? $" — {textureText}" : string.Empty);
         _play.Enabled = _current.Events.Count > 0;
+    }
+
+    private string? ConfigureModelPreview()
+    {
+        if (_current == null || _animationArchive == null) return null;
+        IEnumerable<RenderWareAnimationFile> candidates = _current.IsTalkie
+            ? FindTalkiePreviewAnimations(_current)
+            : _animationArchive.Files.Where(candidate =>
+                candidate.PairedEvent?.SourcePath.Equals(
+                    _current.SourcePath, StringComparison.OrdinalIgnoreCase) == true);
+        foreach (RenderWareAnimationFile animation in candidates)
+        {
+            RenderWareAnimationBinding? binding = _animationArchive.ResolveSkeleton(animation);
+            if (binding == null) continue;
+            RenderWareSkinnedModel? model = _animationArchive.LoadModel(binding);
+            if (model == null) continue;
+
+            _previewAnimation = animation;
+            _modelPreview.Animation = animation;
+            _modelPreview.Binding = binding;
+            _modelPreview.Model = model;
+            _modelPreview.FacialEvent = _current;
+            SetPreviewPosition(_preview.PositionSeconds);
+            return $"3D model: {Path.GetFileName(binding.ModelPath)}";
+        }
+        return null;
+    }
+
+    private IEnumerable<RenderWareAnimationFile> FindTalkiePreviewAnimations(FacialEventFile file)
+    {
+        string normalized = file.SourcePath.Replace('\\', '/');
+        string[] parts = normalized.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        int talkies = Array.FindIndex(parts, part =>
+            part.Equals("talkies", StringComparison.OrdinalIgnoreCase));
+        string speaker = talkies >= 0 && talkies + 1 < parts.Length
+            ? parts[talkies + 1]
+            : string.Empty;
+        string? commentatorAnimation = speaker.ToLowerInvariant() switch
+        {
+            "abner" => "abne_static.anm",
+            "sunny" => "sunn_static.anm",
+            _ => null
+        };
+        if (commentatorAnimation != null)
+        {
+            return _animationArchive!.Files.Where(candidate =>
+                Path.GetFileName(candidate.SourcePath).Equals(
+                    commentatorAnimation, StringComparison.OrdinalIgnoreCase));
+        }
+
+        string? code = ResolveTalkiePlayerCode(speaker);
+        if (code == null) return Enumerable.Empty<RenderWareAnimationFile>();
+        return _animationArchive!.Files
+            .Where(candidate => AnimationPlayerCode(candidate.SourcePath)
+                .Equals(code, StringComparison.OrdinalIgnoreCase) && candidate.TrackCount != 5)
+            .OrderByDescending(TalkieAnimationScore)
+            .ThenBy(candidate => candidate.SourcePath, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private string? ResolveTalkiePlayerCode(string speaker)
+    {
+        if (_playerStats == null || _animationArchive == null) return null;
+        string wanted = NormalizeIdentity(speaker);
+        HashSet<string> availableCodes = _animationArchive.Files
+            .Select(candidate => AnimationPlayerCode(candidate.SourcePath))
+            .Where(code => code.Length > 0)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var matches = _playerStats.Players
+            .Where(player => !player.IsClone)
+            .Select(player => new
+            {
+                Code = StatsPlayerCode(player),
+                Score = TalkieIdentityScore(player, wanted)
+            })
+            .Where(match => match.Score > 0 && availableCodes.Contains(match.Code))
+            .OrderByDescending(match => match.Score)
+            .ThenBy(match => match.Code, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        return matches.FirstOrDefault()?.Code;
+    }
+
+    private static int TalkieIdentityScore(PlayerStatsRecord player, string speaker)
+    {
+        string code = NormalizeIdentity(StatsPlayerCode(player));
+        string first = NormalizeIdentity(player.FirstName);
+        string nickname = NormalizeIdentity(player.Nickname);
+        string last = NormalizeIdentity(player.LastName);
+        if (speaker == code) return 130;
+        if (speaker == first) return 120;
+        if (speaker == first + last) return 115;
+        if (nickname.Length > 0 && speaker == nickname) return 110;
+        if (speaker == last) return 100;
+        if (first.Length > 0 && speaker.Contains(first, StringComparison.Ordinal)) return 70;
+        if (last.Length > 0 && speaker.Contains(last, StringComparison.Ordinal)) return 60;
+        return 0;
+    }
+
+    private static int TalkieAnimationScore(RenderWareAnimationFile animation)
+    {
+        string normalized = animation.SourcePath.Replace('\\', '/');
+        string[] parts = normalized.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        string category = parts.Length > 1 ? parts[1].ToLowerInvariant() : string.Empty;
+        string stem = Path.GetFileNameWithoutExtension(normalized);
+        int score = category switch
+        {
+            "batting" => 500,
+            "playercard" => 400,
+            "kids" => 300,
+            "baserunning" or "fieldanims" or "pitching" => 200,
+            _ => 0
+        };
+        if (stem.Contains("batready", StringComparison.OrdinalIgnoreCase)) score += 80;
+        else if (stem.Contains("inambient", StringComparison.OrdinalIgnoreCase)) score += 70;
+        else if (stem.Contains("batprep", StringComparison.OrdinalIgnoreCase)) score += 60;
+        else if (stem.Contains("walk", StringComparison.OrdinalIgnoreCase)) score += 40;
+        return score;
+    }
+
+    private static string AnimationPlayerCode(string sourcePath)
+    {
+        string[] parts = sourcePath.Replace('\\', '/')
+            .Split('/', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length >= 4 ? parts[2] : string.Empty;
+    }
+
+    private static string StatsPlayerCode(PlayerStatsRecord player) =>
+        Path.GetFileNameWithoutExtension(player.SourceName)
+            .Replace("_stats", string.Empty, StringComparison.OrdinalIgnoreCase);
+
+    private static string NormalizeIdentity(string value) =>
+        new(value.Where(char.IsLetterOrDigit)
+            .Select(char.ToLowerInvariant).ToArray());
+
+    private static PlayerStatsArchive? LoadPlayerStatsForPreview(
+        RenderWareAnimationArchive? animationArchive,
+        string metPath)
+    {
+        if (animationArchive == null) return null;
+        try
+        {
+            return PlayerStatsArchive.Load(metPath);
+        }
+        catch (InvalidDataException)
+        {
+            return null;
+        }
+    }
+
+    private void ClearModelPreview()
+    {
+        _previewAnimation = null;
+        _modelPreview.FacialEvent = null;
+        _modelPreview.FacialEventPositionSeconds = null;
+        _modelPreview.Model = null;
+        _modelPreview.Binding = null;
+        _modelPreview.Animation = null;
+        SetModelPreviewVisible(false);
+    }
+
+    private void SetModelPreviewVisible(bool visible)
+    {
+        _modelPreview.Visible = visible;
+        _preview.ShowFace = !visible;
+        if (_previewLayout.ColumnStyles.Count < 2) return;
+        _previewLayout.ColumnStyles[0].SizeType = SizeType.Percent;
+        _previewLayout.ColumnStyles[0].Width = visible ? 44 : 0;
+        _previewLayout.ColumnStyles[1].SizeType = SizeType.Percent;
+        _previewLayout.ColumnStyles[1].Width = visible ? 56 : 100;
+    }
+
+    private void SetPreviewPosition(double seconds)
+    {
+        _preview.PositionSeconds = seconds;
+        if (_previewAnimation == null) return;
+        double motionTime = seconds;
+        if (_current?.IsTalkie == true && _previewAnimation.DurationSeconds > 0)
+            motionTime %= _previewAnimation.DurationSeconds;
+        _modelPreview.PositionSeconds = motionTime;
+        _modelPreview.FacialEventPositionSeconds = seconds;
     }
 
     private Ps2AudioInfo? GetAudioInfo(FacialEventFile file)

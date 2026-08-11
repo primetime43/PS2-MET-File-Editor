@@ -14,6 +14,7 @@ public sealed class FacialEventPreviewControl : Control
         new(StringComparer.OrdinalIgnoreCase);
     private double _positionSeconds;
     private double _timelineDuration;
+    private bool _showFace = true;
 
     public FacialEventPreviewControl()
     {
@@ -67,6 +68,16 @@ public sealed class FacialEventPreviewControl : Control
         }
     }
 
+    public bool ShowFace
+    {
+        get => _showFace;
+        set
+        {
+            _showFace = value;
+            Invalidate();
+        }
+    }
+
     protected override void OnPaint(PaintEventArgs e)
     {
         base.OnPaint(e);
@@ -83,11 +94,19 @@ public sealed class FacialEventPreviewControl : Control
             return;
         }
 
-        int faceWidth = Math.Min(245, Math.Max(190, Width / 4));
-        Rectangle faceArea = new(18, 16, faceWidth, Math.Max(120, Height - 34));
-        DrawFace(graphics, faceArea);
-        Rectangle timeline = new(faceArea.Right + 22, 34,
-            Math.Max(50, Width - faceArea.Right - 42), Math.Max(80, Height - 64));
+        Rectangle timeline;
+        if (_showFace)
+        {
+            int faceWidth = Math.Min(245, Math.Max(190, Width / 4));
+            Rectangle faceArea = new(18, 16, faceWidth, Math.Max(120, Height - 34));
+            DrawFace(graphics, faceArea);
+            timeline = new(faceArea.Right + 22, 34,
+                Math.Max(50, Width - faceArea.Right - 42), Math.Max(80, Height - 64));
+        }
+        else
+        {
+            timeline = new(18, 34, Math.Max(50, Width - 36), Math.Max(80, Height - 64));
+        }
         DrawTimeline(graphics, timeline);
     }
 

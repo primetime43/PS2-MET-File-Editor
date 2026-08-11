@@ -12,6 +12,8 @@ public sealed class AnimationPosePreviewControl : Control
     private RenderWareSkinnedModel? _model;
     private FacialEventFile? _facialEvent;
     private double _position;
+    private double? _facialEventPosition;
+    private bool _upperBodyFraming;
     private float _yaw = -0.38F;
     private float _pitch = -0.10F;
     private float _zoom = 1F;
@@ -70,6 +72,26 @@ public sealed class AnimationPosePreviewControl : Control
     }
 
     public int SelectedTrack { get; set; }
+
+    public bool UpperBodyFraming
+    {
+        get => _upperBodyFraming;
+        set
+        {
+            _upperBodyFraming = value;
+            Invalidate();
+        }
+    }
+
+    public double? FacialEventPositionSeconds
+    {
+        get => _facialEventPosition;
+        set
+        {
+            _facialEventPosition = value.HasValue ? Math.Max(0, value.Value) : null;
+            Invalidate();
+        }
+    }
 
     public double PositionSeconds
     {
@@ -150,7 +172,7 @@ public sealed class AnimationPosePreviewControl : Control
             {
                 DrawTexturedModel(graphics);
                 DrawHeader(graphics,
-                    $"Textured player model — {Path.GetFileName(_binding.ModelPath)}  |  " +
+                    $"Textured character model — {Path.GetFileName(_binding.ModelPath)}  |  " +
                     $"{_model.VertexCount:N0} vertices  |  {_model.TriangleCount:N0} triangles  |  {_position:0.000}s");
                 return;
             }
@@ -194,6 +216,9 @@ public sealed class AnimationPosePreviewControl : Control
             }
         }
         float rangeX = Math.Max(1, maxX - minX);
+        float fullRangeY = Math.Max(1, maxY - minY);
+        if (_upperBodyFraming)
+            minY = maxY - fullRangeY * 0.55F;
         float rangeY = Math.Max(1, maxY - minY);
         float scale = Math.Min((renderWidth - 20F) / rangeX,
             (renderHeight - 32F) / rangeY) * 0.92F * _zoom;
@@ -219,7 +244,8 @@ public sealed class AnimationPosePreviewControl : Control
             {
                 if (triangle.MaterialIndex < 0 || triangle.MaterialIndex >= mesh.Materials.Count) continue;
                 RenderWareMaterial material = mesh.Materials[triangle.MaterialIndex];
-                RenderWareTexture? texture = _model.ResolveTexture(material, _facialEvent, _position);
+                RenderWareTexture? texture = _model.ResolveTexture(
+                    material, _facialEvent, _facialEventPosition ?? _position);
                 RasterizeTriangle(screen[triangle.First], screen[triangle.Second], screen[triangle.Third],
                     material, texture, pixels, depth, renderWidth, renderHeight);
             }

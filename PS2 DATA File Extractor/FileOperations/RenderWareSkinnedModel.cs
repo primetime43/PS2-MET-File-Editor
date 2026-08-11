@@ -92,15 +92,45 @@ public sealed class RenderWareSkinnedModel
             FacialEvent? active = eventClass == null
                 ? null
                 : facialEvent.GetActiveEvent(eventClass, timeSeconds);
-            if (active != null && int.TryParse(active.EventType, out int pose) && pose > 0)
+            if (active == null && eventClass == "CLASS_MOUTH")
+            {
+                eventClass = "CLASS_TALKIES";
+                active = facialEvent.GetActiveEvent(eventClass, timeSeconds);
+            }
+            int? pose = active == null
+                ? null
+                : ResolveFacialTexturePose(eventClass!, active.EventType);
+            if (pose.HasValue)
             {
                 int dot = name.LastIndexOf('.');
                 string stem = dot >= 0 ? name[..dot] : name;
-                string variant = $"{stem}.{pose:000}";
+                string variant = $"{stem}.{pose.Value:000}";
                 if (_textures.TryGetValue(variant, out RenderWareTexture? selected)) return selected;
             }
         }
         return _textures.GetValueOrDefault(name);
+    }
+
+    public static int? ResolveFacialTexturePose(string eventClass, string eventType)
+    {
+        if (eventClass.Equals("CLASS_TALKIES", StringComparison.OrdinalIgnoreCase))
+        {
+            // Retail LipSync::Raise maps the event bit values 1,2,4...128 to
+            // zero-based texture slots 0..7. The files themselves are .001..008.
+            return eventType.ToUpperInvariant() switch
+            {
+                "INVALID" or "STATIC" or "ROOT" => 1,
+                "AI" => 2,
+                "EE" => 3,
+                "OH" => 4,
+                "OO" => 5,
+                "CDG" => 6,
+                "MM" => 7,
+                "FV" => 8,
+                _ => null
+            };
+        }
+        return int.TryParse(eventType, out int pose) && pose > 0 ? pose : null;
     }
 
     public IReadOnlyList<RenderWareDeformedMesh> Deform(

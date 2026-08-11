@@ -26,6 +26,22 @@ public sealed class FacialEventArchiveTests : IDisposable
     }
 
     [Fact]
+    public void MapsTalkieVisemesToRetailMouthTextureSlots()
+    {
+        Assert.Equal(1, RenderWareSkinnedModel.ResolveFacialTexturePose("CLASS_TALKIES", "STATIC"));
+        Assert.Equal(1, RenderWareSkinnedModel.ResolveFacialTexturePose("CLASS_TALKIES", "ROOT"));
+        Assert.Equal(2, RenderWareSkinnedModel.ResolveFacialTexturePose("CLASS_TALKIES", "AI"));
+        Assert.Equal(3, RenderWareSkinnedModel.ResolveFacialTexturePose("CLASS_TALKIES", "EE"));
+        Assert.Equal(4, RenderWareSkinnedModel.ResolveFacialTexturePose("CLASS_TALKIES", "OH"));
+        Assert.Equal(5, RenderWareSkinnedModel.ResolveFacialTexturePose("CLASS_TALKIES", "OO"));
+        Assert.Equal(6, RenderWareSkinnedModel.ResolveFacialTexturePose("CLASS_TALKIES", "CDG"));
+        Assert.Equal(7, RenderWareSkinnedModel.ResolveFacialTexturePose("CLASS_TALKIES", "MM"));
+        Assert.Equal(8, RenderWareSkinnedModel.ResolveFacialTexturePose("CLASS_TALKIES", "FV"));
+        Assert.Equal(19, RenderWareSkinnedModel.ResolveFacialTexturePose("CLASS_MOUTH", "19"));
+        Assert.Null(RenderWareSkinnedModel.ResolveFacialTexturePose("CLASS_TALKIES", "UNKNOWN"));
+    }
+
+    [Fact]
     public void ReplacesAndSerializesEditedTimeline()
     {
         FacialEventFile file = FacialEventFile.Parse(

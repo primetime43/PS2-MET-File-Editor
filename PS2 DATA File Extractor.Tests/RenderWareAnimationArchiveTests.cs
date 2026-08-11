@@ -1,6 +1,7 @@
 using System.Text;
 using System.Numerics;
 using System.Drawing;
+using System.Windows.Forms;
 using PS2_DATA_File_Extractor;
 using PS2_DATA_File_Extractor.FileOperations;
 
@@ -135,7 +136,10 @@ public sealed class RenderWareAnimationArchiveTests : IDisposable
         CreateArchive(metPath, new[]
         {
             ("data/batting/test/test_swing.anm", CreateStandardAnimation()),
+            ("data/batting/test/test_swing.evt", Encoding.UTF8.GetBytes(CreateEventXml())),
             ("data/batting/test/testbatting.dff", CreateSkeletonDff()),
+            ("data/audio/talkies/test/test_00001.evt", Encoding.UTF8.GetBytes(CreateTalkieEventXml())),
+            ("data/kids/stats/test_stats.dat", CreatePlayerStats("Test", "Player")),
             ("data/batting/other/other_swing.anm", CreateSourceAnimation()),
             ("data/batting/other/otherbatting.dff", CreateSkeletonDff())
         });
@@ -165,6 +169,15 @@ public sealed class RenderWareAnimationArchiveTests : IDisposable
                 Assert.NotEqual(Color.Empty, bitmap.GetPixel(bitmap.Width / 2, bitmap.Height / 2));
                 using AnimationReplacementForm replacement = new(archive, animation);
                 Assert.True(replacement.ClientSize.Width >= replacement.MinimumSize.Width);
+                FacialEventArchive facialEvents = FacialEventArchive.Load(metPath);
+                using FacialEventEditorForm facialEditor = new(
+                    facialEvents, metPath, "data/audio/talkies/test/test_00001.evt", archive);
+                AnimationPosePreviewControl modelPreview = Assert.Single(
+                    Descendants(facialEditor).OfType<AnimationPosePreviewControl>());
+                Assert.NotNull(modelPreview.Animation);
+                Assert.NotNull(modelPreview.Binding);
+                Assert.NotNull(modelPreview.Model);
+                Assert.True(modelPreview.UpperBodyFraming);
             }
             catch (Exception exception)
             {
@@ -176,6 +189,16 @@ public sealed class RenderWareAnimationArchiveTests : IDisposable
         thread.Join();
 
         Assert.Null(failure);
+    }
+
+    private static IEnumerable<Control> Descendants(Control parent)
+    {
+        foreach (Control child in parent.Controls)
+        {
+            yield return child;
+            foreach (Control descendant in Descendants(child))
+                yield return descendant;
+        }
     }
 
     [Fact]
@@ -368,6 +391,25 @@ public sealed class RenderWareAnimationArchiveTests : IDisposable
         $"<event><timestamp value=\"{timestamp:0.###}\"/><eventClass value=\"CLASS_MOUTH\"/>" +
         "<eventType value=\"1\"/><value value=\"1.0\"/><elementID value=\"0\"/></event>\r\n" +
         "</event_stream>\r\n";
+
+    private static string CreateTalkieEventXml() =>
+        "<?xml version=\"1.0\" encoding=\"utf-8\" ?>\r\n" +
+        "<event_stream><classes><classdef name=\"CLASS_TALKIES\" value=\"31415\">" +
+        "<eventdef name=\"STATIC\" value=\"1\"/>" +
+        "</classdef></classes>" +
+        "<event><timestamp value=\"0\"/><eventClass value=\"CLASS_TALKIES\"/>" +
+        "<eventType value=\"STATIC\"/><value value=\"1.0\"/><elementID value=\"0\"/></event>" +
+        "</event_stream>\r\n";
+
+    private static byte[] CreatePlayerStats(string firstName, string lastName)
+    {
+        using MemoryStream stream = new();
+        using BinaryWriter writer = new(stream);
+        for (int index = 0; index < PlayerStatsRecord.BaseFieldCount; index++)
+            writer.Write((short)50);
+        writer.Write(Encoding.ASCII.GetBytes($"{firstName},,{lastName},"));
+        return stream.ToArray();
+    }
 
     private static byte[] CreateSkeletonDff()
     {
