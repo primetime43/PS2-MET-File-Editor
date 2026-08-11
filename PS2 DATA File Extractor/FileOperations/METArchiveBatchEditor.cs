@@ -35,6 +35,26 @@ public static class METArchiveBatchEditor
             throw new InvalidDataException($"The MET archive does not contain '{missing}'.");
         }
 
+        using (FileStream source = File.OpenRead(metPath))
+        {
+            foreach (string path in orderedPaths)
+            {
+                FileEntry entry = initialStructure.AllEntries.First(candidate =>
+                    NormalizePath(candidate.Path).Equals(path, StringComparison.OrdinalIgnoreCase));
+                source.Position = entry.Offset;
+                byte[] original = new byte[entry.OriginalSize];
+                source.ReadExactly(original);
+                AssetReplacementValidation validation =
+                    AssetReplacementValidator.Validate(entry.Path, original, normalized[path]);
+                if (!validation.IsValid)
+                {
+                    throw new InvalidDataException(
+                        $"{entry.Path} failed {validation.Kind} replacement validation:{Environment.NewLine}" +
+                        validation.FormatErrors());
+                }
+            }
+        }
+
         string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff");
         string backupPath = $"{metPath}.backup_{timestamp}";
         string tempPath = Path.Combine(

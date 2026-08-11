@@ -31,6 +31,10 @@ To access the .MET files, you need to extract the game files from the ISO using 
 - The **DATA.MET Browser** tab contains the file tree, raw preview/editor, and visible Save, Import, and Export actions.
 - **View > Hex Editor** edits any selected archive payload as validated byte pairs.
 - **Import File** preserves replacement files byte-for-byte, including binary data and trailing zeros.
+  PNG/BMP textures are checked for valid headers and matching dimensions; VAG audio is checked for
+  valid ADPCM headers, frame layout, and sample metadata; PSS video is checked for MPEG program,
+  video, picture, resolution, frame-rate, and audio-stream compatibility before `DATA.MET` is changed.
+  See [asset replacement validation](docs/ASSET_REPLACEMENT.md) for the exact blocking and warning rules.
 - MET, executable, and optional save-file edits create timestamped backups.
 
 Persistent unlock progress normally lives on the memory card, not in `DATA.MET`. The executable

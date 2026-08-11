@@ -596,11 +596,30 @@ public sealed class PlayerEditorForm : Form
             return;
         }
 
+        AssetReplacementValidation validation = AssetReplacementValidator.Validate(
+            selected.Info.SourcePath,
+            _currentPlayerImage.Data,
+            replacementData);
+        if (!validation.IsValid)
+        {
+            MessageBox.Show(
+                this,
+                $"The selected file is not compatible with {selected.Info.SourcePath}.\n\n" +
+                validation.FormatErrors(),
+                "Invalid Player Image Replacement",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+            return;
+        }
+
         string detail = animated
             ? "The replacement must be a compatible 256 x 256 PS2 PSS animation. Motion and audio are kept from the imported PSS."
             : selected.Info.HasPackedGameTexture
                 ? "The raw polaroid and its packed in-game texture regions will both be updated."
                 : "The raw polaroid will be updated.";
+        detail += $"\n\nFormat check: {validation.Description}";
+        if (validation.Warnings.Count > 0)
+            detail += $"\n\nWarnings:\n{validation.FormatWarnings()}";
         if (MessageBox.Show(this,
                 $"Replace {selected.Info.SourcePath}?\n\n{detail}\n\n" +
                 "The change is written to DATA.MET immediately and a timestamped backup is created first.",

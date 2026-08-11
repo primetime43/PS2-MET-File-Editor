@@ -819,6 +819,9 @@ namespace PS2_DATA_File_Extractor
                 }
 
                 int originalSize = _selectedEntry.OriginalSize;
+                AssetReplacementValidation? validation =
+                    ValidateImportedAsset(_selectedEntry, contentBytes);
+                if (validation == null) return;
 
                 // Check if resize is needed
                 bool requiresResize = contentBytes.Length > _selectedEntry.OriginalSize;
@@ -826,11 +829,14 @@ namespace PS2_DATA_File_Extractor
                 if (requiresResize)
                 {
                     int sizeDelta = contentBytes.Length - _selectedEntry.OriginalSize;
-                    DialogResult result = MessageBox.Show(
+                    string confirmation =
                         $"The new content is larger than the original ({contentBytes.Length} bytes vs {_selectedEntry.OriginalSize} bytes).\n\n" +
                         $"This will require rebuilding the MET file structure (expanding by {sizeDelta} bytes).\n" +
                         $"A backup will be created automatically.\n\n" +
-                        $"Do you want to proceed?",
+                        $"Do you want to proceed?";
+                    confirmation = AddValidationDetails(confirmation, validation);
+                    DialogResult result = MessageBox.Show(
+                        confirmation,
                         "Confirm File Resize",
                         MessageBoxButtons.YesNo,
                         MessageBoxIcon.Warning
@@ -840,6 +846,17 @@ namespace PS2_DATA_File_Extractor
                     {
                         return; // User canceled
                     }
+                }
+                else if (validation.IsAsset && validation.Warnings.Count > 0)
+                {
+                    DialogResult result = MessageBox.Show(
+                        $"Format check: {validation.Description}\n\nWarnings:\n" +
+                        validation.FormatWarnings() +
+                        "\n\nSave this replacement anyway?",
+                        "Asset Compatibility Warning",
+                        MessageBoxButtons.YesNo,
+                        MessageBoxIcon.Warning);
+                    if (result != DialogResult.Yes) return;
                 }
 
                 if (FileSaver.SaveFileEntryChangesWithResize(_dataMetPath, _selectedEntry, contentBytes))
@@ -898,6 +915,37 @@ namespace PS2_DATA_File_Extractor
             }
         }
 
+        private AssetReplacementValidation? ValidateImportedAsset(FileEntry entry, byte[] data)
+        {
+            AssetReplacementValidation validation =
+                FileSaver.ValidateFileEntryReplacement(_dataMetPath, entry, data);
+            if (validation.IsValid) return validation;
+
+            MessageBox.Show(
+                this,
+                $"The selected file is not compatible with {entry.Path}.{Environment.NewLine}{Environment.NewLine}" +
+                validation.FormatErrors(),
+                "Invalid Asset Replacement",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+            return null;
+        }
+
+        private static string AddValidationDetails(
+            string confirmation,
+            AssetReplacementValidation validation)
+        {
+            if (!validation.IsAsset) return confirmation;
+
+            string result = confirmation + $"{Environment.NewLine}{Environment.NewLine}Format check: {validation.Description}";
+            if (validation.Warnings.Count > 0)
+            {
+                result += $"{Environment.NewLine}{Environment.NewLine}Warnings:{Environment.NewLine}" +
+                          validation.FormatWarnings();
+            }
+            return result;
+        }
+
         private void importFileToolStripMenuItem_Click(object sender, EventArgs e)
         {
             // Check if a file is selected
@@ -923,7 +971,9 @@ namespace PS2_DATA_File_Extractor
                 {
                     string filePath = openFileDialog.FileName;
                     byte[] data = File.ReadAllBytes(filePath);
-
+                    AssetReplacementValidation? validation =
+                        ValidateImportedAsset(_selectedEntry, data);
+                    if (validation == null) return;
 
                     // Check if the imported file requires resizing the MET file
                     bool requiresResize = data.Length > _selectedEntry.OriginalSize;
@@ -941,6 +991,8 @@ namespace PS2_DATA_File_Extractor
                     {
                         confirmMessage = $"Replace '{Path.GetFileName(_selectedEntry.Path)}' with the imported file?";
                     }
+
+                    confirmMessage = AddValidationDetails(confirmMessage, validation);
 
                     // Ask for confirmation
                     DialogResult result = MessageBox.Show(
@@ -1018,7 +1070,9 @@ namespace PS2_DATA_File_Extractor
                 System.Diagnostics.Debug.WriteLine($"  MATCH FOUND! Entry path: {entry.Path}");
 
                 byte[] data = File.ReadAllBytes(filePath);
-
+                AssetReplacementValidation? validation = ValidateImportedAsset(entry, data);
+                if (validation == null)
+                    return new Tuple<bool, bool, TreeNode>(true, false, null!);
 
                 // Check if the imported file requires resizing the MET file
                 bool requiresResize = data.Length > entry.OriginalSize;
@@ -1036,6 +1090,8 @@ namespace PS2_DATA_File_Extractor
                 {
                     confirmMessage = $"Are you sure you want to overwrite '{importedFileName}'?";
                 }
+
+                confirmMessage = AddValidationDetails(confirmMessage, validation);
 
                 // Ask for confirmation before overwriting
                 DialogResult result = MessageBox.Show(

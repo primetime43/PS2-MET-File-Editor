@@ -253,7 +253,11 @@ public sealed class PlayerStatsArchiveTests : IDisposable
         data[8] = 0x00;
         data[9] = 0x00;
         data[10] = 0x01;
-        data[11] = 0xe0;
+        data[11] = 0xbb;
+        data[12] = 0x00;
+        data[13] = 0x00;
+        data[14] = 0x01;
+        data[15] = 0xe0;
         data[16] = 0x00;
         data[17] = 0x00;
         data[18] = 0x01;
@@ -261,6 +265,11 @@ public sealed class PlayerStatsArchiveTests : IDisposable
         data[20] = 0x10;
         data[21] = 0x01;
         data[22] = 0x00;
+        data[23] = 0x04;
+        data[28] = 0x00;
+        data[29] = 0x00;
+        data[30] = 0x01;
+        data[31] = 0x00;
         return data;
     }
 

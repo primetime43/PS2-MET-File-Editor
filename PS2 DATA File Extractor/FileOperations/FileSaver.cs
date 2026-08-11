@@ -1,4 +1,4 @@
-﻿using PS2_DATA_File_Extractor.Models;
+using PS2_DATA_File_Extractor.Models;
 using System.Text;
 
 namespace PS2_DATA_File_Extractor.FileOperations
@@ -33,6 +33,22 @@ namespace PS2_DATA_File_Extractor.FileOperations
             {
                 File.Copy(backupPath, metPath, overwrite: true);
             }
+        }
+
+        public static AssetReplacementValidation ValidateFileEntryReplacement(
+            string dataMetPath,
+            FileEntry entry,
+            byte[] replacementData)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(dataMetPath);
+            ArgumentNullException.ThrowIfNull(entry);
+            ArgumentNullException.ThrowIfNull(replacementData);
+
+            using FileStream stream = new(dataMetPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+            stream.Position = entry.Offset;
+            byte[] originalData = new byte[entry.OriginalSize];
+            stream.ReadExactly(originalData);
+            return AssetReplacementValidator.Validate(entry.Path, originalData, replacementData);
         }
 
         /// <summary>
@@ -93,6 +109,19 @@ namespace PS2_DATA_File_Extractor.FileOperations
         /// <returns>True if the changes were saved successfully, false otherwise.</returns>
         public static bool SaveFileEntryChangesWithResize(string dataMetPath, FileEntry entry, byte[] data)
         {
+            AssetReplacementValidation validation =
+                ValidateFileEntryReplacement(dataMetPath, entry, data);
+            if (!validation.IsValid)
+            {
+                MessageBox.Show(
+                    $"The imported file is not compatible with {entry.Path}.{Environment.NewLine}{Environment.NewLine}" +
+                    validation.FormatErrors(),
+                    "Invalid Asset Replacement",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+                return false;
+            }
+
             // If data fits in existing space, use the standard save method.
             if (data.Length <= entry.OriginalSize)
             {
