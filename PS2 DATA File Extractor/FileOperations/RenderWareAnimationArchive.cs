@@ -6,16 +6,27 @@ namespace PS2_DATA_File_Extractor.FileOperations;
 public sealed class RenderWareAnimationArchive
 {
     private readonly string _metPath;
+    private readonly RenderWareSkeletonResolver _skeletonResolver;
 
-    private RenderWareAnimationArchive(string metPath, List<RenderWareAnimationFile> files)
+    private RenderWareAnimationArchive(
+        string metPath,
+        METFileStructure structure,
+        List<RenderWareAnimationFile> files)
     {
         _metPath = metPath;
+        _skeletonResolver = new RenderWareSkeletonResolver(metPath, structure);
         Files = files;
     }
 
     public IReadOnlyList<RenderWareAnimationFile> Files { get; }
     public int ChangedFileCount => Files.Count(file => file.IsChanged);
     public int PairedEventCount => Files.Count(file => file.PairedEvent != null);
+
+    public RenderWareAnimationBinding? ResolveSkeleton(RenderWareAnimationFile file)
+    {
+        ArgumentNullException.ThrowIfNull(file);
+        return _skeletonResolver.Resolve(file);
+    }
 
     public static RenderWareAnimationArchive Load(string metPath)
     {
@@ -46,7 +57,7 @@ public sealed class RenderWareAnimationArchive
         PairEvents(files, events);
         files.Sort((left, right) =>
             StringComparer.OrdinalIgnoreCase.Compare(left.SourcePath, right.SourcePath));
-        return new RenderWareAnimationArchive(metPath, files);
+        return new RenderWareAnimationArchive(metPath, structure, files);
     }
 
     public AnimationSaveResult SaveWithBackup()

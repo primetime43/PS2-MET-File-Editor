@@ -14,7 +14,8 @@ public sealed class AnimationEditorForm : Form
     {
         Dock = DockStyle.Top, Height = 50, Padding = new Padding(8, 5, 8, 3), AutoEllipsis = true
     };
-    private readonly AnimationTimelineControl _timeline = new() { Dock = DockStyle.Top, Height = 255 };
+    private readonly AnimationPosePreviewControl _posePreview = new() { Dock = DockStyle.Fill };
+    private readonly AnimationTimelineControl _timeline = new() { Dock = DockStyle.Fill };
     private readonly DataGridView _tracks = CreateTrackGrid();
     private readonly DataGridView _frames = CreateFrameGrid();
     private readonly NumericUpDown _duration = new()
@@ -67,7 +68,7 @@ public sealed class AnimationEditorForm : Form
             Dock = DockStyle.Top,
             Height = 50,
             Padding = new Padding(12, 7, 12, 3),
-            Text = "View RenderWare ANM tracks and keyframes with matching EVT expressions on the same timeline. " +
+            Text = "Preview the animated DFF/HAnim skeleton and view ANM tracks with matching EVT expressions. " +
                    "Duration, speed, and individual keyframe times can be edited without changing the archive entry size."
         };
         Label path = new()
@@ -190,9 +191,27 @@ public sealed class AnimationEditorForm : Form
         panel.Controls.Add(_sample);
         panel.Controls.Add(timing);
         panel.Controls.Add(transport);
-        panel.Controls.Add(_timeline);
+        panel.Controls.Add(BuildPreviewPanel());
         panel.Controls.Add(_fileInfo);
         return panel;
+    }
+
+    private Control BuildPreviewPanel()
+    {
+        SplitContainer previews = new()
+        {
+            Dock = DockStyle.Top,
+            Size = new Size(950, 285),
+            Height = 285,
+            SplitterDistance = 500,
+            Panel1MinSize = 280,
+            Panel2MinSize = 280
+        };
+        previews.Panel1.Padding = new Padding(0, 0, 3, 0);
+        previews.Panel2.Padding = new Padding(3, 0, 0, 0);
+        previews.Panel1.Controls.Add(_posePreview);
+        previews.Panel2.Controls.Add(_timeline);
+        return previews;
     }
 
     private static DataGridView CreateTrackGrid()
@@ -314,7 +333,10 @@ public sealed class AnimationEditorForm : Form
         _tracks.Rows.Clear();
         _frames.Rows.Clear();
         _timeline.Animation = _current;
+        _posePreview.Animation = _current;
+        _posePreview.Binding = null;
         _selectedTrack = 0;
+        _posePreview.SelectedTrack = 0;
         if (_current == null)
         {
             _fileInfo.Text = "No animation selected.";
@@ -322,11 +344,15 @@ public sealed class AnimationEditorForm : Form
         }
         else
         {
+            RenderWareAnimationBinding? binding = _archive.ResolveSkeleton(_current);
+            _posePreview.Binding = binding;
             _fileInfo.Text = $"{_current.SourcePath}   |   {_current.SchemeName} scheme   |   " +
                              $"{_current.DurationSeconds:0.######} sec   |   {_current.FrameCount:N0} keyframes   |   " +
                              $"{_current.TrackCount:N0} tracks" +
                              (_current.PairedEvent == null ? "   |   no matching EVT" :
-                                 $"   |   EVT: {_current.PairedEvent.SourcePath}");
+                                 $"   |   EVT: {_current.PairedEvent.SourcePath}") +
+                             (binding == null ? "   |   no compatible DFF skeleton" :
+                                 $"   |   Model: {binding.ModelPath}");
             _duration.Value = Math.Clamp((decimal)_current.DurationSeconds, _duration.Minimum, _duration.Maximum);
             foreach (RenderWareAnimationTrack track in _current.Tracks)
                 _tracks.Rows.Add(track.Index, track.FrameIndices.Count,
@@ -361,6 +387,8 @@ public sealed class AnimationEditorForm : Form
     {
         if (_loading || _tracks.CurrentRow == null) return;
         _selectedTrack = _tracks.CurrentRow.Index;
+        _posePreview.SelectedTrack = _selectedTrack;
+        _posePreview.Invalidate();
         UpdatePositionDetails();
     }
 
@@ -417,6 +445,7 @@ public sealed class AnimationEditorForm : Form
         if (_current == null) return;
         seconds = Math.Clamp(seconds, 0, _current.DurationSeconds);
         _timeline.PositionSeconds = seconds;
+        _posePreview.PositionSeconds = seconds;
         _scrubber.Value = TimeToScrubber(seconds);
         UpdatePositionDetails();
     }

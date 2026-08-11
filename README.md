@@ -28,7 +28,8 @@ To access the .MET files, you need to extract the game files from the ISO using 
 - **Gameplay Tweaks...** on the **Game Tools** tab provides validated tabs for 285 ball, bat/power-up, field physics,
   simulation, practice/cheat, and game-default values stored in `DATA.MET`.
 - **Animation Viewer / Editor...** parses all 2,884 RenderWare ANM files, reconstructs their unnamed
-  linked tracks and keyframes, previews a synchronized playhead with matching EVT eye/mouth expressions,
+  linked tracks and keyframes, resolves the matching DFF/HAnim hierarchy for an interactive animated
+  skeleton preview, and shows matching EVT eye/mouth expressions on the same playhead,
   and safely edits duration, playback speed, or individual keyframe times. Both standard and compressed
   retail schemes are supported. See [ANM animations](docs/ANM_ANIMATIONS.md).
 - **Facial Event Editor...** edits all 2,169 EVT timelines. Talkie lip sync plays its paired VAG

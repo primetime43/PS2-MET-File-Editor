@@ -18,6 +18,7 @@ The USA `DATA.MET` used for validation contains:
 | ANM files with an unambiguous paired EVT | 1,026 |
 | Largest animation | 5,132 keyframes |
 | Most tracks in one animation | 79 |
+| ANM files with a resolved DFF/HAnim pose preview | 2,883 |
 
 All 2,884 retail entries were forced through header, frame, transform, previous-link, and track parsing.
 
@@ -77,6 +78,21 @@ Every later frame inherits the track number of its validated earlier previous-fr
 This matches RenderWare's `RtAnimAnimationGetNumNodes` behavior. The editor deliberately displays
 `Track 0`, `Track 1`, and so on because assigning invented bone names would be misleading. Connecting
 these indices to named model skeleton nodes requires additional DFF/HAnim hierarchy work.
+
+The editor now performs that DFF/HAnim work for previewing: it parses the model's RenderWare frame list,
+reads each frame's `0x11E` HAnim plugin, maps HAnim node IDs to ANM track indices, and recovers parent
+relationships from the DFF frame hierarchy. Local ANM quaternion/translation transforms are sampled and
+composed through those parents to produce the actual animated world-space skeleton pose.
+
+The pose viewport supports drag rotation, mouse-wheel zoom, play/scrub synchronization, and selected-track
+highlighting. The retail resolver finds a compatible DFF for 2,883 of 2,884 ANMs, including the shared
+five-bone bat model and both commentator models. The sole exception is the anomalous 24-track
+`data/fieldanims/achm/achm_falback_g.anm`; the archive has no matching Achmed 24-node DFF. Its separate
+correctly-spelled animation uses a different 31-track hierarchy.
+
+This viewport renders the real animated bone hierarchy, not the skinned character polygons. Rendering
+the PS2-native skinned mesh requires decoding RenderWare's native geometry and skin streams in addition
+to the DFF/HAnim hierarchy.
 
 ## EVT synchronization
 
