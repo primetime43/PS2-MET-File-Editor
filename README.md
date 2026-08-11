@@ -27,8 +27,13 @@ To access the .MET files, you need to extract the game files from the ISO using 
   documented in [`docs/STADIUM_ENVIRONMENTS.md`](docs/STADIUM_ENVIRONMENTS.md).
 - **Gameplay Tweaks...** on the **Game Tools** tab provides validated tabs for 285 ball, bat/power-up, field physics,
   simulation, practice/cheat, and game-default values stored in `DATA.MET`.
+- **Facial Event Editor...** edits all 2,169 EVT timelines. Talkie lip sync plays its paired VAG
+  dialogue while a face and event timeline preview the active mouth shape; batting eye/mouth events
+  can also be edited and previewed by pose number. See [EVT facial events](docs/EVT_FACIAL_EVENTS.md).
 - **Unlock Game Content...** patches selected players, fields, Darts, and Aquadome unlocked in the game itself.
 - The **DATA.MET Browser** tab contains the file tree, raw preview/editor, and visible Save, Import, and Export actions.
+- EVT files are recognized as their original XML/pseudo-XML text. Double-click a selected EVT in the
+  archive tree to open it directly in the Facial Event Editor.
 - Selecting a `.mih`, `.mib`, or `.vag` audio entry shows its decoded stream metadata instead of a
   generic binary-file message. **Export Selected** can write a playable PCM WAV; streamed music can
   also be exported as its original matching MIH/MIB pair. See [PS2 audio parsing and export](docs/PS2_AUDIO.md).

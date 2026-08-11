@@ -395,7 +395,7 @@ namespace PS2_DATA_File_Extractor
         {
             // Whitelist of known text-based file extensions
             string[] textExtensions = {
-                ".txt", ".xml", ".html", ".htm", ".css", ".js", ".json",
+                ".txt", ".xml", ".evt", ".html", ".htm", ".css", ".js", ".json",
                 ".cfg", ".ini", ".config", ".log", ".csv", ".md",
                 ".lua", ".script", ".shader", ".glsl", ".fx",
                 ".c", ".cpp", ".h", ".cs", ".java", ".py",

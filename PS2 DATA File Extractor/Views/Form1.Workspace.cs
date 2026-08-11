@@ -10,6 +10,7 @@ public partial class Form1
     private Button _workspacePlayerButton = null!;
     private Button _workspaceStadiumButton = null!;
     private Button _workspaceGameplayButton = null!;
+    private Button _workspaceFacialEventButton = null!;
     private Button _workspaceOpenBrowserButton = null!;
     private Button _workspaceSaveFileButton = null!;
     private Button _workspaceImportFileButton = null!;
@@ -175,11 +176,11 @@ public partial class Form1
         {
             Text = "Game Editors",
             Dock = DockStyle.Fill,
-            Height = 194,
+            Height = 246,
             Margin = new Padding(3, 3, 3, 10),
             Padding = new Padding(10, 8, 10, 9)
         };
-        TableLayoutPanel table = CreateToolTable(3);
+        TableLayoutPanel table = CreateToolTable(4);
         _workspacePlayerButton = AddToolRow(table, 0, "Player Editor...",
             "Edit player names, batting, running, fielding, pitching, identity, and clone appearance values.");
         _workspacePlayerButton.Click += (_, _) => playerEditorMenuItem_Click(this, EventArgs.Empty);
@@ -189,6 +190,9 @@ public partial class Form1
         _workspaceGameplayButton = AddToolRow(table, 2, "Gameplay Tweaks...",
             "Edit ball, bat, power-up, field physics, simulation, practice, cheat, and game-default values.");
         _workspaceGameplayButton.Click += (_, _) => gameplayTweaksMenuItem_Click(this, EventArgs.Empty);
+        _workspaceFacialEventButton = AddToolRow(table, 3, "Facial Event Editor...",
+            "Edit and preview talkie lip sync, eye events, and mouth events; play paired VAG dialogue.");
+        _workspaceFacialEventButton.Click += (_, _) => facialEventEditorMenuItem_Click(this, EventArgs.Empty);
         group.Controls.Add(table);
         return group;
     }
@@ -235,6 +239,12 @@ public partial class Form1
         _workspaceExportFileButton.Click += (_, e) => exportSelectFileToolStripMenuItem_Click(this, e);
         _workspaceExportAllButton = CreateWorkspaceButton("Export All...", 115);
         _workspaceExportAllButton.Click += (_, e) => exportAllFilesToolStripMenuItem_Click(this, e);
+        treeView1.NodeMouseDoubleClick += (_, args) =>
+        {
+            if (args.Node.Tag == _selectedEntry &&
+                Path.GetExtension(_selectedEntry.Path).Equals(".evt", StringComparison.OrdinalIgnoreCase))
+                facialEventEditorMenuItem_Click(this, EventArgs.Empty);
+        };
         toolbar.Controls.AddRange(new Control[]
         {
             _workspaceSaveFileButton, _workspaceImportFileButton, _workspaceExportFileButton, _workspaceExportAllButton
@@ -308,6 +318,7 @@ public partial class Form1
         _workspacePlayerButton.Enabled = structuredEditorsAvailable;
         _workspaceStadiumButton.Enabled = structuredEditorsAvailable;
         _workspaceGameplayButton.Enabled = structuredEditorsAvailable;
+        _workspaceFacialEventButton.Enabled = structuredEditorsAvailable;
         _workspaceOpenBrowserButton.Enabled = hasArchive;
         _workspaceSaveFileButton.Enabled = selectedFile && _hasUnsavedChanges;
         _workspaceImportFileButton.Enabled = selectedFile;
