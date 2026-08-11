@@ -166,15 +166,17 @@ public sealed class AnimationEditorForm : Form
         Button applyDuration = new() { Text = "Apply Duration", AutoSize = true };
         Button halfSpeed = new() { Text = "Half Speed (2x time)", AutoSize = true };
         Button doubleSpeed = new() { Text = "Double Speed (half time)", AutoSize = true };
+        Button replaceAnimation = new() { Text = "Replace from Another ANM...", AutoSize = true };
         Button reset = new() { Text = "Reset This ANM", AutoSize = true };
         applyDuration.Click += (_, _) => ApplyDuration((float)_duration.Value);
         halfSpeed.Click += (_, _) => ScaleDuration(2F);
         doubleSpeed.Click += (_, _) => ScaleDuration(0.5F);
+        replaceAnimation.Click += (_, _) => ReplaceCurrentAnimation();
         reset.Click += (_, _) => ResetCurrent();
         timing.Controls.AddRange(new Control[]
         {
             new Label { Text = "Duration (seconds):", AutoSize = true, Margin = new Padding(4, 8, 3, 3) },
-            _duration, applyDuration, halfSpeed, doubleSpeed, reset
+            _duration, applyDuration, halfSpeed, doubleSpeed, replaceAnimation, reset
         });
 
         FlowLayoutPanel transport = new()
@@ -532,21 +534,61 @@ public sealed class AnimationEditorForm : Form
         _stop.Enabled = false;
     }
 
+    private void ReplaceCurrentAnimation()
+    {
+        if (_current == null) return;
+        StopPlayback();
+        using AnimationReplacementForm dialog = new(_archive, _current);
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+        string eventText = dialog.CopyPairedEvent
+            ? " The source EVT eye/mouth timeline will also replace the target EVT."
+            : " The target EVT timeline will be kept.";
+        string timingText = dialog.KeepTargetDuration
+            ? $"The source motion will be fitted to the target's {_current.DurationSeconds:0.###}-second duration."
+            : $"The target will use the source's {dialog.Source.DurationSeconds:0.###}-second duration.";
+        if (MessageBox.Show(this,
+                $"Replace the motion in:\n{_current.SourcePath}\n\nWith:\n{dialog.Source.SourcePath}\n\n" +
+                timingText + eventText +
+                "\n\nThis stages an unsaved DATA.MET change; the original is preserved until you save.",
+                "Confirm Animation Replacement", MessageBoxButtons.YesNo,
+                MessageBoxIcon.Question) != DialogResult.Yes) return;
+        try
+        {
+            AnimationReplacementResult result = _archive.ReplaceAnimation(
+                _current, dialog.Source, dialog.KeepTargetDuration, dialog.CopyPairedEvent);
+            RefreshFileList();
+            UpdateStatus();
+            MessageBox.Show(this,
+                $"Staged {Path.GetFileName(result.SourcePath)} in {Path.GetFileName(result.TargetPath)}.\n" +
+                $"The target now has {result.FrameCount:N0} keyframes over {result.DurationSeconds:0.###} seconds." +
+                (result.EventCopied ? " Its paired EVT was copied too." : string.Empty),
+                "Animation Replacement Staged", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+        catch (Exception exception)
+        {
+            MessageBox.Show(this, exception.Message, "Unable to Replace Animation",
+                MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
     private void ResetCurrent()
     {
         if (_current == null) return;
-        if (_current.IsChanged && MessageBox.Show(this,
-                "Discard unsaved timing changes to this ANM file?", "Reset Animation",
+        bool eventChanged = _current.PairedEvent?.IsChanged == true;
+        if ((_current.IsChanged || eventChanged) && MessageBox.Show(this,
+                "Discard unsaved timing or replacement changes to this ANM and its paired EVT?", "Reset Animation",
                 MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
         StopPlayback();
         _current.Reset();
+        if (eventChanged) _current.PairedEvent!.Reset();
         LoadCurrent();
+        RefreshFileList();
     }
 
     private void ResetAll()
     {
         if (_archive.ChangedFileCount > 0 && MessageBox.Show(this,
-                "Discard every unsaved animation timing change?", "Reset Animations",
+                "Discard every unsaved animation, replacement, and EVT change?", "Reset Animations",
                 MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
         StopPlayback();
         _archive.ResetAll();
@@ -562,8 +604,10 @@ public sealed class AnimationEditorForm : Form
             return;
         }
         if (MessageBox.Show(this,
-                $"Write {_archive.ChangedFileCount:N0} changed ANM file(s) to DATA.MET? A timestamped backup will be created first.",
-                "Save Animation Timing", MessageBoxButtons.YesNo,
+                $"Write {_archive.ChangedAnimationCount:N0} changed ANM file(s) and " +
+                $"{_archive.ChangedEventCount:N0} changed EVT file(s) to DATA.MET? " +
+                "A timestamped backup will be created first.",
+                "Save Animation Changes", MessageBoxButtons.YesNo,
                 MessageBoxIcon.Question) != DialogResult.Yes) return;
         try
         {
@@ -572,7 +616,7 @@ public sealed class AnimationEditorForm : Form
             _saved = true;
             string rebuild = result.RebuiltArchive ? " DATA.MET was rebuilt because an entry changed size." : string.Empty;
             MessageBox.Show(this,
-                $"Saved {result.ChangedFileCount:N0} animation file(s).{rebuild}\n\nBackup: {result.BackupPath}",
+                $"Saved {result.ChangedFileCount:N0} archive file(s).{rebuild}\n\nBackup: {result.BackupPath}",
                 "Animations Saved", MessageBoxButtons.OK, MessageBoxIcon.Information);
             DialogResult = DialogResult.OK;
             Close();
@@ -588,7 +632,7 @@ public sealed class AnimationEditorForm : Form
     {
         StopPlayback();
         if (_saved || _archive.ChangedFileCount == 0) return;
-        if (MessageBox.Show(this, "Close and discard all unsaved animation timing changes?",
+        if (MessageBox.Show(this, "Close and discard all unsaved animation, replacement, and EVT changes?",
                 "Unsaved Animation Changes", MessageBoxButtons.YesNo,
                 MessageBoxIcon.Warning) == DialogResult.Yes) return;
         e.Cancel = true;
@@ -599,7 +643,7 @@ public sealed class AnimationEditorForm : Form
         int changed = _archive.ChangedFileCount;
         _status.Text = changed == 0
             ? $"Loaded {_archive.Files.Count:N0} animations ({_archive.PairedEventCount:N0} paired EVT timelines)."
-            : $"{changed:N0} animation file(s) have unsaved timing changes.";
+            : $"{_archive.ChangedAnimationCount:N0} ANM and {_archive.ChangedEventCount:N0} EVT file(s) have unsaved changes.";
     }
 
     private double ScrubberToTime() => _current == null

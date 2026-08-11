@@ -30,7 +30,9 @@ To access the .MET files, you need to extract the game files from the ISO using 
 - **Animation Viewer / Editor...** parses all 2,884 RenderWare ANM files, reconstructs their unnamed
   linked tracks and keyframes, resolves the matching DFF/HAnim hierarchy and skinned geometry for an
   interactive textured player preview, and shows matching EVT eye/mouth expressions on the same playhead,
-  and safely edits duration, playback speed, or individual keyframe times. Both standard and compressed
+  and safely edits duration, playback speed, or individual keyframe times. Its replacement dialog previews
+  two models side by side and can copy motion into another verified-compatible animation slot, optionally
+  fitting the target duration and copying its synchronized EVT expressions. Both standard and compressed
   retail schemes are supported. See [ANM animations](docs/ANM_ANIMATIONS.md).
 - **Facial Event Editor...** edits all 2,169 EVT timelines. Talkie lip sync plays its paired VAG
   dialogue while a face and event timeline preview the active mouth shape; batting eye/mouth events

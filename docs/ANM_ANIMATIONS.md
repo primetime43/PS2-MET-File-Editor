@@ -125,8 +125,25 @@ Quaternion data, translations, compression data, and previous-frame links remain
 Because timing fields are replaced in place, an edited ANM remains exactly the same size. Saving creates
 a timestamped `DATA.MET` backup first.
 
-Animation assignment editing is intentionally not guessed from filenames. Assignments live in callers
-and game/model data rather than this ANM container; that is separate reverse-engineering work.
+## Replacing an animation slot
+
+**Replace from Another ANM...** leaves the target archive path/assignment intact while putting another
+ANM's motion data into that slot. This is the safe form of assignment editing for the current archive:
+the game continues to request the original filename, but receives the selected motion.
+
+The source list is restricted to animations with the same track count and the same recovered HAnim node
+IDs and parent relationships. Matching a count alone is not accepted, which prevents an unrelated object
+such as a five-track bat from being treated as a compatible five-track character. Standard and compressed
+sources can replace one another because the complete valid RenderWare ANM payload is copied.
+
+The replacement can retain the source duration or scale every copied keyframe time to the old target
+duration. When both files have EVT timelines and the target defines every event class/type used by the
+source, the synchronized eye/mouth events can be copied too; timestamps receive the same duration scale.
+The dialog provides synchronized side-by-side model previews before staging the change. Reset restores
+the original target ANM and EVT, and Save writes all staged ANM/EVT entries through one timestamped backup.
+
+This changes the animation occupying an existing named slot. Repointing arbitrary game code or model
+state machines to a different filename would require separate caller/assignment reverse engineering.
 
 ## Executable confirmation
 

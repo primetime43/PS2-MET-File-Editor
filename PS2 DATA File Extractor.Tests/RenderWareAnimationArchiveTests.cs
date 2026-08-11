@@ -135,7 +135,9 @@ public sealed class RenderWareAnimationArchiveTests : IDisposable
         CreateArchive(metPath, new[]
         {
             ("data/batting/test/test_swing.anm", CreateStandardAnimation()),
-            ("data/batting/test/testbatting.dff", CreateSkeletonDff())
+            ("data/batting/test/testbatting.dff", CreateSkeletonDff()),
+            ("data/batting/other/other_swing.anm", CreateSourceAnimation()),
+            ("data/batting/other/otherbatting.dff", CreateSkeletonDff())
         });
         RenderWareAnimationArchive archive = RenderWareAnimationArchive.Load(metPath);
 
@@ -146,7 +148,8 @@ public sealed class RenderWareAnimationArchiveTests : IDisposable
             {
                 using AnimationEditorForm editor = new(archive, metPath);
                 Assert.True(editor.ClientSize.Width >= editor.MinimumSize.Width);
-                RenderWareAnimationFile animation = Assert.Single(archive.Files);
+                RenderWareAnimationFile animation = archive.Files.First(file =>
+                    file.SourcePath.Contains("test_swing", StringComparison.Ordinal));
                 RenderWareAnimationBinding binding = Assert.IsType<RenderWareAnimationBinding>(
                     archive.ResolveSkeleton(animation));
                 using AnimationPosePreviewControl preview = new()
@@ -160,6 +163,8 @@ public sealed class RenderWareAnimationArchiveTests : IDisposable
                 using Bitmap bitmap = new(preview.Width, preview.Height);
                 preview.DrawToBitmap(bitmap, preview.ClientRectangle);
                 Assert.NotEqual(Color.Empty, bitmap.GetPixel(bitmap.Width / 2, bitmap.Height / 2));
+                using AnimationReplacementForm replacement = new(archive, animation);
+                Assert.True(replacement.ClientSize.Width >= replacement.MinimumSize.Width);
             }
             catch (Exception exception)
             {
@@ -171,6 +176,51 @@ public sealed class RenderWareAnimationArchiveTests : IDisposable
         thread.Join();
 
         Assert.Null(failure);
+    }
+
+    [Fact]
+    public void ReplacesCompatibleAnimationFitsDurationCopiesEvtAndSaves()
+    {
+        Directory.CreateDirectory(_tempDirectory);
+        string metPath = Path.Combine(_tempDirectory, "DATA.MET");
+        CreateArchive(metPath, new[]
+        {
+            ("data/batting/abne/abnebat_target.anm", CreateStandardAnimation()),
+            ("data/batting/abne/abnebat_target.evt", Encoding.UTF8.GetBytes(CreateEventXml(0))),
+            ("data/batting/abne/abnebatting.dff", CreateSkeletonDff()),
+            ("data/batting/ashl/ashlbat_source.anm", CreateSourceAnimation()),
+            ("data/batting/ashl/ashlbat_source.evt", Encoding.UTF8.GetBytes(CreateEventXml(1))),
+            ("data/batting/ashl/ashlbatting.dff", CreateSkeletonDff())
+        });
+        RenderWareAnimationArchive archive = RenderWareAnimationArchive.Load(metPath);
+        RenderWareAnimationFile target = archive.Files.First(file =>
+            file.SourcePath.EndsWith("target.anm", StringComparison.Ordinal));
+        RenderWareAnimationFile source = archive.Files.First(file =>
+            file.SourcePath.EndsWith("source.anm", StringComparison.Ordinal));
+
+        AnimationReplacementCompatibility compatibility =
+            archive.GetReplacementCompatibility(target, source);
+        Assert.True(compatibility.IsCompatible);
+        Assert.True(compatibility.CanCopyPairedEvent);
+        AnimationReplacementResult replacement = archive.ReplaceAnimation(
+            target, source, keepTargetDuration: true, copyPairedEvent: true);
+
+        Assert.Equal(2F, replacement.DurationSeconds, 3);
+        Assert.Equal(200F, target.SampleTrack(0, 0).TranslationX, 3);
+        Assert.Equal(0.5, Assert.Single(target.PairedEvent!.Events).Timestamp, 3);
+        Assert.Equal(1, archive.ChangedAnimationCount);
+        Assert.Equal(1, archive.ChangedEventCount);
+        Assert.Equal(2, archive.ChangedFileCount);
+
+        AnimationSaveResult saved = archive.SaveWithBackup();
+        Assert.Equal(2, saved.ChangedFileCount);
+        Assert.True(saved.RebuiltArchive);
+        RenderWareAnimationArchive reloaded = RenderWareAnimationArchive.Load(metPath);
+        RenderWareAnimationFile reloadedTarget = reloaded.Files.First(file =>
+            file.SourcePath.EndsWith("target.anm", StringComparison.Ordinal));
+        Assert.Equal(2F, reloadedTarget.DurationSeconds, 3);
+        Assert.Equal(200F, reloadedTarget.SampleTrack(0, 0).TranslationX, 3);
+        Assert.Equal(0.5, Assert.Single(reloadedTarget.PairedEvent!.Events).Timestamp, 3);
     }
 
     public void Dispose()
@@ -193,6 +243,21 @@ public sealed class RenderWareAnimationArchiveTests : IDisposable
         WriteStandardFrame(writer, 2, 20, 40, 72);
         return data;
     }
+
+    private static byte[] CreateSourceAnimation()
+    {
+        RenderWareAnimationFile file = RenderWareAnimationFile.Parse(
+            "source.anm", CreateStandardAnimation());
+        file.ScaleToDuration(4F);
+        byte[] data = file.Serialize();
+        WriteSingle(data, 32 + 20, 200F);
+        WriteSingle(data, 32 + 2 * 36 + 20, 210F);
+        WriteSingle(data, 32 + 4 * 36 + 20, 220F);
+        return data;
+    }
+
+    private static void WriteSingle(byte[] data, int offset, float value) =>
+        BitConverter.GetBytes(value).CopyTo(data, offset);
 
     private static void WriteStandardFrame(
         BinaryWriter writer, float time, float tx, float ty, int previousOffset)
@@ -241,12 +306,12 @@ public sealed class RenderWareAnimationArchiveTests : IDisposable
         writer.Write(duration);
     }
 
-    private static string CreateEventXml() =>
+    private static string CreateEventXml(double timestamp = 0) =>
         "<?xml version=\"1.0\" encoding=\"utf-8\" ?>\r\n" +
         "<event_stream>\r\n" +
         "<classes><classdef name=\"CLASS_MOUTH\" value=\"1\">" +
         "<eventdef name=\"1\" value=\"1\"/></classdef></classes>\r\n" +
-        "<event><timestamp value=\"0\"/><eventClass value=\"CLASS_MOUTH\"/>" +
+        $"<event><timestamp value=\"{timestamp:0.###}\"/><eventClass value=\"CLASS_MOUTH\"/>" +
         "<eventType value=\"1\"/><value value=\"1.0\"/><elementID value=\"0\"/></event>\r\n" +
         "</event_stream>\r\n";
 

@@ -19,8 +19,17 @@ public sealed class RenderWareAnimationArchive
     }
 
     public IReadOnlyList<RenderWareAnimationFile> Files { get; }
-    public int ChangedFileCount => Files.Count(file => file.IsChanged);
+    public int ChangedAnimationCount => Files.Count(file => file.IsChanged);
+    public int ChangedEventCount => PairedEvents.Count(file => file.IsChanged);
+    public int ChangedFileCount => ChangedAnimationCount + ChangedEventCount;
     public int PairedEventCount => Files.Count(file => file.PairedEvent != null);
+
+    private IReadOnlyList<FacialEventFile> PairedEvents => Files
+        .Select(file => file.PairedEvent)
+        .OfType<FacialEventFile>()
+        .GroupBy(file => file.SourcePath, StringComparer.OrdinalIgnoreCase)
+        .Select(group => group.First())
+        .ToList();
 
     public RenderWareAnimationBinding? ResolveSkeleton(RenderWareAnimationFile file)
     {
@@ -32,6 +41,74 @@ public sealed class RenderWareAnimationArchive
     {
         ArgumentNullException.ThrowIfNull(binding);
         return _skeletonResolver.LoadModel(binding);
+    }
+
+    public AnimationReplacementCompatibility GetReplacementCompatibility(
+        RenderWareAnimationFile target,
+        RenderWareAnimationFile source)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        ArgumentNullException.ThrowIfNull(source);
+        if (ReferenceEquals(target, source) ||
+            target.SourcePath.Equals(source.SourcePath, StringComparison.OrdinalIgnoreCase))
+            return new AnimationReplacementCompatibility(false,
+                "Choose a different source animation.", false);
+        if (target.TrackCount != source.TrackCount)
+            return new AnimationReplacementCompatibility(false,
+                $"Track count differs ({target.TrackCount} versus {source.TrackCount}).", false);
+
+        RenderWareAnimationBinding? targetBinding = ResolveSkeleton(target);
+        RenderWareAnimationBinding? sourceBinding = ResolveSkeleton(source);
+        if (targetBinding == null || sourceBinding == null)
+            return new AnimationReplacementCompatibility(false,
+                "A compatible DFF/HAnim hierarchy could not be resolved for both animations.", false);
+        IReadOnlyList<RenderWareSkeletonBone> targetBones = targetBinding.Skeleton.Bones;
+        IReadOnlyList<RenderWareSkeletonBone> sourceBones = sourceBinding.Skeleton.Bones;
+        bool sameHierarchy = targetBones.Count == sourceBones.Count &&
+                             targetBones.Zip(sourceBones).All(pair =>
+                                 pair.First.NodeId == pair.Second.NodeId &&
+                                 pair.First.ParentTrackIndex == pair.Second.ParentTrackIndex);
+        if (!sameHierarchy)
+            return new AnimationReplacementCompatibility(false,
+                "The animations use different HAnim bone layouts.", false);
+
+        bool canCopyEvent = CanCopyEvent(source.PairedEvent, target.PairedEvent);
+        string scheme = target.SchemeId == source.SchemeId
+            ? target.SchemeName
+            : $"{source.SchemeName} source will replace {target.SchemeName} data";
+        return new AnimationReplacementCompatibility(true,
+            $"Compatible {target.TrackCount}-track hierarchy; {scheme}; " +
+            $"{source.FrameCount:N0} source keyframes.", canCopyEvent);
+    }
+
+    public AnimationReplacementResult ReplaceAnimation(
+        RenderWareAnimationFile target,
+        RenderWareAnimationFile source,
+        bool keepTargetDuration,
+        bool copyPairedEvent)
+    {
+        AnimationReplacementCompatibility compatibility =
+            GetReplacementCompatibility(target, source);
+        if (!compatibility.IsCompatible)
+            throw new InvalidDataException(compatibility.Message);
+        if (copyPairedEvent && !compatibility.CanCopyPairedEvent)
+            throw new InvalidDataException(
+                "The source EVT cannot be copied because one of the animations has no paired EVT or its event definitions differ.");
+
+        float originalTargetDuration = target.DurationSeconds;
+        float sourceDuration = source.DurationSeconds;
+        target.ReplaceFrom(source, keepTargetDuration ? originalTargetDuration : null);
+        bool eventCopied = false;
+        if (copyPairedEvent)
+        {
+            double scale = keepTargetDuration ? originalTargetDuration / sourceDuration : 1D;
+            IEnumerable<FacialEvent> events = source.PairedEvent!.Events.Select(item =>
+                item with { Timestamp = item.Timestamp * scale });
+            target.PairedEvent!.ReplaceEvents(events);
+            eventCopied = true;
+        }
+        return new AnimationReplacementResult(target.SourcePath, source.SourcePath,
+            target.DurationSeconds, target.FrameCount, eventCopied);
     }
 
     public static RenderWareAnimationArchive Load(string metPath)
@@ -72,6 +149,8 @@ public sealed class RenderWareAnimationArchive
             .Where(file => file.IsChanged)
             .ToDictionary(file => file.SourcePath, file => file.Serialize(),
                 StringComparer.OrdinalIgnoreCase);
+        foreach (FacialEventFile file in PairedEvents.Where(file => file.IsChanged))
+            replacements[file.SourcePath] = file.Serialize();
         METArchiveBatchSaveResult result = METArchiveBatchEditor.SaveWithBackup(
             _metPath, replacements, "animations");
         return new AnimationSaveResult(result.BackupPath, result.ChangedEntryCount,
@@ -81,6 +160,16 @@ public sealed class RenderWareAnimationArchive
     public void ResetAll()
     {
         foreach (RenderWareAnimationFile file in Files) file.Reset();
+        foreach (FacialEventFile file in PairedEvents) file.Reset();
+    }
+
+    private static bool CanCopyEvent(FacialEventFile? source, FacialEventFile? target)
+    {
+        if (source == null || target == null || ReferenceEquals(source, target)) return false;
+        return source.Events.All(item =>
+            target.ClassDefinitions.TryGetValue(item.EventClass,
+                out IReadOnlyList<string>? types) &&
+            types.Contains(item.EventType, StringComparer.OrdinalIgnoreCase));
     }
 
     private static byte[] ReadEntry(FileStream stream, FileEntry entry)
@@ -156,6 +245,7 @@ public sealed class RenderWareAnimationFile
     private const int CompressedCustomDataSize = 24;
 
     private readonly byte[] _originalBytes;
+    private byte[]? _replacementBytes;
     private List<RenderWareAnimationKeyFrame>? _frames;
     private List<RenderWareAnimationTrack>? _tracks;
     private float _duration;
@@ -270,9 +360,10 @@ public sealed class RenderWareAnimationFile
 
     public byte[] Serialize()
     {
-        if (!_changed) return _originalBytes.ToArray();
+        byte[] workingBytes = _replacementBytes ?? _originalBytes;
+        if (!_changed) return workingBytes.ToArray();
         EnsureFrames();
-        byte[] result = _originalBytes.ToArray();
+        byte[] result = workingBytes.ToArray();
         WriteSingle(result, 28, _duration);
         int diskFrameSize = SchemeId == StandardScheme ? StandardFrameSize : CompressedDiskFrameSize;
         for (int index = 0; index < _frames!.Count; index++)
@@ -282,10 +373,29 @@ public sealed class RenderWareAnimationFile
 
     public void Reset()
     {
+        _replacementBytes = null;
         _frames = null;
         _tracks = null;
         _changed = false;
         ParseHeader(_originalBytes);
+    }
+
+    internal void ReplaceFrom(RenderWareAnimationFile source, float? fittedDuration)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        byte[] replacement = source.Serialize();
+        RenderWareAnimationFile parsed = Parse(SourcePath, replacement);
+        if (parsed.TrackCount != TrackCount)
+            throw new InvalidDataException(
+                $"The source has {parsed.TrackCount} tracks; the target requires {TrackCount}.");
+        _replacementBytes = replacement;
+        _frames = null;
+        _tracks = null;
+        ParseHeader(replacement);
+        _changed = true;
+        if (fittedDuration.HasValue &&
+            Math.Abs(_duration - fittedDuration.Value) > 0.0000001F)
+            ScaleToDuration(fittedDuration.Value);
     }
 
     private void ParseHeader(ReadOnlySpan<byte> data)
@@ -330,10 +440,11 @@ public sealed class RenderWareAnimationFile
     private void EnsureFrames()
     {
         if (_frames != null) return;
+        byte[] workingBytes = _replacementBytes ?? _originalBytes;
         _frames = new List<RenderWareAnimationKeyFrame>(FrameCount);
         float[] custom = SchemeId == CompressedScheme
             ? Enumerable.Range(0, 6)
-                .Select(index => ReadSingle(_originalBytes,
+                .Select(index => ReadSingle(workingBytes,
                     HeaderSize + FrameCount * CompressedDiskFrameSize + index * 4))
                 .ToArray()
             : Array.Empty<float>();
@@ -342,32 +453,32 @@ public sealed class RenderWareAnimationFile
         for (int index = 0; index < FrameCount; index++)
         {
             int offset = HeaderSize + index * diskSize;
-            float time = ReadSingle(_originalBytes, offset);
+            float time = ReadSingle(workingBytes, offset);
             RenderWareAnimationTransform transform;
             int previousRaw;
             if (SchemeId == StandardScheme)
             {
                 transform = new RenderWareAnimationTransform(
-                    ReadSingle(_originalBytes, offset + 4),
-                    ReadSingle(_originalBytes, offset + 8),
-                    ReadSingle(_originalBytes, offset + 12),
-                    ReadSingle(_originalBytes, offset + 16),
-                    ReadSingle(_originalBytes, offset + 20),
-                    ReadSingle(_originalBytes, offset + 24),
-                    ReadSingle(_originalBytes, offset + 28));
-                previousRaw = ReadInt32(_originalBytes, offset + 32);
+                    ReadSingle(workingBytes, offset + 4),
+                    ReadSingle(workingBytes, offset + 8),
+                    ReadSingle(workingBytes, offset + 12),
+                    ReadSingle(workingBytes, offset + 16),
+                    ReadSingle(workingBytes, offset + 20),
+                    ReadSingle(workingBytes, offset + 24),
+                    ReadSingle(workingBytes, offset + 28));
+                previousRaw = ReadInt32(workingBytes, offset + 32);
             }
             else
             {
-                float qx = DecodeCompressedFloat(ReadUInt16(_originalBytes, offset + 4));
-                float qy = DecodeCompressedFloat(ReadUInt16(_originalBytes, offset + 6));
-                float qz = DecodeCompressedFloat(ReadUInt16(_originalBytes, offset + 8));
-                float qw = DecodeCompressedFloat(ReadUInt16(_originalBytes, offset + 10));
-                float tx = DecodeCompressedFloat(ReadUInt16(_originalBytes, offset + 12)) * custom[3] + custom[0];
-                float ty = DecodeCompressedFloat(ReadUInt16(_originalBytes, offset + 14)) * custom[4] + custom[1];
-                float tz = DecodeCompressedFloat(ReadUInt16(_originalBytes, offset + 16)) * custom[5] + custom[2];
+                float qx = DecodeCompressedFloat(ReadUInt16(workingBytes, offset + 4));
+                float qy = DecodeCompressedFloat(ReadUInt16(workingBytes, offset + 6));
+                float qz = DecodeCompressedFloat(ReadUInt16(workingBytes, offset + 8));
+                float qw = DecodeCompressedFloat(ReadUInt16(workingBytes, offset + 10));
+                float tx = DecodeCompressedFloat(ReadUInt16(workingBytes, offset + 12)) * custom[3] + custom[0];
+                float ty = DecodeCompressedFloat(ReadUInt16(workingBytes, offset + 14)) * custom[4] + custom[1];
+                float tz = DecodeCompressedFloat(ReadUInt16(workingBytes, offset + 16)) * custom[5] + custom[2];
                 transform = new RenderWareAnimationTransform(qx, qy, qz, qw, tx, ty, tz);
-                previousRaw = ReadInt32(_originalBytes, offset + 18);
+                previousRaw = ReadInt32(workingBytes, offset + 18);
             }
 
             int? previousIndex = previousRaw >= 0 && previousRaw % memorySize == 0
@@ -543,3 +654,15 @@ public sealed record AnimationSaveResult(
     string? BackupPath,
     int ChangedFileCount,
     bool RebuiltArchive);
+
+public sealed record AnimationReplacementCompatibility(
+    bool IsCompatible,
+    string Message,
+    bool CanCopyPairedEvent);
+
+public sealed record AnimationReplacementResult(
+    string TargetPath,
+    string SourcePath,
+    float DurationSeconds,
+    int FrameCount,
+    bool EventCopied);
