@@ -76,8 +76,7 @@ whose previous-frame offset is zero marks the end of that root block; that index
 Every later frame inherits the track number of its validated earlier previous-frame link.
 
 This matches RenderWare's `RtAnimAnimationGetNumNodes` behavior. The editor deliberately displays
-`Track 0`, `Track 1`, and so on because assigning invented bone names would be misleading. Connecting
-these indices to named model skeleton nodes requires additional DFF/HAnim hierarchy work.
+`Track 0`, `Track 1`, and so on because assigning invented bone names would be misleading.
 
 The editor now performs that DFF/HAnim work for previewing: it parses the model's RenderWare frame list,
 reads each frame's `0x11E` HAnim plugin, maps HAnim node IDs to ANM track indices, and recovers parent
@@ -85,14 +84,22 @@ relationships from the DFF frame hierarchy. Local ANM quaternion/translation tra
 composed through those parents to produce the actual animated world-space skeleton pose.
 
 The pose viewport supports drag rotation, mouse-wheel zoom, play/scrub synchronization, and selected-track
-highlighting. The retail resolver finds a compatible DFF for 2,883 of 2,884 ANMs, including the shared
+highlighting. For compatible character DFFs, it also parses standard RenderWare geometry, material and
+texture names, UV coordinates, per-vertex skin indices and weights, and inverse-bind matrices. The model
+is skinned against the sampled ANM pose on the CPU and drawn with the original PNG textures stored beside
+the DFF in `DATA.MET`. Active `CLASS_EYES` and `CLASS_MOUTH` events select the numbered facial texture at
+the same playhead position. Models containing a supported skinned body plus unsupported rigid accessories
+still show the skinned portion; unsupported or textureless models fall back to a material-color mesh or
+the HAnim skeleton rather than preventing timing edits.
+
+The retail resolver finds a compatible DFF for 2,883 of 2,884 ANMs, including the shared
 five-bone bat model and both commentator models. The sole exception is the anomalous 24-track
 `data/fieldanims/achm/achm_falback_g.anm`; the archive has no matching Achmed 24-node DFF. Its separate
 correctly-spelled animation uses a different 31-track hierarchy.
 
-This viewport renders the real animated bone hierarchy, not the skinned character polygons. Rendering
-the PS2-native skinned mesh requires decoding RenderWare's native geometry and skin streams in addition
-to the DFF/HAnim hierarchy.
+The textured viewport currently supports the standard non-native RenderWare geometry used by the retail
+player models. PS2-native geometry streams that do not expose ordinary vertices and UVs continue to use
+the skeleton fallback.
 
 ## EVT synchronization
 

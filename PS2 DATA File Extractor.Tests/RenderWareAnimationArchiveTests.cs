@@ -104,6 +104,15 @@ public sealed class RenderWareAnimationArchiveTests : IDisposable
         Assert.Equal(2, binding.Skeleton.BoneCount);
         Assert.Equal(-1, binding.Skeleton.Bones[0].ParentTrackIndex);
         Assert.Equal(0, binding.Skeleton.Bones[1].ParentTrackIndex);
+        RenderWareSkinnedModel model = Assert.IsType<RenderWareSkinnedModel>(
+            archive.LoadModel(binding));
+        Assert.Equal(3, model.VertexCount);
+        Assert.Equal(1, model.TriangleCount);
+        IReadOnlyList<RenderWareDeformedMesh> deformed = model.Deform(binding, animation, 1.5F);
+        Assert.Equal(15F, deformed[0].Positions[0].X, 3);
+        Assert.Equal(30F, deformed[0].Positions[0].Y, 3);
+        Assert.Equal(125F, deformed[0].Positions[2].X, 3);
+        Assert.Equal(60F, deformed[0].Positions[2].Y, 3);
         IReadOnlyList<Vector3> pose = binding.SamplePose(animation, 1.5F);
         Assert.Equal(15F, pose[0].X, 3);
         Assert.Equal(125F, pose[1].X, 3);
@@ -145,6 +154,7 @@ public sealed class RenderWareAnimationArchiveTests : IDisposable
                     Size = new Size(640, 300),
                     Animation = animation,
                     Binding = binding,
+                    Model = archive.LoadModel(binding),
                     PositionSeconds = 1.5
                 };
                 using Bitmap bitmap = new(preview.Width, preview.Height);
@@ -278,8 +288,100 @@ public sealed class RenderWareAnimationArchiveTests : IDisposable
             frameStructure,
             RwChunk(0x03, rootHierarchy),
             RwChunk(0x03, childNode)));
+        byte[] geometryList = CreateSkinnedGeometryList();
         byte[] clumpStructure = RwChunk(0x01, new byte[12]);
-        return RwChunk(0x10, Combine(clumpStructure, frameList));
+        return RwChunk(0x10, Combine(clumpStructure, frameList, geometryList));
+    }
+
+    private static byte[] CreateSkinnedGeometryList()
+    {
+        byte[] geometryStructure;
+        using (MemoryStream stream = new())
+        using (BinaryWriter writer = new(stream))
+        {
+            writer.Write(0x00010037);
+            writer.Write(1);
+            writer.Write(3);
+            writer.Write(1);
+            writer.Write(0F); writer.Write(0F);
+            writer.Write(1F); writer.Write(0F);
+            writer.Write(0F); writer.Write(1F);
+            writer.Write((ushort)1); writer.Write((ushort)0);
+            writer.Write((ushort)0); writer.Write((ushort)2);
+            writer.Write(0F); writer.Write(0F); writer.Write(0F); writer.Write(20F);
+            writer.Write(1); writer.Write(1);
+            writer.Write(0F); writer.Write(0F); writer.Write(0F);
+            writer.Write(10F); writer.Write(0F); writer.Write(0F);
+            writer.Write(0F); writer.Write(10F); writer.Write(0F);
+            for (int index = 0; index < 3; index++)
+            {
+                writer.Write(0F); writer.Write(0F); writer.Write(1F);
+            }
+            geometryStructure = RwChunk(0x01, stream.ToArray());
+        }
+
+        byte[] materialStructure;
+        using (MemoryStream stream = new())
+        using (BinaryWriter writer = new(stream))
+        {
+            writer.Write(0);
+            writer.Write(new byte[] { 255, 190, 95, 255 });
+            writer.Write(0);
+            writer.Write(0);
+            writer.Write(1F); writer.Write(1F); writer.Write(1F);
+            materialStructure = RwChunk(0x01, stream.ToArray());
+        }
+        byte[] material = RwChunk(0x07, Combine(
+            materialStructure, RwChunk(0x03, Array.Empty<byte>())));
+        byte[] materialListStructure;
+        using (MemoryStream stream = new())
+        using (BinaryWriter writer = new(stream))
+        {
+            writer.Write(1);
+            writer.Write(-1);
+            materialListStructure = RwChunk(0x01, stream.ToArray());
+        }
+        byte[] materialList = RwChunk(0x08, Combine(materialListStructure, material));
+
+        byte[] skin;
+        using (MemoryStream stream = new())
+        using (BinaryWriter writer = new(stream))
+        {
+            writer.Write(new byte[] { 2, 2, 1, 0 });
+            writer.Write(new byte[] { 0, 1 });
+            writer.Write(new byte[]
+            {
+                0, 0, 0, 0,
+                0, 0, 0, 0,
+                1, 0, 0, 0
+            });
+            for (int vertex = 0; vertex < 3; vertex++)
+            {
+                writer.Write(1F); writer.Write(0F); writer.Write(0F); writer.Write(0F);
+            }
+            WriteIdentitySkinMatrix(writer);
+            WriteIdentitySkinMatrix(writer);
+            writer.Write(new byte[12]);
+            skin = RwChunk(0x116, stream.ToArray());
+        }
+        byte[] extension = RwChunk(0x03, skin);
+        byte[] geometry = RwChunk(0x0F, Combine(geometryStructure, materialList, extension));
+        byte[] listStructure;
+        using (MemoryStream stream = new())
+        using (BinaryWriter writer = new(stream))
+        {
+            writer.Write(1);
+            listStructure = RwChunk(0x01, stream.ToArray());
+        }
+        return RwChunk(0x1A, Combine(listStructure, geometry));
+    }
+
+    private static void WriteIdentitySkinMatrix(BinaryWriter writer)
+    {
+        writer.Write(1F); writer.Write(0F); writer.Write(0F); writer.Write(0F);
+        writer.Write(0F); writer.Write(1F); writer.Write(0F); writer.Write(0F);
+        writer.Write(0F); writer.Write(0F); writer.Write(1F); writer.Write(0F);
+        writer.Write(0F); writer.Write(0F); writer.Write(0F); writer.Write(1F);
     }
 
     private static void WriteDffFrame(BinaryWriter writer, int parent, Vector3 translation)

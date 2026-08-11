@@ -68,7 +68,7 @@ public sealed class AnimationEditorForm : Form
             Dock = DockStyle.Top,
             Height = 50,
             Padding = new Padding(12, 7, 12, 3),
-            Text = "Preview the animated DFF/HAnim skeleton and view ANM tracks with matching EVT expressions. " +
+            Text = "Preview the animated player model with its original textures and view ANM tracks with matching EVT expressions. " +
                    "Duration, speed, and individual keyframe times can be edited without changing the archive entry size."
         };
         Label path = new()
@@ -335,6 +335,8 @@ public sealed class AnimationEditorForm : Form
         _timeline.Animation = _current;
         _posePreview.Animation = _current;
         _posePreview.Binding = null;
+        _posePreview.Model = null;
+        _posePreview.FacialEvent = null;
         _selectedTrack = 0;
         _posePreview.SelectedTrack = 0;
         if (_current == null)
@@ -346,13 +348,19 @@ public sealed class AnimationEditorForm : Form
         {
             RenderWareAnimationBinding? binding = _archive.ResolveSkeleton(_current);
             _posePreview.Binding = binding;
+            RenderWareSkinnedModel? model = binding == null ? null : _archive.LoadModel(binding);
+            _posePreview.Model = model;
+            _posePreview.FacialEvent = _current.PairedEvent;
             _fileInfo.Text = $"{_current.SourcePath}   |   {_current.SchemeName} scheme   |   " +
                              $"{_current.DurationSeconds:0.######} sec   |   {_current.FrameCount:N0} keyframes   |   " +
                              $"{_current.TrackCount:N0} tracks" +
                              (_current.PairedEvent == null ? "   |   no matching EVT" :
                                  $"   |   EVT: {_current.PairedEvent.SourcePath}") +
-                             (binding == null ? "   |   no compatible DFF skeleton" :
-                                 $"   |   Model: {binding.ModelPath}");
+                              (binding == null ? "   |   no compatible DFF model" :
+                                  $"   |   Model: {binding.ModelPath}") +
+                              (binding != null && model == null ? " (skeleton preview only)" :
+                               model == null ? string.Empty :
+                                  $" ({model.VertexCount:N0} vertices, {model.Textures.Count:N0} textures)");
             _duration.Value = Math.Clamp((decimal)_current.DurationSeconds, _duration.Minimum, _duration.Maximum);
             foreach (RenderWareAnimationTrack track in _current.Tracks)
                 _tracks.Rows.Add(track.Index, track.FrameIndices.Count,

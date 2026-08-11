@@ -7,14 +7,18 @@ namespace PS2_DATA_File_Extractor.FileOperations;
 public sealed class RenderWareSkeletonResolver
 {
     private readonly string _metPath;
+    private readonly IReadOnlyList<FileEntry> _entries;
     private readonly IReadOnlyList<FileEntry> _models;
     private readonly Dictionary<string, RenderWareSkeleton?> _cache =
+        new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, RenderWareSkinnedModel?> _modelCache =
         new(StringComparer.OrdinalIgnoreCase);
 
     public RenderWareSkeletonResolver(string metPath, METFileStructure structure)
     {
         _metPath = metPath;
-        _models = structure.AllEntries
+        _entries = structure.AllEntries;
+        _models = _entries
             .Where(entry => Path.GetExtension(entry.Path)
                 .Equals(".dff", StringComparison.OrdinalIgnoreCase))
             .ToList();
@@ -66,6 +70,92 @@ public sealed class RenderWareSkeletonResolver
         return null;
     }
 
+    public RenderWareSkinnedModel? LoadModel(RenderWareAnimationBinding binding)
+    {
+        if (_modelCache.TryGetValue(binding.ModelPath, out RenderWareSkinnedModel? cached))
+            return cached;
+        FileEntry? modelEntry = _models.FirstOrDefault(entry =>
+            Normalize(entry.Path).Equals(Normalize(binding.ModelPath), StringComparison.OrdinalIgnoreCase));
+        if (modelEntry == null) return null;
+        try
+        {
+            RenderWareSkinnedModel model = RenderWareSkinnedModel.Parse(
+                modelEntry.Path, ReadEntry(modelEntry));
+            HashSet<string> textureNames = model.Meshes
+                .SelectMany(mesh => mesh.Materials)
+                .Select(material => material.TextureName)
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .Select(name => name!)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            IEnumerable<FileEntry> textureEntries = _entries
+                .Where(entry => Path.GetExtension(entry.Path)
+                    .Equals(".png", StringComparison.OrdinalIgnoreCase))
+                .Where(entry => IsNeededTexture(
+                    Path.GetFileNameWithoutExtension(entry.Path), textureNames))
+                .GroupBy(entry => Path.GetFileNameWithoutExtension(entry.Path),
+                    StringComparer.OrdinalIgnoreCase)
+                .Select(group => group
+                    .OrderByDescending(entry => TextureScore(entry.Path, modelEntry.Path))
+                    .First());
+            foreach (FileEntry textureEntry in textureEntries)
+            {
+                string stem = Path.GetFileNameWithoutExtension(textureEntry.Path);
+                try
+                {
+                    model.AddTexture(stem, RenderWareTexture.Decode(ReadEntry(textureEntry)));
+                }
+                catch (Exception exception) when (exception is ArgumentException or
+                                                   System.Runtime.InteropServices.ExternalException)
+                {
+                    // Leave a malformed optional texture unresolved; the material-color fallback remains usable.
+                }
+            }
+            _modelCache[binding.ModelPath] = model;
+            return model;
+        }
+        catch (InvalidDataException)
+        {
+            _modelCache[binding.ModelPath] = null;
+            return null;
+        }
+    }
+
+    private static bool IsNeededTexture(string stem, IReadOnlySet<string> textureNames) =>
+        textureNames.Contains(stem) || textureNames.Any(name =>
+        {
+            int dot = name.LastIndexOf('.');
+            string baseName = dot >= 0 ? name[..dot] : name;
+            return stem.StartsWith(baseName + ".", StringComparison.OrdinalIgnoreCase);
+        });
+
+    private static int TextureScore(string texturePath, string modelPath)
+    {
+        string textureDirectory = Path.GetDirectoryName(Normalize(texturePath))?
+            .Replace('\\', '/') ?? string.Empty;
+        string modelDirectory = Path.GetDirectoryName(Normalize(modelPath))?
+            .Replace('\\', '/') ?? string.Empty;
+        if (textureDirectory.Equals(modelDirectory, StringComparison.OrdinalIgnoreCase)) return 100_000;
+        if (textureDirectory.Equals(modelDirectory + "/textures", StringComparison.OrdinalIgnoreCase))
+            return 95_000;
+
+        string[] textureParts = textureDirectory.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        string[] modelParts = modelDirectory.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        int common = 0;
+        while (common < textureParts.Length && common < modelParts.Length &&
+               textureParts[common].Equals(modelParts[common], StringComparison.OrdinalIgnoreCase))
+            common++;
+        int score = common * 1_000;
+        string modelCode = modelParts.LastOrDefault() ?? string.Empty;
+        if (textureParts.Any(part => part.Equals(modelCode, StringComparison.OrdinalIgnoreCase)))
+            score += 20_000;
+        string modelCategory = modelParts.Length > 1 ? modelParts[1] : string.Empty;
+        string preferredCategory = PreferredModelCategory(modelCategory);
+        if (textureParts.Length > 1 &&
+            textureParts[1].Equals(preferredCategory, StringComparison.OrdinalIgnoreCase))
+            score += 10_000;
+        return score;
+    }
+
     private RenderWareSkeleton? Load(FileEntry entry)
     {
         if (_cache.TryGetValue(entry.Path, out RenderWareSkeleton? cached)) return cached;
@@ -84,6 +174,15 @@ public sealed class RenderWareSkeletonResolver
             _cache[entry.Path] = null;
             return null;
         }
+    }
+
+    private byte[] ReadEntry(FileEntry entry)
+    {
+        using FileStream stream = new(_metPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+        stream.Position = entry.Offset;
+        byte[] data = new byte[entry.OriginalSize];
+        stream.ReadExactly(data);
+        return data;
     }
 
     private static int Score(
@@ -307,6 +406,11 @@ public sealed class RenderWareAnimationBinding
 
     public IReadOnlyList<Vector3> SamplePose(
         RenderWareAnimationFile animation, float timeSeconds)
+        => SampleWorldMatrices(animation, timeSeconds)
+            .Select(matrix => matrix.Translation).ToList();
+
+    public IReadOnlyList<Matrix4x4> SampleWorldMatrices(
+        RenderWareAnimationFile animation, float timeSeconds)
     {
         if (animation.TrackCount != Skeleton.BoneCount)
             throw new InvalidDataException("The animation and skeleton track counts do not match.");
@@ -314,7 +418,7 @@ public sealed class RenderWareAnimationBinding
         bool[] visiting = new bool[Skeleton.BoneCount];
         for (int track = 0; track < Skeleton.BoneCount; track++)
             BuildWorld(track, animation, timeSeconds, world, visiting);
-        return world.Select(matrix => matrix!.Value.Translation).ToList();
+        return world.Select(matrix => matrix!.Value).ToList();
     }
 
     private Matrix4x4 BuildWorld(

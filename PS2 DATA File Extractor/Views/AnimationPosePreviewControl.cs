@@ -1,4 +1,6 @@
 using System.Numerics;
+using System.Drawing.Imaging;
+using System.Runtime.InteropServices;
 using PS2_DATA_File_Extractor.FileOperations;
 
 namespace PS2_DATA_File_Extractor;
@@ -7,6 +9,8 @@ public sealed class AnimationPosePreviewControl : Control
 {
     private RenderWareAnimationFile? _animation;
     private RenderWareAnimationBinding? _binding;
+    private RenderWareSkinnedModel? _model;
+    private FacialEventFile? _facialEvent;
     private double _position;
     private float _yaw = -0.38F;
     private float _pitch = -0.10F;
@@ -41,6 +45,26 @@ public sealed class AnimationPosePreviewControl : Control
         set
         {
             _binding = value;
+            Invalidate();
+        }
+    }
+
+    public RenderWareSkinnedModel? Model
+    {
+        get => _model;
+        set
+        {
+            _model = value;
+            Invalidate();
+        }
+    }
+
+    public FacialEventFile? FacialEvent
+    {
+        get => _facialEvent;
+        set
+        {
+            _facialEvent = value;
             Invalidate();
         }
     }
@@ -122,6 +146,14 @@ public sealed class AnimationPosePreviewControl : Control
 
         try
         {
+            if (_model != null)
+            {
+                DrawTexturedModel(graphics);
+                DrawHeader(graphics,
+                    $"Textured player model — {Path.GetFileName(_binding.ModelPath)}  |  " +
+                    $"{_model.VertexCount:N0} vertices  |  {_model.TriangleCount:N0} triangles  |  {_position:0.000}s");
+                return;
+            }
             IReadOnlyList<Vector3> pose = _binding.SamplePose(_animation, (float)_position);
             DrawPose(graphics, pose, _binding.Skeleton.Bones);
             DrawHeader(graphics,
@@ -133,6 +165,148 @@ public sealed class AnimationPosePreviewControl : Control
             DrawCenteredMessage(graphics, $"The pose could not be rendered.\n{exception.Message}");
         }
     }
+
+    private void DrawTexturedModel(Graphics graphics)
+    {
+        IReadOnlyList<RenderWareDeformedMesh> meshes = _model!.Deform(
+            _binding!, _animation!, (float)_position);
+        int renderWidth = Math.Clamp(Width, 1, 720);
+        int renderHeight = Math.Clamp(Height, 1, 400);
+        int pixelCount = checked(renderWidth * renderHeight);
+        int[] pixels = new int[pixelCount];
+        float[] depth = Enumerable.Repeat(float.MinValue, pixelCount).ToArray();
+
+        List<ProjectedMesh> projectedMeshes = new(meshes.Count);
+        float minX = float.MaxValue;
+        float maxX = float.MinValue;
+        float minY = float.MaxValue;
+        float maxY = float.MinValue;
+        foreach (RenderWareDeformedMesh mesh in meshes)
+        {
+            ProjectedPoint[] points = mesh.Positions.Select(RotateToCamera).ToArray();
+            projectedMeshes.Add(new ProjectedMesh(mesh, points));
+            foreach (ProjectedPoint point in points)
+            {
+                minX = Math.Min(minX, point.X);
+                maxX = Math.Max(maxX, point.X);
+                minY = Math.Min(minY, point.Y);
+                maxY = Math.Max(maxY, point.Y);
+            }
+        }
+        float rangeX = Math.Max(1, maxX - minX);
+        float rangeY = Math.Max(1, maxY - minY);
+        float scale = Math.Min((renderWidth - 20F) / rangeX,
+            (renderHeight - 32F) / rangeY) * 0.92F * _zoom;
+        float centerX = renderWidth / 2F;
+        float centerY = renderHeight / 2F + 8;
+        float poseCenterX = (minX + maxX) / 2F;
+        float poseCenterY = (minY + maxY) / 2F;
+
+        foreach (ProjectedMesh projected in projectedMeshes)
+        {
+            RenderWareSkinnedMesh mesh = projected.Mesh.Source;
+            ScreenVertex[] screen = new ScreenVertex[projected.Points.Length];
+            for (int vertex = 0; vertex < screen.Length; vertex++)
+            {
+                ProjectedPoint point = projected.Points[vertex];
+                Vector2 uv = mesh.Vertices[vertex].TextureCoordinate;
+                screen[vertex] = new ScreenVertex(
+                    centerX + (point.X - poseCenterX) * scale,
+                    centerY - (point.Y - poseCenterY) * scale,
+                    point.Depth, uv.X, uv.Y);
+            }
+            foreach (RenderWareTriangle triangle in mesh.Triangles)
+            {
+                if (triangle.MaterialIndex < 0 || triangle.MaterialIndex >= mesh.Materials.Count) continue;
+                RenderWareMaterial material = mesh.Materials[triangle.MaterialIndex];
+                RenderWareTexture? texture = _model.ResolveTexture(material, _facialEvent, _position);
+                RasterizeTriangle(screen[triangle.First], screen[triangle.Second], screen[triangle.Third],
+                    material, texture, pixels, depth, renderWidth, renderHeight);
+            }
+        }
+
+        using Bitmap bitmap = new(renderWidth, renderHeight, PixelFormat.Format32bppArgb);
+        BitmapData locked = bitmap.LockBits(new Rectangle(0, 0, renderWidth, renderHeight),
+            ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
+        try
+        {
+            Marshal.Copy(pixels, 0, locked.Scan0, pixels.Length);
+        }
+        finally
+        {
+            bitmap.UnlockBits(locked);
+        }
+        graphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBilinear;
+        graphics.DrawImage(bitmap, new Rectangle(0, 0, Width, Height),
+            0, 0, renderWidth, renderHeight, GraphicsUnit.Pixel);
+    }
+
+    private static void RasterizeTriangle(
+        ScreenVertex a,
+        ScreenVertex b,
+        ScreenVertex c,
+        RenderWareMaterial material,
+        RenderWareTexture? texture,
+        int[] pixels,
+        float[] depth,
+        int width,
+        int height)
+    {
+        float area = Edge(a.X, a.Y, b.X, b.Y, c.X, c.Y);
+        if (Math.Abs(area) < 0.0001F) return;
+        int minX = Math.Clamp((int)MathF.Floor(MathF.Min(a.X, MathF.Min(b.X, c.X))), 0, width - 1);
+        int maxX = Math.Clamp((int)MathF.Ceiling(MathF.Max(a.X, MathF.Max(b.X, c.X))), 0, width - 1);
+        int minY = Math.Clamp((int)MathF.Floor(MathF.Min(a.Y, MathF.Min(b.Y, c.Y))), 0, height - 1);
+        int maxY = Math.Clamp((int)MathF.Ceiling(MathF.Max(a.Y, MathF.Max(b.Y, c.Y))), 0, height - 1);
+        float inverseArea = 1F / area;
+        Vector3 edge1 = new(b.X - a.X, b.Y - a.Y, b.Depth - a.Depth);
+        Vector3 edge2 = new(c.X - a.X, c.Y - a.Y, c.Depth - a.Depth);
+        Vector3 normal = Vector3.Cross(edge1, edge2);
+        float shade = normal.LengthSquared() < 0.000001F
+            ? 1F
+            : 0.42F + 0.58F * Math.Abs(Vector3.Dot(Vector3.Normalize(normal),
+                Vector3.Normalize(new Vector3(-0.25F, -0.45F, 1F))));
+        for (int y = minY; y <= maxY; y++)
+        {
+            float py = y + 0.5F;
+            for (int x = minX; x <= maxX; x++)
+            {
+                float px = x + 0.5F;
+                float w0 = Edge(b.X, b.Y, c.X, c.Y, px, py) * inverseArea;
+                float w1 = Edge(c.X, c.Y, a.X, a.Y, px, py) * inverseArea;
+                float w2 = 1F - w0 - w1;
+                if (w0 < -0.0001F || w1 < -0.0001F || w2 < -0.0001F) continue;
+                float z = a.Depth * w0 + b.Depth * w1 + c.Depth * w2;
+                int pixel = y * width + x;
+                if (z <= depth[pixel]) continue;
+                float u = a.U * w0 + b.U * w1 + c.U * w2;
+                float v = a.V * w0 + b.V * w1 + c.V * w2;
+                int color = texture == null
+                    ? material.Color.ToArgb()
+                    : SampleTexture(texture, u, v);
+                int alpha = (color >>> 24) & 0xFF;
+                if (alpha < 24) continue;
+                int red = (int)(((color >>> 16) & 0xFF) * material.Color.R / 255F * shade);
+                int green = (int)(((color >>> 8) & 0xFF) * material.Color.G / 255F * shade);
+                int blue = (int)((color & 0xFF) * material.Color.B / 255F * shade);
+                pixels[pixel] = (alpha << 24) | (Math.Clamp(red, 0, 255) << 16) |
+                                (Math.Clamp(green, 0, 255) << 8) | Math.Clamp(blue, 0, 255);
+                depth[pixel] = z;
+            }
+        }
+    }
+
+    private static int SampleTexture(RenderWareTexture texture, float u, float v)
+    {
+        u -= MathF.Floor(u);
+        v -= MathF.Floor(v);
+        int x = Math.Clamp((int)(u * texture.Width), 0, texture.Width - 1);
+        int y = Math.Clamp((int)(v * texture.Height), 0, texture.Height - 1);
+        return texture.Pixels[y * texture.Width + x];
+    }
+
+    private static float Edge(float ax, float ay, float bx, float by, float px, float py) =>
+        (px - ax) * (by - ay) - (py - ay) * (bx - ax);
 
     private void DrawPose(
         Graphics graphics,
@@ -257,4 +431,6 @@ public sealed class AnimationPosePreviewControl : Control
     }
 
     private readonly record struct ProjectedPoint(float X, float Y, float Depth);
+    private readonly record struct ScreenVertex(float X, float Y, float Depth, float U, float V);
+    private sealed record ProjectedMesh(RenderWareDeformedMesh Mesh, ProjectedPoint[] Points);
 }

@@ -28,6 +28,12 @@ public sealed class RenderWareAnimationArchive
         return _skeletonResolver.Resolve(file);
     }
 
+    public RenderWareSkinnedModel? LoadModel(RenderWareAnimationBinding binding)
+    {
+        ArgumentNullException.ThrowIfNull(binding);
+        return _skeletonResolver.LoadModel(binding);
+    }
+
     public static RenderWareAnimationArchive Load(string metPath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(metPath);
