@@ -29,8 +29,10 @@ To access the .MET files, you need to extract the game files from the ISO using 
   texture dimensions. See [3D player appearances](docs/PLAYER_APPEARANCE.md).
 - **Stadium Editor...** edits lighting, cameras, collision tags, and ambient models, particles,
   positions, animations, and speeds across all 15 `fielddata.txt` stadium variants. Its joined textured
-  RWS viewer loads the matching stadium automatically and previews ambient-light and fielddata camera
-  edits live, with a larger detachable preview when needed. Loader details are documented in
+  RWS viewer loads the matching stadium automatically and previews ambient-light, fielddata cameras,
+  placed ambient DFF models, disabled objects, and retail spline movement paths live. Ambient objects
+  can be selected from either the list or the 3D preview, with a larger detachable preview when needed.
+  Loader details are documented in
   [`docs/STADIUM_ENVIRONMENTS.md`](docs/STADIUM_ENVIRONMENTS.md).
 - **Gameplay Tweaks...** on the **Game Tools** tab provides validated tabs for 285 ball, bat/power-up, field physics,
   simulation, practice/cheat, and game-default values stored in `DATA.MET`.

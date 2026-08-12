@@ -13,10 +13,12 @@ public sealed class RenderWareScenePreviewControl : Control
     private Vector3 _fieldPosition;
     private Vector4 _environmentLight = Vector4.One;
     private Point _lastMouse;
+    private Point _mouseDownPoint;
     private bool _rotating, _panning, _wireframe, _perspective = true, _cullBackfaces, _hideSkyRoof = true,
         _hideHelperGeometry = true, _fieldCamera;
     private readonly HashSet<Keys> _movementKeys = [];
     private readonly System.Windows.Forms.Timer _movementTimer = new() { Interval = 16 };
+    private IReadOnlyList<RenderWarePreviewGuide> _guides = [];
 
     public RenderWareScenePreviewControl()
     {
@@ -34,7 +36,14 @@ public sealed class RenderWareScenePreviewControl : Control
     public RenderWareScene? Scene
     {
         get => _scene;
-        set { _scene = value; ResetView(); }
+        set => SetScene(value, resetView: true);
+    }
+
+    public void SetScene(RenderWareScene? scene, bool resetView)
+    {
+        _scene = scene;
+        if (resetView) ResetView();
+        else Invalidate();
     }
 
     public bool Wireframe
@@ -70,6 +79,12 @@ public sealed class RenderWareScenePreviewControl : Control
     public bool IsFieldCamera => _fieldCamera;
     public float MovementSpeed { get; set; } = 900F;
     public Vector3 FieldCameraPosition => _fieldPosition;
+    public IReadOnlyList<RenderWarePreviewGuide> Guides
+    {
+        get => _guides;
+        set { _guides = value ?? []; Invalidate(); }
+    }
+    public event EventHandler<RenderWarePreviewGuideClickedEventArgs>? GuideClicked;
     public Vector4 EnvironmentLight
     {
         get => _environmentLight;
@@ -137,6 +152,7 @@ public sealed class RenderWareScenePreviewControl : Control
         if (e.Button != MouseButtons.Left && !pan) return;
         _panning = pan;
         _rotating = !pan;
+        _mouseDownPoint = e.Location;
         _lastMouse = e.Location;
         Capture = true;
         Focus();
@@ -166,7 +182,11 @@ public sealed class RenderWareScenePreviewControl : Control
 
     protected override void OnMouseUp(MouseEventArgs e)
     {
-        base.OnMouseUp(e); _rotating = false; _panning = false; Capture = false;
+        base.OnMouseUp(e);
+        bool click = e.Button == MouseButtons.Left &&
+                     Math.Abs(e.X - _mouseDownPoint.X) <= 4 && Math.Abs(e.Y - _mouseDownPoint.Y) <= 4;
+        _rotating = false; _panning = false; Capture = false;
+        if (click) HitTestGuide(e.Location);
     }
 
     protected override void OnMouseWheel(MouseEventArgs e)
@@ -270,6 +290,7 @@ public sealed class RenderWareScenePreviewControl : Control
         try
         {
             if (_wireframe) DrawWireframe(e.Graphics); else DrawSolid(e.Graphics);
+            DrawGuides(e.Graphics);
             DrawHeader(e.Graphics);
         }
         catch (Exception exception) { DrawMessage(e.Graphics, "Preview failed.\n" + exception.Message); }
@@ -410,6 +431,66 @@ public sealed class RenderWareScenePreviewControl : Control
                 graphics.DrawPolygon(pen, new[] { new PointF(a.X, a.Y), new PointF(b.X, b.Y), new PointF(c.X, c.Y) });
             }
         }
+    }
+
+    private void DrawGuides(Graphics graphics)
+    {
+        if (_guides.Count == 0 || _scene == null) return;
+        Projection projection = BuildProjection(Width, Height);
+        foreach (RenderWarePreviewGuide guide in _guides.Where(item => item.PathPoints.Count > 1))
+        {
+            Color color = guide.Selected ? Color.Gold : guide.Enabled
+                ? Color.FromArgb(220, 70, 210, 255) : Color.FromArgb(155, 175, 175, 175);
+            using Pen pen = new(color, guide.Selected ? 2.5F : 1.5F)
+            {
+                DashStyle = guide.Enabled ? System.Drawing.Drawing2D.DashStyle.Solid :
+                    System.Drawing.Drawing2D.DashStyle.Dash
+            };
+            for (int index = 1; index < guide.PathPoints.Count; index++)
+            {
+                ProjectedVertex a = Project(guide.PathPoints[index - 1], projection);
+                ProjectedVertex b = Project(guide.PathPoints[index], projection);
+                if (a.Visible && b.Visible) graphics.DrawLine(pen, a.X, a.Y, b.X, b.Y);
+            }
+        }
+        foreach (RenderWarePreviewGuide guide in _guides)
+        {
+            ProjectedVertex marker = Project(guide.Position, projection);
+            if (!marker.Visible) continue;
+            float radius = guide.Selected ? 7F : 4.5F;
+            Color color = guide.Selected ? Color.Gold : guide.Enabled
+                ? Color.FromArgb(235, 70, 210, 255) : Color.FromArgb(190, 175, 175, 175);
+            using SolidBrush fill = new(Color.FromArgb(190, color));
+            using Pen outline = new(Color.Black, 1.5F);
+            graphics.FillEllipse(fill, marker.X - radius, marker.Y - radius, radius * 2F, radius * 2F);
+            graphics.DrawEllipse(outline, marker.X - radius, marker.Y - radius, radius * 2F, radius * 2F);
+            if (guide.Selected)
+            {
+                TextRenderer.DrawText(graphics, guide.Label, Font,
+                    new Point((int)marker.X + 9, (int)marker.Y - 9), Color.Gold,
+                    TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
+            }
+        }
+    }
+
+    private void HitTestGuide(Point location)
+    {
+        if (_guides.Count == 0 || _scene == null) return;
+        Projection projection = BuildProjection(Width, Height);
+        RenderWarePreviewGuide? closest = null;
+        float closestDistance = 14F * 14F;
+        foreach (RenderWarePreviewGuide guide in _guides)
+        {
+            ProjectedVertex marker = Project(guide.Position, projection);
+            if (!marker.Visible) continue;
+            float dx = marker.X - location.X, dy = marker.Y - location.Y;
+            float distance = dx * dx + dy * dy;
+            if (distance > closestDistance) continue;
+            closest = guide;
+            closestDistance = distance;
+        }
+        if (closest != null)
+            GuideClicked?.Invoke(this, new RenderWarePreviewGuideClickedEventArgs(closest.Key));
     }
 
     private Projection BuildProjection(int width, int height)
@@ -652,4 +733,12 @@ public sealed class RenderWareScenePreviewControl : Control
     private readonly record struct FieldVertex(Vector3 View, Vector2 Uv, int Argb, Vector3 Normal);
     private readonly record struct Projection(float CenterX, float CenterY, Vector3 ModelCenter, float Scale,
         float FocalLength, float CameraDistance, float OrthographicCenterX, float OrthographicCenterY);
+}
+
+public sealed record RenderWarePreviewGuide(int Key, string Label, Vector3 Position,
+    IReadOnlyList<Vector3> PathPoints, bool Enabled, bool Selected);
+
+public sealed class RenderWarePreviewGuideClickedEventArgs(int key) : EventArgs
+{
+    public int Key { get; } = key;
 }

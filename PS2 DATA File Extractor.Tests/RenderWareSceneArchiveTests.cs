@@ -117,6 +117,47 @@ public sealed class RenderWareSceneArchiveTests : IDisposable
     }
 
     [Fact]
+    public void ParsesRetailSplinePointTable()
+    {
+        byte[] spline = new byte[0x34 + 24];
+        BitConverter.GetBytes(0x0cU).CopyTo(spline, 0);
+        BitConverter.GetBytes(2).CopyTo(spline, 0x2c);
+        WriteVector(spline, 0x34, new Vector3(12.5F, -40F, 3.25F));
+        WriteVector(spline, 0x40, new Vector3(22F, 18.75F, -9F));
+
+        IReadOnlyList<Vector3> points = StadiumAmbientPreviewBuilder.ParseSpline(spline);
+
+        Assert.Equal(2, points.Count);
+        Assert.Equal(new Vector3(12.5F, -40F, 3.25F), points[0]);
+        Assert.Equal(new Vector3(22F, 18.75F, -9F), points[1]);
+    }
+
+    [Fact]
+    public void RejectsTruncatedSplineInsteadOfReadingPastEntry()
+    {
+        byte[] spline = new byte[0x34 + 12];
+        BitConverter.GetBytes(0x0cU).CopyTo(spline, 0);
+        BitConverter.GetBytes(2).CopyTo(spline, 0x2c);
+
+        Assert.Empty(StadiumAmbientPreviewBuilder.ParseSpline(spline));
+    }
+
+    [Fact]
+    public void ResolvesRetailAmbientModelWithArgumentsAfterItsFilename()
+    {
+        Directory.CreateDirectory(_temp);
+        string metPath = Path.Combine(_temp, "DATA.MET");
+        CreateArchive(metPath, "data/fields/commonambients/crowMesh.dff", CreateRigidDff());
+        RenderWareSceneArchive archive = RenderWareSceneArchive.Load(metPath);
+
+        RenderWareAssetFile? model = archive.FindAmbientModel(
+            "Fields/CommonAmbients;", "crowMesh.dff; 0.0 0.0;", "drivein");
+
+        Assert.NotNull(model);
+        Assert.Equal("data/fields/commonambients/crowMesh.dff", model.Path);
+    }
+
+    [Fact]
     public void ViewerOpensAfterApplyingItsDefaultSplitterLayout()
     {
         Directory.CreateDirectory(_temp);
@@ -327,6 +368,13 @@ public sealed class RenderWareSceneArchiveTests : IDisposable
     private static void WriteVector(BinaryWriter writer, Vector3 value)
     {
         writer.Write(value.X); writer.Write(value.Y); writer.Write(value.Z);
+    }
+
+    private static void WriteVector(byte[] destination, int offset, Vector3 value)
+    {
+        BitConverter.GetBytes(value.X).CopyTo(destination, offset);
+        BitConverter.GetBytes(value.Y).CopyTo(destination, offset + 4);
+        BitConverter.GetBytes(value.Z).CopyTo(destination, offset + 8);
     }
 
     public void Dispose()

@@ -10,7 +10,8 @@ internal sealed class RenderWareDetachedPreviewForm : Form
 
     public RenderWareDetachedPreviewForm(RenderWareScene scene, bool perspective, bool hideBackdrop,
         bool showHelpers, bool cullBackfaces, bool wireframe,
-        Vector4? environmentLight = null, BackyardCameraPreset? initialCamera = null)
+        Vector4? environmentLight = null, BackyardCameraPreset? initialCamera = null,
+        IReadOnlyList<RenderWarePreviewGuide>? guides = null)
     {
         _initialCamera = initialCamera;
         Text = $"3D Preview - {Path.GetFileName(scene.SourcePath)}";
@@ -28,6 +29,7 @@ internal sealed class RenderWareDetachedPreviewForm : Form
         _preview.CullBackfaces = cullBackfaces;
         _preview.Wireframe = wireframe;
         _preview.EnvironmentLight = environmentLight ?? Vector4.One;
+        _preview.Guides = guides ?? [];
 
         Controls.Add(_preview);
         Controls.Add(BuildToolbar(perspective, hideBackdrop, showHelpers, cullBackfaces, wireframe));

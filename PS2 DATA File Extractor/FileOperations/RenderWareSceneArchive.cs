@@ -69,6 +69,34 @@ public sealed class RenderWareSceneArchive
             asset.Path.Replace('\\', '/').Equals(path, StringComparison.OrdinalIgnoreCase));
     }
 
+    public RenderWareAssetFile? FindAmbientModel(string pathValue, string assetValue, string stadiumFolder)
+    {
+        string assetName = CleanFieldAssetValue(assetValue);
+        if (assetName.Length == 0) return null;
+        string preferredDirectory = "data/" + pathValue.Trim().TrimEnd(';').Replace('\\', '/').Trim('/');
+        string preferredPath = (preferredDirectory + "/" + assetName).ToLowerInvariant();
+        List<RenderWareAssetFile> candidates = Assets.Where(asset =>
+                asset.Kind == RenderWareAssetKind.DffModel &&
+                Path.GetFileName(asset.Path).Equals(assetName, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        return candidates.OrderByDescending(asset =>
+        {
+            string normalized = asset.Path.Replace('\\', '/');
+            if (normalized.Equals(preferredPath, StringComparison.OrdinalIgnoreCase)) return 100_000;
+            if (normalized.StartsWith(preferredDirectory + "/", StringComparison.OrdinalIgnoreCase)) return 90_000;
+            if (normalized.StartsWith($"data/fields/{stadiumFolder}/", StringComparison.OrdinalIgnoreCase)) return 80_000;
+            if (normalized.StartsWith("data/fields/commonambients/", StringComparison.OrdinalIgnoreCase)) return 70_000;
+            return 0;
+        }).FirstOrDefault();
+    }
+
+    public byte[]? ReadRawPath(string path)
+    {
+        FileEntry? entry = _entries.FirstOrDefault(candidate =>
+            candidate.Path.Replace('\\', '/').Equals(path.Replace('\\', '/'), StringComparison.OrdinalIgnoreCase));
+        return entry == null ? null : ReadEntry(entry);
+    }
+
     public RenderWareScene LoadScene(RenderWareAssetFile asset)
     {
         RenderWareScene scene = RenderWareSceneParser.Parse(asset.Path, asset.Kind, ReadEntry(asset.Entry));
@@ -192,6 +220,13 @@ public sealed class RenderWareSceneArchive
         StringBuilder result = new(value.Length);
         foreach (char c in value) result.Append(char.IsLetterOrDigit(c) || c is '-' or '_' or '.' ? c : '_');
         return result.Length == 0 ? "unnamed" : result.ToString();
+    }
+
+    private static string CleanFieldAssetValue(string value)
+    {
+        string clean = value.Split(';', 2)[0].Trim();
+        int space = clean.IndexOfAny([' ', '\t']);
+        return space < 0 ? clean : clean[..space];
     }
 }
 

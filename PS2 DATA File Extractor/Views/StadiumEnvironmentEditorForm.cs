@@ -30,10 +30,13 @@ public sealed class StadiumEnvironmentEditorForm : Form
     private readonly RenderWareScenePreviewControl _preview = new()
     {
         Dock = DockStyle.Fill,
-        HideSkyRoof = false,
+        HideSkyRoof = true,
         HideHelperGeometry = true
     };
     private readonly ComboBox _previewView = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 170 };
+    private readonly CheckBox _showAmbientModels = new() { Text = "Ambient models", AutoSize = true, Checked = true };
+    private readonly CheckBox _showDisabledAmbients = new() { Text = "Disabled translucent", AutoSize = true, Checked = true };
+    private readonly CheckBox _showAmbientPaths = new() { Text = "Movement paths", AutoSize = true, Checked = true };
     private readonly Label _previewSummary = new()
     {
         Dock = DockStyle.Fill, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft
@@ -42,8 +45,16 @@ public sealed class StadiumEnvironmentEditorForm : Form
     {
         Dock = DockStyle.Fill, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft
     };
+    private readonly Label _ambientInfo = new()
+    {
+        Dock = DockStyle.Bottom, Height = 58, Padding = new Padding(5, 4, 5, 2),
+        AutoEllipsis = true, BorderStyle = BorderStyle.FixedSingle
+    };
     private StadiumEnvironment? _current;
     private RenderWareScene? _scene;
+    private RenderWareScene? _previewScene;
+    private StadiumAmbientPreviewResult? _ambientPreview;
+    private readonly Dictionary<string, RenderWareScene> _ambientModelCache = new(StringComparer.OrdinalIgnoreCase);
     private Vector4 _previewLight = Vector4.One;
     private BackyardCameraPreset? _activePreviewCamera;
     private bool _loading;
@@ -63,7 +74,7 @@ public sealed class StadiumEnvironmentEditorForm : Form
             Dock = DockStyle.Top,
             Height = 50,
             Padding = new Padding(12, 8, 12, 4),
-            Text = "Edit fielddata.txt while viewing the matching textured stadium. Ambient light and fielddata camera changes update the preview immediately; gameplay collision and ambient behavior still require the game."
+            Text = "Edit fielddata.txt while viewing the textured stadium and placed ambient models. Lighting, cameras, model positions, and movement paths update immediately; animation, particles, movies, and collision behavior still require the game."
         };
         TableLayoutPanel selector = new()
         {
@@ -120,6 +131,10 @@ public sealed class StadiumEnvironmentEditorForm : Form
         _stadiums.Items.AddRange(_archive.Stadiums.Cast<object>().ToArray());
         _stadiums.SelectedIndexChanged += (_, _) => LoadSelectedStadium();
         _ambientList.SelectedIndexChanged += (_, _) => LoadSelectedAmbient();
+        _preview.GuideClicked += (_, e) => SelectAmbient(e.Key);
+        _showAmbientModels.CheckedChanged += (_, _) => RebuildAmbientPreview();
+        _showDisabledAmbients.CheckedChanged += (_, _) => RebuildAmbientPreview();
+        _showAmbientPaths.CheckedChanged += (_, _) => UpdatePreviewGuides();
         _tabs.SelectedIndexChanged += (_, _) => RefreshRawText();
         HookGrid(_fieldGrid);
         HookGrid(_collisionGrid);
@@ -147,7 +162,7 @@ public sealed class StadiumEnvironmentEditorForm : Form
         };
         pane.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
         pane.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        pane.RowStyles.Add(new RowStyle(SizeType.Absolute, 94));
+        pane.RowStyles.Add(new RowStyle(SizeType.Absolute, 128));
 
         TableLayoutPanel heading = new() { Dock = DockStyle.Fill, ColumnCount = 2 };
         heading.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -158,8 +173,9 @@ public sealed class StadiumEnvironmentEditorForm : Form
         heading.Controls.Add(_previewSummary, 0, 0);
         heading.Controls.Add(openLarge, 1, 0);
 
-        TableLayoutPanel toolbar = new() { Dock = DockStyle.Fill, RowCount = 2, ColumnCount = 1 };
-        toolbar.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
+        TableLayoutPanel toolbar = new() { Dock = DockStyle.Fill, RowCount = 3, ColumnCount = 1 };
+        toolbar.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
+        toolbar.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));
         toolbar.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         FlowLayoutPanel actions = new()
         {
@@ -172,7 +188,7 @@ public sealed class StadiumEnvironmentEditorForm : Form
         });
         _previewView.SelectedIndexChanged += (_, _) => ApplyPreviewCamera();
         _previewView.SelectedIndex = 0;
-        CheckBox backdrop = PreviewCheck("Hide backdrop", false, value => _preview.HideSkyRoof = value);
+        CheckBox backdrop = PreviewCheck("Hide backdrop", true, value => _preview.HideSkyRoof = value);
         CheckBox helpers = PreviewCheck("Show helpers", false, value => _preview.HideHelperGeometry = !value);
         CheckBox wireframe = PreviewCheck("Wireframe", false, value => _preview.Wireframe = value);
         Button zoomOut = PreviewButton("Zoom −", (_, _) => _preview.ZoomOut());
@@ -186,8 +202,21 @@ public sealed class StadiumEnvironmentEditorForm : Form
         {
             PreviewLabel("View:"), _previewView, backdrop, helpers, wireframe, zoomOut, zoomIn, fit
         });
+        FlowLayoutPanel ambientActions = new()
+        {
+            Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false, AutoScroll = true, Margin = Padding.Empty
+        };
+        foreach (CheckBox check in new[] { _showAmbientModels, _showDisabledAmbients, _showAmbientPaths })
+            check.Margin = new Padding(4, 7, 8, 0);
+        ambientActions.Controls.AddRange(new Control[]
+        {
+            PreviewLabel("Fielddata:"), _showAmbientModels, _showDisabledAmbients, _showAmbientPaths,
+            new Label { Text = "Click a marker to select its ambient block.", AutoSize = true, Margin = new Padding(10, 8, 0, 0) }
+        });
         toolbar.Controls.Add(actions, 0, 0);
-        toolbar.Controls.Add(_previewStatus, 0, 1);
+        toolbar.Controls.Add(ambientActions, 0, 1);
+        toolbar.Controls.Add(_previewStatus, 0, 2);
 
         pane.Controls.Add(heading, 0, 0);
         pane.Controls.Add(_preview, 0, 1);
@@ -239,6 +268,7 @@ public sealed class StadiumEnvironmentEditorForm : Form
         SplitContainer split = new() { Dock = DockStyle.Fill, SplitterDistance = 310, FixedPanel = FixedPanel.Panel1 };
         split.Panel1.Controls.Add(_ambientList);
         split.Panel2.Controls.Add(_ambientGrid);
+        split.Panel2.Controls.Add(_ambientInfo);
         ambientPage.Controls.Add(split);
 
         TabPage rawPage = new("Raw Preview") { Padding = new Padding(6) };
@@ -310,7 +340,11 @@ public sealed class StadiumEnvironmentEditorForm : Form
     private void LoadStadiumScene()
     {
         _scene = null;
+        _previewScene = null;
+        _ambientPreview = null;
+        _ambientModelCache.Clear();
         _preview.Scene = null;
+        _preview.Guides = [];
         _activePreviewCamera = null;
         if (_current == null) return;
         RenderWareAssetFile? asset = _sceneArchive.FindStadiumScene(_current.FolderName);
@@ -325,9 +359,7 @@ public sealed class StadiumEnvironmentEditorForm : Form
         {
             UseWaitCursor = true;
             _scene = _sceneArchive.LoadScene(asset);
-            _preview.Scene = _scene;
-            _previewSummary.Text = $"{Path.GetFileName(_scene.SourcePath)}  |  {_scene.VertexCount:N0} vertices  |  " +
-                                   $"{_scene.TriangleCount:N0} triangles  |  {_scene.Textures.Count:N0} textures";
+            RebuildAmbientPreview(resetView: true);
             ApplyLivePreviewSettings();
         }
         catch (Exception exception)
@@ -340,6 +372,98 @@ public sealed class StadiumEnvironmentEditorForm : Form
         finally
         {
             UseWaitCursor = false;
+        }
+    }
+
+    private void RebuildAmbientPreview(bool resetView = false)
+    {
+        if (_loading || _current == null || _scene == null) return;
+        int selected = (_ambientList.SelectedItem as AmbientListItem)?.Ambient.Index ?? -1;
+        try
+        {
+            UseWaitCursor = true;
+            _ambientPreview = StadiumAmbientPreviewBuilder.Build(_sceneArchive, _current, _scene,
+                _ambientModelCache, selected, _showAmbientModels.Checked, _showDisabledAmbients.Checked);
+            _previewScene = _ambientPreview.Scene;
+            _preview.SetScene(_previewScene, resetView);
+            UpdatePreviewGuides();
+            UpdateAmbientListVisuals();
+            UpdateAmbientInfo();
+            _previewSummary.Text = $"{Path.GetFileName(_scene.SourcePath)}  |  {_scene.VertexCount:N0} field vertices  |  " +
+                                   $"{_ambientPreview.VisibleModelCount:N0} ambient models  |  {_ambientPreview.PathCount:N0} paths";
+        }
+        catch (Exception exception)
+        {
+            _ambientPreview = null;
+            _previewScene = _scene;
+            _preview.SetScene(_scene, resetView);
+            _preview.Guides = [];
+            _previewStatus.Text = "Ambient preview unavailable: " + exception.Message;
+        }
+        finally
+        {
+            UseWaitCursor = false;
+        }
+    }
+
+    private void UpdatePreviewGuides()
+    {
+        if (_ambientPreview == null)
+        {
+            _preview.Guides = [];
+            return;
+        }
+        int selected = (_ambientList.SelectedItem as AmbientListItem)?.Ambient.Index ?? -1;
+        _preview.Guides = _ambientPreview.Items
+            .Where(item => item.Anchor.HasValue)
+            .Select(item => new RenderWarePreviewGuide(item.AmbientIndex, item.Name, item.Anchor!.Value,
+                _showAmbientPaths.Checked ? item.PathPoints : [], item.IsLoaded, item.AmbientIndex == selected))
+            .ToList();
+    }
+
+    private void UpdateAmbientListVisuals()
+    {
+        if (_current == null || _ambientPreview == null) return;
+        int selected = _ambientList.SelectedIndex;
+        _loading = true;
+        _ambientList.BeginUpdate();
+        _ambientList.Items.Clear();
+        foreach (FieldDataAmbient ambient in _current.Document.Ambients)
+        {
+            StadiumAmbientVisual? visual = _ambientPreview.Items.FirstOrDefault(item => item.AmbientIndex == ambient.Index);
+            _ambientList.Items.Add(new AmbientListItem(ambient,
+                ambient.Index < _current.Document.DeclaredAmbientCount, visual));
+        }
+        _ambientList.EndUpdate();
+        _ambientList.SelectedIndex = _ambientList.Items.Count == 0 ? -1 : Math.Clamp(selected, 0, _ambientList.Items.Count - 1);
+        _loading = false;
+    }
+
+    private void UpdateAmbientInfo()
+    {
+        int selected = (_ambientList.SelectedItem as AmbientListItem)?.Ambient.Index ?? -1;
+        StadiumAmbientVisual? visual = _ambientPreview?.Items.FirstOrDefault(item => item.AmbientIndex == selected);
+        if (visual == null)
+        {
+            _ambientInfo.Text = "Select an ambient block to view its resolved model, placement, path, and animations.";
+            return;
+        }
+        string position = visual.Anchor is Vector3 anchor
+            ? $"Position {anchor.X:0.##}, {anchor.Y:0.##}, {anchor.Z:0.##}" : "No fixed position";
+        string path = visual.PathPoints.Count > 1 ? $"Path: {visual.PathPoints.Count} points" : "No movement path";
+        string animations = visual.Animations.Count == 0 ? "No ANM assignment" :
+            "ANM: " + string.Join(", ", visual.Animations.Take(3)) + (visual.Animations.Count > 3 ? "…" : string.Empty);
+        _ambientInfo.Text = $"{visual.AssetPath ?? visual.AssetKind}  |  {position}  |  {path}\r\n{animations}  —  {visual.Note}";
+    }
+
+    private void SelectAmbient(int ambientIndex)
+    {
+        for (int index = 0; index < _ambientList.Items.Count; index++)
+        {
+            if ((_ambientList.Items[index] as AmbientListItem)?.Ambient.Index != ambientIndex) continue;
+            _tabs.SelectedIndex = 2;
+            _ambientList.SelectedIndex = index;
+            return;
         }
     }
 
@@ -430,10 +554,10 @@ public sealed class StadiumEnvironmentEditorForm : Form
 
     private void OpenLargePreview()
     {
-        if (_scene == null) return;
-        RenderWareDetachedPreviewForm preview = new(_scene, true, _preview.HideSkyRoof,
+        if (_previewScene == null) return;
+        RenderWareDetachedPreviewForm preview = new(_previewScene, true, _preview.HideSkyRoof,
             !_preview.HideHelperGeometry, _preview.CullBackfaces, _preview.Wireframe,
-            _previewLight, _activePreviewCamera);
+            _previewLight, _activePreviewCamera, _preview.Guides);
         preview.Show(this);
     }
 
@@ -461,6 +585,7 @@ public sealed class StadiumEnvironmentEditorForm : Form
         if (_loading) return;
         FieldDataAmbient? ambient = (_ambientList.SelectedItem as AmbientListItem)?.Ambient;
         LoadSettings(_ambientGrid, ambient?.Settings ?? Array.Empty<FieldDataSetting>());
+        RebuildAmbientPreview();
     }
 
     private void LoadSettings(DataGridView grid, IReadOnlyList<FieldDataSetting> settings)
@@ -525,6 +650,11 @@ public sealed class StadiumEnvironmentEditorForm : Form
         {
             ApplyPreviewCamera();
         }
+        if (ReferenceEquals(grid, _ambientGrid) ||
+            ReferenceEquals(grid, _fieldGrid) && setting.Key.Equals("numAmbs", StringComparison.OrdinalIgnoreCase))
+        {
+            RebuildAmbientPreview();
+        }
     }
 
     private void UseAllAmbientBlocks()
@@ -540,6 +670,7 @@ public sealed class StadiumEnvironmentEditorForm : Form
         LoadAmbientList();
         RefreshRawText();
         UpdateSummaryAndStatus();
+        RebuildAmbientPreview();
     }
 
     private void RefreshRawText()
@@ -627,9 +758,14 @@ public sealed class StadiumEnvironmentEditorForm : Form
         _ => "Text / asset"
     };
 
-    private sealed record AmbientListItem(FieldDataAmbient Ambient, bool IsLoaded)
+    private sealed record AmbientListItem(FieldDataAmbient Ambient, bool IsLoaded, StadiumAmbientVisual? Visual = null)
     {
-        public override string ToString() => $"{Ambient.Index + 1:00}. {Ambient.DisplayName}" +
-            (IsLoaded ? string.Empty : "  [not loaded]");
+        public override string ToString()
+        {
+            string loaded = IsLoaded ? string.Empty : "  [not loaded]";
+            string model = Visual?.AssetPath != null ? (Visual.ModelVisible ? "  [model]" : "  [DFF]") : string.Empty;
+            string path = Visual?.PathPoints.Count > 1 ? "  [path]" : string.Empty;
+            return $"{Ambient.Index + 1:00}. {Ambient.DisplayName}{loaded}{model}{path}";
+        }
     }
 }

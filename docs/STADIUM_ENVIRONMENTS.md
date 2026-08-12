@@ -24,16 +24,22 @@ The preview applies these edits immediately after a grid value is committed:
 - `ambLight` changes the rendered red, green, and blue light multipliers.
 - `camPos` and `camHpr` update the **Fielddata camera** view.
 - `commPos` and `commHpr` update the **Commentator camera** view.
+- Ambient `model` and `particle` DFF assets are resolved from their `path`, placed at `pos` or
+  `relPosHpr`, and rotated with `hpr`.
+- Retail `.spl` movement paths are drawn over the stadium. A path-driven model is placed at its
+  first path point so its starting location is visible.
+- Selecting an ambient in the list, grid, or preview highlights its model and path. Ambients beyond
+  `numAmbs` can be included as translucent disabled objects.
 
 The view menu also includes the executable-derived gameplay batting POV and the normal orbit view.
 Camera previews support mouse-look, WASD movement, Q/E height adjustment, and Shift for faster
 movement. The third HPR component is roll; the lightweight software preview currently shows heading
 and pitch but does not simulate roll.
 
-Collision tags and ambient behavior are still edited in the same joined window, but their full effects
-require the game. The RWS contains the static stadium mesh; runtime collision responses, particles,
-movies, scripted ambient DFF instances, and their animations are created by game code rather than
-being baked into that static scene.
+The ambient overlay is a placement preview: it does not yet play an assigned ANM, move a model along
+its spline, or simulate particles and movies. Collision responses and those runtime behaviors still
+require the game. The RWS contains the static stadium mesh; the editor adds resolved ambient DFFs and
+movement guides to that mesh only for visualization.
 
 ## Loader behavior recovered in Ghidra
 
