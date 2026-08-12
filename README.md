@@ -33,6 +33,8 @@ To access the .MET files, you need to extract the game files from the ISO using 
   placed ambient DFF models, disabled objects, and retail spline movement paths live. Ambient objects
   can be selected from either the list or the 3D preview; path-driven objects can be played, looped,
   scrubbed, speed-adjusted, and turned along their path in both the embedded and detachable preview.
+  The selected object's assigned `anim`, `animOnce`, and home-run ANM slots can be switched and played
+  on its real skinned DFF while it moves, with independent path synchronization and ANM looping.
   Retail `.spl` waypoints can also be selected in 3D, edited numerically, added, duplicated, deleted,
   reordered, reset, and saved back into `DATA.MET` with the fielddata changes.
   Loader details are documented in

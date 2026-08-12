@@ -37,6 +37,12 @@ The preview applies these edits immediately after a grid value is committed:
   marker move by distance along the path, and **Face path** turns the model toward the current path
   tangent. The preview cycle uses the ambient's `speed` value, or the midpoint of `randFloatSpeed`,
   with an additional 0.25x–4x viewing-rate control. Open detached previews remain synchronized.
+- The **Animation** selector resolves every `anim`, `animOnce`, `hrAnim`, `hrAnimOnce`, and
+  `hrAnimOnly` slot against the selected ambient's exact DFF. Compatible RenderWare skins deform in
+  both previews while the object moves along its spline. **Sync ANM to path** stretches one animation
+  cycle across the path preview; disabling it plays at the ANM's native timing. **Loop ANM** can be
+  changed independently and defaults off for `animOnce`/`hrAnimOnce`. Missing files, skeleton-track
+  mismatches, and unsupported unskinned models are reported beside the selector instead of guessed.
 - The waypoint editor exposes every retail `.spl` point as exact X/Y/Z coordinates. Points can be
   selected in the table or clicked in either 3D preview, edited, inserted between neighbors,
   duplicated, deleted, or reordered. A spline retains at least two points, and **Reset This Path**
@@ -47,10 +53,12 @@ Camera previews support mouse-look, WASD movement, Q/E height adjustment, and Sh
 movement. The third HPR component is roll; the lightweight software preview currently shows heading
 and pitch but does not simulate roll.
 
-The ambient overlay is still a preview: spline motion is implemented, but assigned skeletal ANM
-motion, particles, movies, event triggers, and exact game-side random timing are not simulated.
-Collision responses and those runtime behaviors still require the game. The RWS contains the static
-stadium mesh; the editor adds resolved ambient DFFs and movement guides for visualization.
+The ambient overlay is still a preview: spline and compatible skeletal ANM motion are implemented,
+but particles, movies, event triggers, animation blending/selection probabilities, and exact game-side
+random timing are not simulated. Home-run animations can be selected manually; the preview does not
+simulate the home-run trigger. Collision responses and those runtime behaviors still require the game.
+The RWS contains the static stadium mesh; the editor adds resolved ambient DFFs and movement guides
+for visualization.
 
 ## Loader behavior recovered in Ghidra
 

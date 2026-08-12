@@ -42,6 +42,31 @@ public sealed class RenderWareAnimationArchive
         return _skeletonResolver.Resolve(file);
     }
 
+    public RenderWareAnimationBinding? ResolveSkeleton(
+        RenderWareAnimationFile file,
+        string modelPath)
+    {
+        ArgumentNullException.ThrowIfNull(file);
+        return _skeletonResolver.Resolve(file, modelPath);
+    }
+
+    public RenderWareAnimationFile? FindAmbientAnimation(
+        string pathValue,
+        string animationValue,
+        string stadiumFolder)
+    {
+        string animationName = CleanAmbientAssetValue(animationValue);
+        if (animationName.Length == 0) return null;
+        string preferredDirectory = "data/" + pathValue.Trim().TrimEnd(';')
+            .Replace('\\', '/').Trim('/');
+        string preferredPath = preferredDirectory + "/" + animationName;
+        return Files.Where(file => Path.GetFileName(file.SourcePath)
+                .Equals(animationName, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(file => AmbientAnimationScore(
+                file.SourcePath, preferredPath, preferredDirectory, stadiumFolder))
+            .FirstOrDefault();
+    }
+
     public RenderWareSkinnedModel? LoadModel(RenderWareAnimationBinding binding)
     {
         ArgumentNullException.ThrowIfNull(binding);
@@ -208,6 +233,12 @@ public sealed class RenderWareAnimationArchive
     }
 
     public static RenderWareAnimationArchive Load(string metPath)
+        => LoadCore(metPath, includeEvents: true);
+
+    public static RenderWareAnimationArchive LoadForPreview(string metPath)
+        => LoadCore(metPath, includeEvents: false);
+
+    private static RenderWareAnimationArchive LoadCore(string metPath, bool includeEvents)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(metPath);
         METFileStructure structure = METFileReader.ReadMETFile(metPath);
@@ -215,7 +246,7 @@ public sealed class RenderWareAnimationArchive
             .Where(entry => Path.GetExtension(entry.Path)
                 .Equals(".anm", StringComparison.OrdinalIgnoreCase))
             .ToList();
-        if (animationEntries.Count == 0)
+        if (animationEntries.Count == 0 && includeEvents)
             throw new InvalidDataException("This DATA.MET does not contain any RenderWare ANM files.");
 
         List<RenderWareAnimationFile> files = new(animationEntries.Count);
@@ -224,8 +255,10 @@ public sealed class RenderWareAnimationArchive
         foreach (FileEntry entry in animationEntries)
             files.Add(RenderWareAnimationFile.Parse(entry.Path, ReadEntry(stream, entry)));
 
-        foreach (FileEntry entry in structure.AllEntries.Where(entry =>
-                     Path.GetExtension(entry.Path).Equals(".evt", StringComparison.OrdinalIgnoreCase)))
+        foreach (FileEntry entry in includeEvents
+                     ? structure.AllEntries.Where(entry =>
+                         Path.GetExtension(entry.Path).Equals(".evt", StringComparison.OrdinalIgnoreCase))
+                     : Enumerable.Empty<FileEntry>())
         {
             byte[] data = ReadEntry(stream, entry);
             int length = data.Length;
@@ -237,6 +270,26 @@ public sealed class RenderWareAnimationArchive
         files.Sort((left, right) =>
             StringComparer.OrdinalIgnoreCase.Compare(left.SourcePath, right.SourcePath));
         return new RenderWareAnimationArchive(metPath, structure, files);
+    }
+
+    private static string CleanAmbientAssetValue(string value)
+    {
+        string result = value.Split(';', 2)[0].Trim().Replace('\\', '/');
+        return Path.GetFileName(result);
+    }
+
+    private static int AmbientAnimationScore(
+        string sourcePath,
+        string preferredPath,
+        string preferredDirectory,
+        string stadiumFolder)
+    {
+        string normalized = sourcePath.Replace('\\', '/');
+        if (normalized.Equals(preferredPath, StringComparison.OrdinalIgnoreCase)) return 100_000;
+        if (normalized.StartsWith(preferredDirectory + "/", StringComparison.OrdinalIgnoreCase)) return 90_000;
+        if (normalized.StartsWith($"data/fields/{stadiumFolder}/", StringComparison.OrdinalIgnoreCase)) return 80_000;
+        if (normalized.StartsWith("data/fields/commonambients/", StringComparison.OrdinalIgnoreCase)) return 70_000;
+        return 0;
     }
 
     public AnimationSaveResult SaveWithBackup()

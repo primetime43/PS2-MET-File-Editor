@@ -70,6 +70,21 @@ public sealed class RenderWareSkeletonResolver
         return null;
     }
 
+    public RenderWareAnimationBinding? Resolve(
+        RenderWareAnimationFile animation,
+        string modelPath)
+    {
+        ArgumentNullException.ThrowIfNull(animation);
+        ArgumentException.ThrowIfNullOrWhiteSpace(modelPath);
+        FileEntry? entry = _models.FirstOrDefault(candidate =>
+            Normalize(candidate.Path).Equals(Normalize(modelPath), StringComparison.OrdinalIgnoreCase));
+        if (entry == null) return null;
+        RenderWareSkeleton? skeleton = Load(entry);
+        return skeleton?.BoneCount == animation.TrackCount
+            ? new RenderWareAnimationBinding(entry.Path, skeleton)
+            : null;
+    }
+
     public RenderWareSkinnedModel? LoadModel(RenderWareAnimationBinding binding)
     {
         if (_modelCache.TryGetValue(binding.ModelPath, out RenderWareSkinnedModel? cached))

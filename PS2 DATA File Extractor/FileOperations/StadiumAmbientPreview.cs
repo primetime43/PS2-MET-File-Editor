@@ -4,6 +4,15 @@ using System.Numerics;
 
 namespace PS2_DATA_File_Extractor.FileOperations;
 
+public sealed record StadiumAmbientAnimationAssignment(
+    string Directive,
+    string AssetName)
+{
+    public bool PlaysOnce => Directive.Contains("Once", StringComparison.OrdinalIgnoreCase);
+    public bool IsHomeRun => Directive.StartsWith("hr", StringComparison.OrdinalIgnoreCase);
+    public override string ToString() => $"{AssetName} ({Directive})";
+}
+
 public sealed record StadiumAmbientVisual(
     int AmbientIndex,
     string Name,
@@ -12,9 +21,10 @@ public sealed record StadiumAmbientVisual(
     string? AssetPath,
     Vector3? Anchor,
     IReadOnlyList<Vector3> PathPoints,
-    IReadOnlyList<string> Animations,
+    IReadOnlyList<StadiumAmbientAnimationAssignment> Animations,
     bool ModelVisible,
-    string Note);
+    string Note,
+    Matrix4x4? ModelTransform);
 
 public sealed record StadiumAmbientPreviewResult(
     RenderWareScene Scene,
@@ -70,11 +80,12 @@ public static class StadiumAmbientPreviewBuilder
             if (pathPoints.Count > 1) paths++;
             Vector3? position = ReadPosition(ambient, pathPoints);
             Vector3 hpr = ReadHpr(ambient);
-            IReadOnlyList<string> animations = ambient.Settings
+            IReadOnlyList<StadiumAmbientAnimationAssignment> animations = ambient.Settings
                 .Where(setting => setting.Key.Contains("anim", StringComparison.OrdinalIgnoreCase))
-                .Select(setting => setting.Value.Split(';', 2)[0].Trim())
-                .Where(value => value.Length > 0)
-                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Select(setting => new StadiumAmbientAnimationAssignment(
+                    setting.Key, setting.Value.Split(';', 2)[0].Trim()))
+                .Where(value => value.AssetName.Length > 0)
+                .DistinctBy(value => $"{value.Directive}\0{value.AssetName}", StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
             bool modelVisible = showModels && asset != null && position.HasValue && (loaded || showDisabled);
@@ -102,8 +113,9 @@ public static class StadiumAmbientPreviewBuilder
                 }
             }
 
+            Matrix4x4? modelTransform = position.HasValue ? CreateTransform(position.Value, hpr) : null;
             visuals.Add(new StadiumAmbientVisual(ambient.Index, ambient.DisplayName, loaded,
-                assetKind, asset?.Path, position, pathPoints, animations, modelVisible, note));
+                assetKind, asset?.Path, position, pathPoints, animations, modelVisible, note, modelTransform));
         }
 
         RenderWareScene combined = new(fieldScene.SourcePath, fieldScene.Kind, meshes, fieldScene.Chunks,
@@ -182,6 +194,25 @@ public static class StadiumAmbientPreviewBuilder
 
     public static double EstimatePreviewDuration(FieldDataAmbient ambient) =>
         Math.Clamp(12D / GetPreviewSpeed(ambient), 2D, 60D);
+
+    public static float GetAnimationPlaybackTime(
+        double playbackPosition,
+        double pathDuration,
+        float animationDuration,
+        bool syncToPath,
+        bool loopAnimation)
+    {
+        if (!float.IsFinite(animationDuration) || animationDuration <= 0) return 0;
+        double time = syncToPath && pathDuration > 0
+            ? Math.Clamp(playbackPosition / pathDuration, 0D, 1D) * animationDuration
+            : Math.Max(0D, playbackPosition);
+        if (loopAnimation)
+        {
+            time %= animationDuration;
+            if (time < 0) time += animationDuration;
+        }
+        return (float)Math.Clamp(time, 0D, animationDuration);
+    }
 
     public static Matrix4x4 CreatePlaybackDelta(FieldDataAmbient ambient, Vector3 basePosition,
         StadiumAmbientPathSample sample, bool facePath)

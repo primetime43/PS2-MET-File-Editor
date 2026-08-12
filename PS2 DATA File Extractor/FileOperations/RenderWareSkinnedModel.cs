@@ -149,10 +149,12 @@ public sealed class RenderWareSkinnedModel
             for (int bone = 0; bone < world.Count; bone++)
                 skinMatrices[bone] = mesh.InverseBindMatrices[bone] * world[bone];
             Vector3[] positions = new Vector3[mesh.Vertices.Count];
+            Vector3[] normals = new Vector3[mesh.Vertices.Count];
             for (int vertexIndex = 0; vertexIndex < mesh.Vertices.Count; vertexIndex++)
             {
                 RenderWareSkinnedVertex vertex = mesh.Vertices[vertexIndex];
                 Vector3 position = Vector3.Zero;
+                Vector3 normal = Vector3.Zero;
                 float total = 0;
                 ApplyWeight(vertex.Bone0, vertex.Weight0);
                 ApplyWeight(vertex.Bone1, vertex.Weight1);
@@ -161,15 +163,20 @@ public sealed class RenderWareSkinnedModel
                 positions[vertexIndex] = total > 0.000001F
                     ? position / total
                     : vertex.Position;
+                normal = total > 0.000001F ? normal / total : vertex.Normal;
+                normals[vertexIndex] = normal.LengthSquared() > 0.000001F
+                    ? Vector3.Normalize(normal)
+                    : Vector3.UnitY;
 
                 void ApplyWeight(byte bone, float weight)
                 {
                     if (weight <= 0 || bone >= skinMatrices.Length) return;
                     position += Vector3.Transform(vertex.Position, skinMatrices[bone]) * weight;
+                    normal += Vector3.TransformNormal(vertex.Normal, skinMatrices[bone]) * weight;
                     total += weight;
                 }
             }
-            result.Add(new RenderWareDeformedMesh(mesh, positions));
+            result.Add(new RenderWareDeformedMesh(mesh, positions, normals));
         }
         return result;
     }
@@ -382,7 +389,8 @@ public sealed record RenderWareSkinnedMesh(
 
 public sealed record RenderWareDeformedMesh(
     RenderWareSkinnedMesh Source,
-    IReadOnlyList<Vector3> Positions);
+    IReadOnlyList<Vector3> Positions,
+    IReadOnlyList<Vector3> Normals);
 
 public readonly record struct RenderWareSkinnedVertex(
     Vector3 Position,

@@ -192,6 +192,20 @@ public sealed class RenderWareSceneArchiveTests : IDisposable
         AssertVectorNear(Vector3.UnitX, Vector3.Normalize(Vector3.TransformNormal(Vector3.UnitZ, delta)));
     }
 
+    [Theory]
+    [InlineData(3D, 12D, 2F, true, true, 0.5F)]
+    [InlineData(3D, 12D, 2F, false, true, 1F)]
+    [InlineData(3D, 12D, 2F, false, false, 2F)]
+    public void AmbientAnimationCanSyncLoopOrClampIndependentlyOfItsPath(
+        double position, double pathDuration, float animationDuration,
+        bool sync, bool loop, float expected)
+    {
+        float actual = StadiumAmbientPreviewBuilder.GetAnimationPlaybackTime(
+            position, pathDuration, animationDuration, sync, loop);
+
+        Assert.Equal(expected, actual, 4);
+    }
+
     [Fact]
     public void SplineDocumentRoundTripsUnknownHeaderAndSuffixBytes()
     {

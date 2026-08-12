@@ -114,6 +114,8 @@ public sealed class RenderWareAnimationArchiveTests : IDisposable
         Assert.Equal(30F, deformed[0].Positions[0].Y, 3);
         Assert.Equal(125F, deformed[0].Positions[2].X, 3);
         Assert.Equal(60F, deformed[0].Positions[2].Y, 3);
+        Assert.Equal(deformed[0].Positions.Count, deformed[0].Normals.Count);
+        Assert.All(deformed[0].Normals, normal => Assert.InRange(normal.Length(), 0.999F, 1.001F));
         IReadOnlyList<Vector3> pose = binding.SamplePose(animation, 1.5F);
         Assert.Equal(15F, pose[0].X, 3);
         Assert.Equal(125F, pose[1].X, 3);
