@@ -30,9 +30,13 @@ internal sealed class RenderWareDetachedPreviewForm : Form
         _preview.Wireframe = wireframe;
         _preview.EnvironmentLight = environmentLight ?? Vector4.One;
         _preview.Guides = guides ?? [];
+        _preview.ShowGuideMarkers = true;
+        _preview.ShowGuidePaths = true;
+        _preview.ShowAllGuidePaths = false;
 
         Controls.Add(_preview);
-        Controls.Add(BuildToolbar(perspective, hideBackdrop, showHelpers, cullBackfaces, wireframe));
+        Controls.Add(BuildToolbar(perspective, hideBackdrop, showHelpers, cullBackfaces, wireframe,
+            _preview.Guides.Count > 0));
         Shown += (_, _) =>
         {
             if (_initialCamera == null) _preview.ResetView();
@@ -41,7 +45,7 @@ internal sealed class RenderWareDetachedPreviewForm : Form
     }
 
     private Control BuildToolbar(bool perspective, bool hideBackdrop, bool showHelpers,
-        bool cullBackfaces, bool wireframe)
+        bool cullBackfaces, bool wireframe, bool hasGuides)
     {
         TableLayoutPanel toolbar = new()
         {
@@ -107,6 +111,20 @@ internal sealed class RenderWareDetachedPreviewForm : Form
             value => _preview.CullBackfaces = value);
         CheckBox wireframeBox = Check("Wireframe", wireframe,
             value => _preview.Wireframe = value);
+        CheckBox? markersBox = null;
+        ComboBox? paths = null;
+        if (hasGuides)
+        {
+            markersBox = Check("Ambient markers", true, value => _preview.ShowGuideMarkers = value);
+            paths = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 112 };
+            paths.Items.AddRange(new object[] { "Paths: Off", "Selected path", "All paths" });
+            paths.SelectedIndexChanged += (_, _) =>
+            {
+                _preview.ShowGuidePaths = paths.SelectedIndex != 0;
+                _preview.ShowAllGuidePaths = paths.SelectedIndex == 2;
+            };
+            paths.SelectedIndex = 1;
+        }
         Button zoomOut = new() { Text = "Zoom −", AutoSize = true };
         zoomOut.Click += (_, _) => _preview.ZoomOut();
         Button zoomIn = new() { Text = "Zoom +", AutoSize = true };
@@ -124,9 +142,11 @@ internal sealed class RenderWareDetachedPreviewForm : Form
         close.Click += (_, _) => Close();
         display.Controls.AddRange(new Control[]
         {
-            perspectiveBox, backdropBox, helpersBox, cullBox, wireframeBox,
-            zoomOut, zoomIn, reset, front, top, maximize, close
+            perspectiveBox, backdropBox, helpersBox, cullBox, wireframeBox
         });
+        if (markersBox != null && paths != null)
+            display.Controls.AddRange(new Control[] { markersBox, paths });
+        display.Controls.AddRange(new Control[] { zoomOut, zoomIn, reset, front, top, maximize, close });
         toolbar.Controls.Add(navigation, 0, 0);
         toolbar.Controls.Add(display, 0, 1);
         return toolbar;

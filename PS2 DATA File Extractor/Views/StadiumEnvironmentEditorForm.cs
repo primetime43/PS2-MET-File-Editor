@@ -36,7 +36,7 @@ public sealed class StadiumEnvironmentEditorForm : Form
     private readonly ComboBox _previewView = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 170 };
     private readonly CheckBox _showAmbientModels = new() { Text = "Ambient models", AutoSize = true, Checked = true };
     private readonly CheckBox _showDisabledAmbients = new() { Text = "Disabled translucent", AutoSize = true, Checked = true };
-    private readonly CheckBox _showAmbientPaths = new() { Text = "Movement paths", AutoSize = true, Checked = true };
+    private readonly CheckBox _showAmbientPaths = new() { Text = "All movement paths", AutoSize = true };
     private readonly Label _previewSummary = new()
     {
         Dock = DockStyle.Fill, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft
@@ -417,8 +417,11 @@ public sealed class StadiumEnvironmentEditorForm : Form
         _preview.Guides = _ambientPreview.Items
             .Where(item => item.Anchor.HasValue)
             .Select(item => new RenderWarePreviewGuide(item.AmbientIndex, item.Name, item.Anchor!.Value,
-                _showAmbientPaths.Checked ? item.PathPoints : [], item.IsLoaded, item.AmbientIndex == selected))
+                item.PathPoints, item.IsLoaded, item.AmbientIndex == selected))
             .ToList();
+        _preview.ShowGuideMarkers = true;
+        _preview.ShowGuidePaths = true;
+        _preview.ShowAllGuidePaths = _showAmbientPaths.Checked;
     }
 
     private void UpdateAmbientListVisuals()

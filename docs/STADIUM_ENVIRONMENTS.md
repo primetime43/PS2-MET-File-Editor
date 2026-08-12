@@ -30,6 +30,9 @@ The preview applies these edits immediately after a grid value is committed:
   first path point so its starting location is visible.
 - Selecting an ambient in the list, grid, or preview highlights its model and path. Ambients beyond
   `numAmbs` can be included as translucent disabled objects.
+- Only the selected movement path is shown by default. **All movement paths** enables the complete
+  overlay, while the detached preview provides independent marker visibility and Off/Selected/All
+  path modes so field POV views stay readable.
 
 The view menu also includes the executable-derived gameplay batting POV and the normal orbit view.
 Camera previews support mouse-look, WASD movement, Q/E height adjustment, and Shift for faster

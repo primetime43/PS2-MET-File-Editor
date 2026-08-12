@@ -15,7 +15,8 @@ public sealed class RenderWareScenePreviewControl : Control
     private Point _lastMouse;
     private Point _mouseDownPoint;
     private bool _rotating, _panning, _wireframe, _perspective = true, _cullBackfaces, _hideSkyRoof = true,
-        _hideHelperGeometry = true, _fieldCamera;
+        _hideHelperGeometry = true, _fieldCamera, _showGuideMarkers = true, _showGuidePaths = true,
+        _showAllGuidePaths = true;
     private readonly HashSet<Keys> _movementKeys = [];
     private readonly System.Windows.Forms.Timer _movementTimer = new() { Interval = 16 };
     private IReadOnlyList<RenderWarePreviewGuide> _guides = [];
@@ -83,6 +84,21 @@ public sealed class RenderWareScenePreviewControl : Control
     {
         get => _guides;
         set { _guides = value ?? []; Invalidate(); }
+    }
+    public bool ShowGuideMarkers
+    {
+        get => _showGuideMarkers;
+        set { _showGuideMarkers = value; Invalidate(); }
+    }
+    public bool ShowGuidePaths
+    {
+        get => _showGuidePaths;
+        set { _showGuidePaths = value; Invalidate(); }
+    }
+    public bool ShowAllGuidePaths
+    {
+        get => _showAllGuidePaths;
+        set { _showAllGuidePaths = value; Invalidate(); }
     }
     public event EventHandler<RenderWarePreviewGuideClickedEventArgs>? GuideClicked;
     public Vector4 EnvironmentLight
@@ -437,22 +453,27 @@ public sealed class RenderWareScenePreviewControl : Control
     {
         if (_guides.Count == 0 || _scene == null) return;
         Projection projection = BuildProjection(Width, Height);
-        foreach (RenderWarePreviewGuide guide in _guides.Where(item => item.PathPoints.Count > 1))
+        if (_showGuidePaths)
         {
-            Color color = guide.Selected ? Color.Gold : guide.Enabled
-                ? Color.FromArgb(220, 70, 210, 255) : Color.FromArgb(155, 175, 175, 175);
-            using Pen pen = new(color, guide.Selected ? 2.5F : 1.5F)
+            foreach (RenderWarePreviewGuide guide in _guides.Where(item => item.PathPoints.Count > 1 &&
+                                                                           (_showAllGuidePaths || item.Selected)))
             {
-                DashStyle = guide.Enabled ? System.Drawing.Drawing2D.DashStyle.Solid :
-                    System.Drawing.Drawing2D.DashStyle.Dash
-            };
-            for (int index = 1; index < guide.PathPoints.Count; index++)
-            {
-                ProjectedVertex a = Project(guide.PathPoints[index - 1], projection);
-                ProjectedVertex b = Project(guide.PathPoints[index], projection);
-                if (a.Visible && b.Visible) graphics.DrawLine(pen, a.X, a.Y, b.X, b.Y);
+                Color color = guide.Selected ? Color.Gold : guide.Enabled
+                    ? Color.FromArgb(145, 70, 210, 255) : Color.FromArgb(110, 175, 175, 175);
+                using Pen pen = new(color, guide.Selected ? 2.5F : 1F)
+                {
+                    DashStyle = guide.Enabled ? System.Drawing.Drawing2D.DashStyle.Solid :
+                        System.Drawing.Drawing2D.DashStyle.Dash
+                };
+                for (int index = 1; index < guide.PathPoints.Count; index++)
+                {
+                    ProjectedVertex a = Project(guide.PathPoints[index - 1], projection);
+                    ProjectedVertex b = Project(guide.PathPoints[index], projection);
+                    if (a.Visible && b.Visible) graphics.DrawLine(pen, a.X, a.Y, b.X, b.Y);
+                }
             }
         }
+        if (!_showGuideMarkers) return;
         foreach (RenderWarePreviewGuide guide in _guides)
         {
             ProjectedVertex marker = Project(guide.Position, projection);
@@ -475,7 +496,7 @@ public sealed class RenderWareScenePreviewControl : Control
 
     private void HitTestGuide(Point location)
     {
-        if (_guides.Count == 0 || _scene == null) return;
+        if (!_showGuideMarkers || _guides.Count == 0 || _scene == null) return;
         Projection projection = BuildProjection(Width, Height);
         RenderWarePreviewGuide? closest = null;
         float closestDistance = 14F * 14F;
