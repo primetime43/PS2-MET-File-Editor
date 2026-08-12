@@ -1,0 +1,31 @@
+# Keep text normalized in Git while using native endings for this Windows project.
+* text=auto
+/.gitattributes text eol=lf
+/.editorconfig  text eol=lf
+
+# Visual Studio, C#, and project documentation use CRLF in the working tree.
+*.cs       text eol=crlf
+*.csproj   text eol=crlf
+*.sln      text eol=crlf
+*.resx     text eol=crlf
+*.config   text eol=crlf
+*.md       text eol=crlf
+*.txt      text eol=crlf
+
+# Automation and portable scripts must retain Unix line endings.
+*.yml      text eol=lf
+*.yaml     text eol=lf
+*.sh       text eol=lf
+*.ps1      text eol=crlf
+
+# Binary assets must never be line-ending normalized.
+*.png      binary
+*.ico      binary
+*.bmp      binary
+*.wav      binary
+*.vag      binary
+*.pss      binary
+*.met      binary
+*.iso      binary
+*.exe      binary
+*.dll      binary
