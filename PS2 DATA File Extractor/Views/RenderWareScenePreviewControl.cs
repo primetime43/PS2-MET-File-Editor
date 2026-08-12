@@ -63,10 +63,7 @@ public sealed class RenderWareScenePreviewControl : Control
     {
         _yaw = -0.55F;
         _pitch = _scene?.Kind == RenderWareAssetKind.RwsScene ? 0.36F : -0.28F;
-        float aspect = ClientSize.Height > 0 ? ClientSize.Width / (float)ClientSize.Height : 2F;
-        _zoom = _scene?.Kind == RenderWareAssetKind.RwsScene
-            ? Math.Clamp(2.15F + (aspect - 2F) * 0.75F, 1.9F, 3.4F)
-            : 1F;
+        _zoom = 1F;
         _panX = 0F;
         _panY = 0F;
         Invalidate();
@@ -239,13 +236,12 @@ public sealed class RenderWareScenePreviewControl : Control
 
     private Projection BuildProjection(int width, int height)
     {
-        IReadOnlyList<Vector3> all = _scene!.Meshes.SelectMany(mesh => mesh.Vertices)
-            .Select(vertex => vertex.Position).ToList();
+        IReadOnlyList<Vector3> all = GetProjectionPoints();
         Vector3 minimum = new(float.MaxValue), maximum = new(float.MinValue);
         foreach (Vector3 point in all) { minimum = Vector3.Min(minimum, point); maximum = Vector3.Max(maximum, point); }
         Vector3 modelCenter = (minimum + maximum) * 0.5F;
         float radius = Math.Max(0.001F, all.Max(point => Vector3.Distance(point, modelCenter)));
-        float availableWidth = Math.Max(1, width - 28), availableHeight = Math.Max(1, height - 52);
+        float availableWidth = Math.Max(1, width - 28), availableHeight = Math.Max(1, height - 64);
         float halfFov = 25F * MathF.PI / 180F;
         float baseFocalLength = availableHeight * 0.5F / MathF.Tan(halfFov);
         float focalLength = baseFocalLength * _zoom;
@@ -265,8 +261,51 @@ public sealed class RenderWareScenePreviewControl : Control
         cameraDistance += radius * 0.04F;
         float rangeX = Math.Max(0.001F, maxX - minX), rangeY = Math.Max(0.001F, maxY - minY);
         float orthographicScale = Math.Min(availableWidth / rangeX, availableHeight / rangeY) * 0.92F * _zoom;
-        return new Projection(width * (0.5F + _panX), height * (0.5F + _panY) + 9, modelCenter, orthographicScale,
+        float centerX = width * (0.5F + _panX);
+        float centerY = height * (0.5F + _panY) + 3F;
+        if (_perspective)
+        {
+            float projectedMinX = float.MaxValue, projectedMaxX = float.MinValue;
+            float projectedMinY = float.MaxValue, projectedMaxY = float.MinValue;
+            foreach (Vector3 point in all)
+            {
+                Vector3 rotated = RotateVector(point - modelCenter);
+                float distance = Math.Max(0.001F, cameraDistance - rotated.Z);
+                float projectedX = rotated.X * focalLength / distance;
+                float projectedY = rotated.Y * focalLength / distance;
+                projectedMinX = Math.Min(projectedMinX, projectedX);
+                projectedMaxX = Math.Max(projectedMaxX, projectedX);
+                projectedMinY = Math.Min(projectedMinY, projectedY);
+                projectedMaxY = Math.Max(projectedMaxY, projectedY);
+            }
+            centerX -= (projectedMinX + projectedMaxX) * 0.5F;
+            centerY += (projectedMinY + projectedMaxY) * 0.5F;
+        }
+        return new Projection(centerX, centerY, modelCenter, orthographicScale,
             focalLength, cameraDistance, (minX + maxX) / 2F, (minY + maxY) / 2F);
+    }
+
+    private IReadOnlyList<Vector3> GetProjectionPoints()
+    {
+        List<Vector3> visible = new();
+        foreach (RenderWareSceneMesh mesh in _scene!.Meshes)
+        {
+            foreach (RenderWareTriangle triangle in mesh.Triangles)
+            {
+                if (!Valid(triangle, mesh.Vertices.Count)) continue;
+                RenderWareMaterial material = triangle.MaterialIndex >= 0 && triangle.MaterialIndex < mesh.Materials.Count
+                    ? mesh.Materials[triangle.MaterialIndex] : new RenderWareMaterial(null, Color.LightGray);
+                if (ShouldHide(material)) continue;
+                visible.Add(mesh.Vertices[triangle.First].Position);
+                visible.Add(mesh.Vertices[triangle.Second].Position);
+                visible.Add(mesh.Vertices[triangle.Third].Position);
+            }
+        }
+        if (visible.Count > 0) return visible;
+        List<Vector3> fallback = _scene.Meshes.SelectMany(mesh => mesh.Vertices)
+            .Select(vertex => vertex.Position).ToList();
+        if (fallback.Count == 0) fallback.Add(Vector3.Zero);
+        return fallback;
     }
 
     private ProjectedVertex Project(Vector3 point, Projection projection)
