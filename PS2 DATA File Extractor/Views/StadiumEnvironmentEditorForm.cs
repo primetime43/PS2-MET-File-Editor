@@ -15,6 +15,7 @@ public sealed class StadiumEnvironmentEditorForm : Form
     private readonly DataGridView _fieldGrid = CreateGrid();
     private readonly DataGridView _collisionGrid = CreateGrid();
     private readonly DataGridView _ambientGrid = CreateGrid();
+    private readonly DataGridView _splineGrid = CreateSplineGrid();
     private readonly ListBox _ambientList = new() { Dock = DockStyle.Fill, IntegralHeight = false };
     private readonly TextBox _rawText = new()
     {
@@ -65,11 +66,18 @@ public sealed class StadiumEnvironmentEditorForm : Form
         Dock = DockStyle.Bottom, Height = 58, Padding = new Padding(5, 4, 5, 2),
         AutoEllipsis = true, BorderStyle = BorderStyle.FixedSingle
     };
+    private readonly GroupBox _splineEditor = new() { Text = "Movement Path Waypoints (.spl)", Dock = DockStyle.Fill };
+    private readonly Label _splineStatus = new()
+    {
+        Dock = DockStyle.Fill, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft,
+        Padding = new Padding(4, 0, 4, 0)
+    };
     private StadiumEnvironment? _current;
     private RenderWareScene? _scene;
     private RenderWareScene? _previewScene;
     private StadiumAmbientPreviewResult? _ambientPreview;
     private readonly Dictionary<string, RenderWareScene> _ambientModelCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, StadiumSplineDocument> _splineDocuments = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<(IList<RenderWareSceneVertex> Vertices, RenderWareSceneVertex[] Baseline)> _playbackMeshes = [];
     private readonly List<RenderWareDetachedPreviewForm> _detachedPreviews = [];
     private readonly System.Windows.Forms.Timer _ambientPlaybackTimer = new() { Interval = 80 };
@@ -77,7 +85,9 @@ public sealed class StadiumEnvironmentEditorForm : Form
     private Vector4 _previewLight = Vector4.One;
     private BackyardCameraPreset? _activePreviewCamera;
     private double _ambientPlaybackPosition, _ambientPlaybackStart, _ambientPlaybackDuration;
-    private bool _ambientPlaying, _updatingScrubber;
+    private StadiumSplineDocument? _currentSpline;
+    private int _selectedSplinePoint = -1;
+    private bool _ambientPlaying, _updatingScrubber, _loadingSpline;
     private bool _loading;
 
     public StadiumEnvironmentEditorForm(StadiumEnvironmentArchive archive, string metPath)
@@ -98,7 +108,7 @@ public sealed class StadiumEnvironmentEditorForm : Form
             Dock = DockStyle.Top,
             Height = 50,
             Padding = new Padding(12, 8, 12, 4),
-            Text = "Edit fielddata.txt while viewing the textured stadium and placed ambient models. Lighting, cameras, positions, and spline playback update immediately; particles, movies, collision behavior, and skeletal ANM motion still require the game."
+            Text = "Edit fielddata.txt and movement-path waypoints while viewing the textured stadium. Lighting, cameras, positions, path edits, and spline playback update immediately; particles, movies, collision behavior, and skeletal ANM motion still require the game."
         };
         TableLayoutPanel selector = new()
         {
@@ -155,7 +165,7 @@ public sealed class StadiumEnvironmentEditorForm : Form
         _stadiums.Items.AddRange(_archive.Stadiums.Cast<object>().ToArray());
         _stadiums.SelectedIndexChanged += (_, _) => LoadSelectedStadium();
         _ambientList.SelectedIndexChanged += (_, _) => LoadSelectedAmbient();
-        _preview.GuideClicked += (_, e) => SelectAmbient(e.Key);
+        _preview.GuideClicked += (_, e) => SelectAmbientGuide(e.Key, e.PointIndex);
         _showAmbientModels.CheckedChanged += (_, _) => RefreshAmbientComposition();
         _showDisabledAmbients.CheckedChanged += (_, _) => RefreshAmbientComposition();
         _showAmbientPaths.CheckedChanged += (_, _) => UpdatePreviewGuides();
@@ -166,6 +176,9 @@ public sealed class StadiumEnvironmentEditorForm : Form
         _ambientScrubber.Scroll += (_, _) => ScrubAmbient();
         _ambientPlaybackRate.SelectedIndexChanged += (_, _) => RebasePlaybackClock();
         _faceAmbientPath.CheckedChanged += (_, _) => ApplyPlaybackFrame();
+        _splineGrid.CellValidating += SplineGrid_CellValidating;
+        _splineGrid.CellValueChanged += SplineGrid_CellValueChanged;
+        _splineGrid.SelectionChanged += (_, _) => SelectSplineGridPoint();
         HookGrid(_fieldGrid);
         HookGrid(_collisionGrid);
         HookGrid(_ambientGrid);
@@ -324,8 +337,14 @@ public sealed class StadiumEnvironmentEditorForm : Form
         TabPage ambientPage = new("Ambient Objects") { Padding = new Padding(6) };
         SplitContainer split = new() { Dock = DockStyle.Fill, SplitterDistance = 310, FixedPanel = FixedPanel.Panel1 };
         split.Panel1.Controls.Add(_ambientList);
-        split.Panel2.Controls.Add(_ambientGrid);
-        split.Panel2.Controls.Add(_ambientInfo);
+        TableLayoutPanel ambientDetails = new() { Dock = DockStyle.Fill, RowCount = 3, ColumnCount = 1 };
+        ambientDetails.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        ambientDetails.RowStyles.Add(new RowStyle(SizeType.Absolute, 58));
+        ambientDetails.RowStyles.Add(new RowStyle(SizeType.Absolute, 245));
+        ambientDetails.Controls.Add(_ambientGrid, 0, 0);
+        ambientDetails.Controls.Add(_ambientInfo, 0, 1);
+        ambientDetails.Controls.Add(BuildSplineEditor(), 0, 2);
+        split.Panel2.Controls.Add(ambientDetails);
         ambientPage.Controls.Add(split);
 
         TabPage rawPage = new("Raw Preview") { Padding = new Padding(6) };
@@ -371,6 +390,54 @@ public sealed class StadiumEnvironmentEditorForm : Form
             HeaderText = "Format", ReadOnly = true, Width = 90
         });
         return grid;
+    }
+
+    private static DataGridView CreateSplineGrid()
+    {
+        DataGridView grid = new()
+        {
+            Dock = DockStyle.Fill, AllowUserToAddRows = false, AllowUserToDeleteRows = false,
+            AllowUserToResizeRows = false, RowHeadersVisible = false, MultiSelect = false,
+            SelectionMode = DataGridViewSelectionMode.FullRowSelect, AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
+            EditMode = DataGridViewEditMode.EditOnEnter
+        };
+        grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "#", ReadOnly = true, Width = 45, FillWeight = 30 });
+        grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "X", FillWeight = 100 });
+        grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Y", FillWeight = 100 });
+        grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Z", FillWeight = 100 });
+        return grid;
+    }
+
+    private Control BuildSplineEditor()
+    {
+        TableLayoutPanel layout = new() { Dock = DockStyle.Fill, RowCount = 3, ColumnCount = 1, Padding = new Padding(5, 2, 5, 4) };
+        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
+        FlowLayoutPanel buttons = new()
+        {
+            Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false, AutoScroll = true, Margin = Padding.Empty
+        };
+        Button add = SplineButton("Add After", (_, _) => AddSplinePoint());
+        Button duplicate = SplineButton("Duplicate", (_, _) => DuplicateSplinePoint());
+        Button delete = SplineButton("Delete", (_, _) => DeleteSplinePoint());
+        Button up = SplineButton("Move Up", (_, _) => MoveSplinePoint(-1));
+        Button down = SplineButton("Move Down", (_, _) => MoveSplinePoint(1));
+        Button reset = SplineButton("Reset This Path", (_, _) => ResetSplinePath());
+        buttons.Controls.AddRange(new Control[] { add, duplicate, delete, up, down, reset });
+        layout.Controls.Add(_splineGrid, 0, 0);
+        layout.Controls.Add(buttons, 0, 1);
+        layout.Controls.Add(_splineStatus, 0, 2);
+        _splineEditor.Controls.Add(layout);
+        return _splineEditor;
+    }
+
+    private static Button SplineButton(string text, EventHandler clicked)
+    {
+        Button button = new() { Text = text, AutoSize = true, Margin = new Padding(2, 3, 2, 1) };
+        button.Click += clicked;
+        return button;
     }
 
     private void HookGrid(DataGridView grid)
@@ -443,7 +510,8 @@ public sealed class StadiumEnvironmentEditorForm : Form
         {
             UseWaitCursor = true;
             _ambientPreview = StadiumAmbientPreviewBuilder.Build(_sceneArchive, _current, _scene,
-                _ambientModelCache, selected, _showAmbientModels.Checked, _showDisabledAmbients.Checked);
+                _ambientModelCache, selected, _showAmbientModels.Checked, _showDisabledAmbients.Checked,
+                _splineDocuments);
             _previewScene = _ambientPreview.Scene;
             _preview.SetScene(_previewScene, resetView);
             UpdatePreviewGuides();
@@ -486,7 +554,8 @@ public sealed class StadiumEnvironmentEditorForm : Form
                     position = StadiumAmbientPreviewBuilder.SamplePath(item.PathPoints, progress).Position;
                 }
                 return new RenderWarePreviewGuide(item.AmbientIndex, item.Name, position,
-                    item.PathPoints, item.IsLoaded, item.AmbientIndex == selected);
+                    item.PathPoints, item.IsLoaded, item.AmbientIndex == selected,
+                    item.AmbientIndex == selected ? _selectedSplinePoint : -1);
             })
             .ToList();
         _preview.ShowGuideMarkers = true;
@@ -531,6 +600,12 @@ public sealed class StadiumEnvironmentEditorForm : Form
             ? $"Field speed {StadiumAmbientPreviewBuilder.GetPreviewSpeed(ambient):0.##}; preview cycle {_ambientPlaybackDuration:0.#}s"
             : "No spline playback";
         _ambientInfo.Text = $"{visual.AssetPath ?? visual.AssetKind}  |  {position}  |  {path}\r\n{animations}  |  {speed}  —  {visual.Note}";
+    }
+
+    private void SelectAmbientGuide(int ambientIndex, int pointIndex)
+    {
+        SelectAmbient(ambientIndex);
+        if (pointIndex >= 0) SelectSplinePoint(pointIndex);
     }
 
     private void SelectAmbient(int ambientIndex)
@@ -636,6 +711,7 @@ public sealed class StadiumEnvironmentEditorForm : Form
             !_preview.HideHelperGeometry, _preview.CullBackfaces, _preview.Wireframe,
             _previewLight, _activePreviewCamera, _preview.Guides);
         _detachedPreviews.Add(preview);
+        preview.GuideClicked += (_, e) => SelectAmbientGuide(e.Key, e.PointIndex);
         preview.FormClosed += (_, _) => _detachedPreviews.Remove(preview);
         preview.Show(this);
     }
@@ -651,6 +727,191 @@ public sealed class StadiumEnvironmentEditorForm : Form
         UpdatePlaybackControls();
         UpdateAmbientInfo();
     }
+
+    private void LoadSplineEditor(FieldDataAmbient? ambient)
+    {
+        _currentSpline = null;
+        _selectedSplinePoint = -1;
+        string? value = ambient?.Settings.FirstOrDefault(setting =>
+            setting.Key.Equals("spline", StringComparison.OrdinalIgnoreCase))?.Value;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            LoadSplineRows();
+            _splineStatus.Text = "This ambient has no spline movement path.";
+            _splineEditor.Enabled = false;
+            return;
+        }
+        string path = StadiumSplineDocument.NormalizePath(value);
+        try
+        {
+            if (!_splineDocuments.TryGetValue(path, out _currentSpline))
+            {
+                byte[]? data = _sceneArchive.ReadRawPath(path);
+                if (data == null) throw new InvalidDataException($"The archive does not contain '{path}'.");
+                _currentSpline = StadiumSplineDocument.Parse(path, data);
+                _splineDocuments[path] = _currentSpline;
+            }
+            _splineEditor.Enabled = true;
+            LoadSplineRows(0);
+            UpdateSplineStatus();
+        }
+        catch (Exception exception) when (exception is InvalidDataException or ArgumentException)
+        {
+            _currentSpline = null;
+            _splineEditor.Enabled = false;
+            LoadSplineRows();
+            _splineStatus.Text = "Path unavailable: " + exception.Message;
+        }
+    }
+
+    private void LoadSplineRows(int selected = -1)
+    {
+        _loadingSpline = true;
+        _splineGrid.Rows.Clear();
+        if (_currentSpline != null)
+        {
+            for (int index = 0; index < _currentSpline.Points.Count; index++)
+            {
+                Vector3 point = _currentSpline.Points[index];
+                _splineGrid.Rows.Add(index + 1, Coordinate(point.X), Coordinate(point.Y), Coordinate(point.Z));
+            }
+        }
+        _loadingSpline = false;
+        if (_splineGrid.Rows.Count > 0 && selected >= 0)
+            SelectSplinePoint(Math.Clamp(selected, 0, _splineGrid.Rows.Count - 1));
+        else
+            _selectedSplinePoint = -1;
+    }
+
+    private void SelectSplineGridPoint()
+    {
+        if (_loadingSpline) return;
+        _selectedSplinePoint = _splineGrid.SelectedRows.Count == 0
+            ? -1 : _splineGrid.SelectedRows[0].Index;
+        UpdatePreviewGuides();
+        SyncDetachedPreviews();
+    }
+
+    private void SelectSplinePoint(int index)
+    {
+        if (index < 0 || index >= _splineGrid.Rows.Count) return;
+        _splineGrid.ClearSelection();
+        _splineGrid.Rows[index].Selected = true;
+        _splineGrid.CurrentCell = _splineGrid.Rows[index].Cells[1];
+        _selectedSplinePoint = index;
+        UpdatePreviewGuides();
+        SyncDetachedPreviews();
+    }
+
+    private void SplineGrid_CellValidating(object? sender, DataGridViewCellValidatingEventArgs e)
+    {
+        if (_loadingSpline || e.RowIndex < 0 || e.ColumnIndex is < 1 or > 3) return;
+        if (!float.TryParse(Convert.ToString(e.FormattedValue), NumberStyles.Float,
+                CultureInfo.InvariantCulture, out float value) || !float.IsFinite(value))
+        {
+            e.Cancel = true;
+            _splineGrid.Rows[e.RowIndex].ErrorText = "Enter a finite numeric coordinate.";
+        }
+        else _splineGrid.Rows[e.RowIndex].ErrorText = string.Empty;
+    }
+
+    private void SplineGrid_CellValueChanged(object? sender, DataGridViewCellEventArgs e)
+    {
+        if (_loadingSpline || _currentSpline == null || e.RowIndex < 0 || e.ColumnIndex is < 1 or > 3) return;
+        if (!TryReadSplineRow(e.RowIndex, out Vector3 point)) return;
+        _currentSpline.SetPoint(e.RowIndex, point);
+        SplineChanged(e.RowIndex);
+    }
+
+    private bool TryReadSplineRow(int row, out Vector3 point)
+    {
+        point = default;
+        float[] values = new float[3];
+        for (int column = 1; column <= 3; column++)
+            if (!float.TryParse(Convert.ToString(_splineGrid.Rows[row].Cells[column].Value),
+                    NumberStyles.Float, CultureInfo.InvariantCulture, out values[column - 1]) ||
+                !float.IsFinite(values[column - 1])) return false;
+        point = new Vector3(values[0], values[1], values[2]);
+        return true;
+    }
+
+    private void AddSplinePoint()
+    {
+        if (_currentSpline == null) return;
+        int selected = Math.Clamp(_selectedSplinePoint, 0, _currentSpline.Points.Count - 1);
+        Vector3 value;
+        if (selected < _currentSpline.Points.Count - 1)
+            value = Vector3.Lerp(_currentSpline.Points[selected], _currentSpline.Points[selected + 1], 0.5F);
+        else
+        {
+            Vector3 direction = _currentSpline.Points[^1] - _currentSpline.Points[^2];
+            value = _currentSpline.Points[^1] + direction;
+        }
+        int target = _currentSpline.InsertAfter(selected, value);
+        LoadSplineRows(target);
+        SplineChanged(target);
+    }
+
+    private void DuplicateSplinePoint()
+    {
+        if (_currentSpline == null || _selectedSplinePoint < 0) return;
+        int target = _currentSpline.Duplicate(_selectedSplinePoint);
+        LoadSplineRows(target);
+        SplineChanged(target);
+    }
+
+    private void DeleteSplinePoint()
+    {
+        if (_currentSpline == null || _selectedSplinePoint < 0) return;
+        try
+        {
+            int target = _currentSpline.RemoveAt(_selectedSplinePoint);
+            LoadSplineRows(target);
+            SplineChanged(target);
+        }
+        catch (InvalidOperationException exception)
+        {
+            MessageBox.Show(this, exception.Message, "Cannot Delete Waypoint",
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+    }
+
+    private void MoveSplinePoint(int offset)
+    {
+        if (_currentSpline == null || _selectedSplinePoint < 0) return;
+        int target = _currentSpline.Move(_selectedSplinePoint, offset);
+        LoadSplineRows(target);
+        SplineChanged(target);
+    }
+
+    private void ResetSplinePath()
+    {
+        if (_currentSpline == null || !_currentSpline.IsChanged) return;
+        _currentSpline.Reset();
+        LoadSplineRows(0);
+        SplineChanged(0);
+    }
+
+    private void SplineChanged(int selected)
+    {
+        StopAmbientPlayback(render: false);
+        _selectedSplinePoint = selected;
+        RebuildAmbientPreview();
+        ConfigureAmbientPlayback();
+        SelectSplinePoint(selected);
+        UpdateSplineStatus();
+        UpdateSummaryAndStatus();
+    }
+
+    private void UpdateSplineStatus()
+    {
+        if (_currentSpline == null) return;
+        string changed = _currentSpline.IsChanged ? " — modified" : string.Empty;
+        _splineStatus.Text = $"{_currentSpline.SourcePath}  |  {_currentSpline.Points.Count} points  |  " +
+                             $"type {_currentSpline.SplineType}{changed}";
+    }
+
+    private static string Coordinate(float value) => value.ToString("0.######", CultureInfo.InvariantCulture);
 
     private void RefreshAmbientComposition()
     {
@@ -861,6 +1122,7 @@ public sealed class StadiumEnvironmentEditorForm : Form
         StopAmbientPlayback(render: false);
         FieldDataAmbient? ambient = (_ambientList.SelectedItem as AmbientListItem)?.Ambient;
         LoadSettings(_ambientGrid, ambient?.Settings ?? Array.Empty<FieldDataSetting>());
+        LoadSplineEditor(ambient);
         RebuildAmbientPreview();
         ConfigureAmbientPlayback();
     }
@@ -930,6 +1192,7 @@ public sealed class StadiumEnvironmentEditorForm : Form
         if (ReferenceEquals(grid, _ambientGrid))
         {
             StopAmbientPlayback(render: false);
+            LoadSplineEditor(SelectedAmbient());
             RebuildAmbientPreview();
             ConfigureAmbientPlayback();
         }
@@ -971,8 +1234,10 @@ public sealed class StadiumEnvironmentEditorForm : Form
             ? $"{actual} ambient blocks"
             : $"Game loads {declared} of {actual} ambient blocks";
         int changed = _archive.ChangedStadiumCount;
-        _status.Text = changed == 0 ? "No unsaved stadium changes."
-            : $"{changed} stadium file{(changed == 1 ? string.Empty : "s")} changed.";
+        int splines = _splineDocuments.Values.Count(document => document.IsChanged);
+        _status.Text = changed == 0 && splines == 0 ? "No unsaved stadium changes."
+            : $"{changed} fielddata file{(changed == 1 ? string.Empty : "s")} and " +
+              $"{splines} spline path{(splines == 1 ? string.Empty : "s")} changed.";
     }
 
     private void ResetAll()
@@ -980,6 +1245,7 @@ public sealed class StadiumEnvironmentEditorForm : Form
         int selected = _stadiums.SelectedIndex;
         _loading = true;
         _archive.ResetAll();
+        _splineDocuments.Clear();
         _stadiums.Items.Clear();
         _stadiums.Items.AddRange(_archive.Stadiums.Cast<object>().ToArray());
         _stadiums.SelectedIndex = _stadiums.Items.Count == 0 ? -1 : Math.Clamp(selected, 0, _stadiums.Items.Count - 1);
@@ -993,15 +1259,21 @@ public sealed class StadiumEnvironmentEditorForm : Form
         _fieldGrid.EndEdit();
         _collisionGrid.EndEdit();
         _ambientGrid.EndEdit();
+        _splineGrid.EndEdit();
         int changed = _archive.ChangedStadiumCount;
-        if (changed == 0)
+        Dictionary<string, byte[]> splineChanges = _splineDocuments.Values
+            .Where(document => document.IsChanged)
+            .ToDictionary(document => document.SourcePath, document => document.Serialize(),
+                StringComparer.OrdinalIgnoreCase);
+        if (changed == 0 && splineChanges.Count == 0)
         {
             MessageBox.Show(this, "No stadium files were changed.", "Nothing to Save",
                 MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
         if (MessageBox.Show(this,
-                $"Write changes to {changed} stadium fielddata.txt file{(changed == 1 ? string.Empty : "s")}?\n\n" +
+                $"Write {changed} fielddata file{(changed == 1 ? string.Empty : "s")} and " +
+                $"{splineChanges.Count} spline path{(splineChanges.Count == 1 ? string.Empty : "s")} to DATA.MET?\n\n" +
                 "A timestamped DATA.MET backup will be created first.",
                 "Save Stadium Environments", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
             return;
@@ -1010,10 +1282,11 @@ public sealed class StadiumEnvironmentEditorForm : Form
         {
             UseWaitCursor = true;
             Enabled = false;
-            StadiumEnvironmentSaveResult result = _archive.SaveWithBackup();
+            StadiumEnvironmentSaveResult result = _archive.SaveWithBackup(splineChanges);
             string rebuild = result.RebuiltArchive ? "\nThe archive was resized with sector alignment preserved." : string.Empty;
             MessageBox.Show(this,
-                $"Saved {result.ChangedStadiumCount} stadium file{(result.ChangedStadiumCount == 1 ? string.Empty : "s")}.\n\n" +
+                $"Saved {result.ChangedStadiumCount} fielddata file{(result.ChangedStadiumCount == 1 ? string.Empty : "s")} and " +
+                $"{result.ChangedSplineCount} spline path{(result.ChangedSplineCount == 1 ? string.Empty : "s")}.\n\n" +
                 $"Backup: {result.BackupPath}{rebuild}",
                 "Stadium Environments Saved", MessageBoxButtons.OK, MessageBoxIcon.Information);
             DialogResult = DialogResult.OK;

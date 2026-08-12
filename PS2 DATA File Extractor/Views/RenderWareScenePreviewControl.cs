@@ -472,6 +472,20 @@ public sealed class RenderWareScenePreviewControl : Control
                     if (a.Visible && b.Visible) graphics.DrawLine(pen, a.X, a.Y, b.X, b.Y);
                 }
             }
+            foreach (RenderWarePreviewGuide guide in _guides.Where(item => item.Selected))
+            {
+                for (int index = 0; index < guide.PathPoints.Count; index++)
+                {
+                    ProjectedVertex point = Project(guide.PathPoints[index], projection);
+                    if (!point.Visible) continue;
+                    bool selected = index == guide.SelectedPointIndex;
+                    float radius = selected ? 6F : 3.5F;
+                    using SolidBrush fill = new(selected ? Color.White : Color.FromArgb(225, 25, 165, 225));
+                    using Pen outline = new(selected ? Color.DeepPink : Color.Black, selected ? 2F : 1F);
+                    graphics.FillEllipse(fill, point.X - radius, point.Y - radius, radius * 2F, radius * 2F);
+                    graphics.DrawEllipse(outline, point.X - radius, point.Y - radius, radius * 2F, radius * 2F);
+                }
+            }
         }
         if (!_showGuideMarkers) return;
         foreach (RenderWarePreviewGuide guide in _guides)
@@ -496,8 +510,30 @@ public sealed class RenderWareScenePreviewControl : Control
 
     private void HitTestGuide(Point location)
     {
-        if (!_showGuideMarkers || _guides.Count == 0 || _scene == null) return;
+        if (_guides.Count == 0 || _scene == null) return;
         Projection projection = BuildProjection(Width, Height);
+        if (_showGuidePaths)
+        {
+            RenderWarePreviewGuide? pathGuide = null;
+            int pointIndex = -1;
+            float pointDistance = 12F * 12F;
+            foreach (RenderWarePreviewGuide guide in _guides.Where(item => item.Selected))
+            for (int index = 0; index < guide.PathPoints.Count; index++)
+            {
+                ProjectedVertex point = Project(guide.PathPoints[index], projection);
+                if (!point.Visible) continue;
+                float dx = point.X - location.X, dy = point.Y - location.Y;
+                float distance = dx * dx + dy * dy;
+                if (distance > pointDistance) continue;
+                pathGuide = guide; pointIndex = index; pointDistance = distance;
+            }
+            if (pathGuide != null)
+            {
+                GuideClicked?.Invoke(this, new RenderWarePreviewGuideClickedEventArgs(pathGuide.Key, pointIndex));
+                return;
+            }
+        }
+        if (!_showGuideMarkers) return;
         RenderWarePreviewGuide? closest = null;
         float closestDistance = 14F * 14F;
         foreach (RenderWarePreviewGuide guide in _guides)
@@ -757,9 +793,10 @@ public sealed class RenderWareScenePreviewControl : Control
 }
 
 public sealed record RenderWarePreviewGuide(int Key, string Label, Vector3 Position,
-    IReadOnlyList<Vector3> PathPoints, bool Enabled, bool Selected);
+    IReadOnlyList<Vector3> PathPoints, bool Enabled, bool Selected, int SelectedPointIndex = -1);
 
-public sealed class RenderWarePreviewGuideClickedEventArgs(int key) : EventArgs
+public sealed class RenderWarePreviewGuideClickedEventArgs(int key, int pointIndex = -1) : EventArgs
 {
     public int Key { get; } = key;
+    public int PointIndex { get; } = pointIndex;
 }

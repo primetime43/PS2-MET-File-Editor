@@ -127,6 +127,35 @@ public sealed class StadiumEnvironmentArchiveTests : IDisposable
     }
 
     [Fact]
+    public void ArchiveSavesFielddataAndExpandedSplineWithOneBackup()
+    {
+        Directory.CreateDirectory(_tempDirectory);
+        string metPath = Path.Combine(_tempDirectory, "DATA.MET");
+        CreateArchive(metPath);
+        StadiumEnvironmentArchive archive = StadiumEnvironmentArchive.Load(metPath);
+        archive.Stadiums[0].Document.FieldSettings.Single(setting => setting.Key == "camPos").Value = "9 8 7";
+        byte[] spline = new byte[0x34 + 36];
+        BitConverter.GetBytes(0x0cU).CopyTo(spline, 0);
+        BitConverter.GetBytes(spline.Length - 12).CopyTo(spline, 4);
+        BitConverter.GetBytes(3).CopyTo(spline, 0x2c);
+
+        StadiumEnvironmentSaveResult result = archive.SaveWithBackup(new Dictionary<string, byte[]>
+        {
+            ["data/fields/drivein/path.spl"] = spline
+        });
+
+        Assert.Equal(1, result.ChangedStadiumCount);
+        Assert.Equal(1, result.ChangedSplineCount);
+        Assert.Equal(2, result.ChangedEntryCount);
+        Assert.True(result.RebuiltArchive);
+        Assert.NotNull(result.BackupPath);
+        METFileStructure structure = METFileReader.ReadMETFile(metPath);
+        FileEntry path = structure.GetEntryByPath("data/fields/drivein/path.spl")!;
+        Assert.Equal(spline.Length, path.OriginalSize);
+        Assert.True(structure.ValidateStructure().IsValid);
+    }
+
+    [Fact]
     public void StadiumEditorIncludesResizableLiveScenePreview()
     {
         Directory.CreateDirectory(_tempDirectory);
@@ -162,18 +191,26 @@ public sealed class StadiumEnvironmentArchiveTests : IDisposable
     {
         byte[] day = Encoding.ASCII.GetBytes(Sample);
         byte[] night = Encoding.ASCII.GetBytes(Sample.Replace("Test field", "Test night"));
-        int totalLength = SecondOffset + night.Length;
+        byte[] spline = new byte[0x34 + 24];
+        BitConverter.GetBytes(0x0cU).CopyTo(spline, 0);
+        BitConverter.GetBytes(spline.Length - 12).CopyTo(spline, 4);
+        BitConverter.GetBytes(2).CopyTo(spline, 0x2c);
+        int splineOffset = 6144;
+        int totalLength = splineOffset + spline.Length;
         using FileStream stream = new(path, FileMode.Create, FileAccess.ReadWrite);
         using BinaryWriter writer = new(stream);
         writer.Write(FirstOffset);
         writer.Write(totalLength - FirstOffset);
         WriteEntry(writer, FirstOffset, day.Length, "data/fields/drivein/fielddata.txt");
         WriteEntry(writer, SecondOffset, night.Length, "data/fields/driveinnight/fielddata.txt");
+        WriteEntry(writer, splineOffset, spline.Length, "data/fields/drivein/path.spl");
         writer.Write(new byte[12]);
         stream.Position = FirstOffset;
         writer.Write(day);
         stream.Position = SecondOffset;
         writer.Write(night);
+        stream.Position = splineOffset;
+        writer.Write(spline);
     }
 
     private static void WriteEntry(BinaryWriter writer, int offset, int size, string path)

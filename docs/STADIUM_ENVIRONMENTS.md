@@ -37,6 +37,10 @@ The preview applies these edits immediately after a grid value is committed:
   marker move by distance along the path, and **Face path** turns the model toward the current path
   tangent. The preview cycle uses the ambient's `speed` value, or the midpoint of `randFloatSpeed`,
   with an additional 0.25x–4x viewing-rate control. Open detached previews remain synchronized.
+- The waypoint editor exposes every retail `.spl` point as exact X/Y/Z coordinates. Points can be
+  selected in the table or clicked in either 3D preview, edited, inserted between neighbors,
+  duplicated, deleted, or reordered. A spline retains at least two points, and **Reset This Path**
+  restores its original archive data without affecting other unsaved paths.
 
 The view menu also includes the executable-derived gameplay batting POV and the normal orbit view.
 Camera previews support mouse-look, WASD movement, Q/E height adjustment, and Shift for faster
@@ -101,6 +105,9 @@ preserves internal separators.
 
 ## Safety
 
-Saving creates one timestamped `DATA.MET` backup. If edited text grows beyond its original entry,
-the shared MET rebuilder moves subsequent entries on 2048-byte boundaries and updates offsets. A
-failed multi-stadium save restores the original archive from the backup.
+Saving writes changed `fielddata.txt` and `.spl` entries together under one timestamped `DATA.MET`
+backup. Spline serialization preserves the unknown header and any suffix data, updates the RenderWare
+chunk length and point count, and writes XYZ as little-endian floats. If edited text or an added
+waypoint grows beyond its original entry, the shared MET rebuilder moves subsequent entries on
+2048-byte boundaries and updates offsets. A failed multi-entry save restores the original archive
+from the backup.

@@ -33,6 +33,8 @@ To access the .MET files, you need to extract the game files from the ISO using 
   placed ambient DFF models, disabled objects, and retail spline movement paths live. Ambient objects
   can be selected from either the list or the 3D preview; path-driven objects can be played, looped,
   scrubbed, speed-adjusted, and turned along their path in both the embedded and detachable preview.
+  Retail `.spl` waypoints can also be selected in 3D, edited numerically, added, duplicated, deleted,
+  reordered, reset, and saved back into `DATA.MET` with the fielddata changes.
   Loader details are documented in
   [`docs/STADIUM_ENVIRONMENTS.md`](docs/STADIUM_ENVIRONMENTS.md).
 - **Gameplay Tweaks...** on the **Game Tools** tab provides validated tabs for 285 ball, bat/power-up, field physics,

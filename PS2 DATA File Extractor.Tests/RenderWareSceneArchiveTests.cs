@@ -193,6 +193,51 @@ public sealed class RenderWareSceneArchiveTests : IDisposable
     }
 
     [Fact]
+    public void SplineDocumentRoundTripsUnknownHeaderAndSuffixBytes()
+    {
+        byte[] spline = CreateSpline([Vector3.Zero, Vector3.UnitX, Vector3.UnitY], type: 7, suffix: [0xAA, 0xBB]);
+
+        StadiumSplineDocument document = StadiumSplineDocument.Parse("Fields/Test/path.spl", spline);
+
+        Assert.False(document.IsChanged);
+        Assert.Equal(7, document.SplineType);
+        Assert.Equal("data/Fields/Test/path.spl", document.SourcePath);
+        Assert.Equal(spline, document.Serialize());
+    }
+
+    [Fact]
+    public void SplineDocumentAddsMovesEditsDeletesAndResetsPointsSafely()
+    {
+        byte[] spline = CreateSpline([Vector3.Zero, new Vector3(10, 0, 0), new Vector3(20, 0, 0)], type: 2);
+        StadiumSplineDocument document = StadiumSplineDocument.Parse("data/test.spl", spline);
+
+        int inserted = document.InsertAfter(0, new Vector3(5, 0, 0));
+        document.SetPoint(inserted, new Vector3(6, 1, 2));
+        inserted = document.Move(inserted, 1);
+        int remaining = document.RemoveAt(inserted);
+        document.SetPoint(remaining, new Vector3(11, 2, 3));
+        byte[] changed = document.Serialize();
+
+        Assert.Equal(3, document.Points.Count);
+        Assert.Equal(3, BitConverter.ToInt32(changed, 0x2c));
+        Assert.Equal(changed.Length - 12, BitConverter.ToInt32(changed, 4));
+        Assert.True(document.IsChanged);
+        document.Reset();
+        Assert.False(document.IsChanged);
+        Assert.Equal(3, document.Points.Count);
+        Assert.InRange(remaining, 0, 2);
+    }
+
+    [Fact]
+    public void SplineDocumentRefusesToDeleteBelowTwoPoints()
+    {
+        StadiumSplineDocument document = StadiumSplineDocument.Parse("data/test.spl",
+            CreateSpline([Vector3.Zero, Vector3.UnitX], type: 1));
+
+        Assert.Throws<InvalidOperationException>(() => document.RemoveAt(0));
+    }
+
+    [Fact]
     public void ResolvesRetailAmbientModelWithArgumentsAfterItsFilename()
     {
         Directory.CreateDirectory(_temp);
@@ -379,6 +424,21 @@ public sealed class RenderWareSceneArchiveTests : IDisposable
             writer.Write(image);
             writer.Write(texture);
         });
+    }
+
+    private static byte[] CreateSpline(IReadOnlyList<Vector3> points, int type, byte[]? suffix = null)
+    {
+        suffix ??= [];
+        byte[] data = new byte[0x34 + points.Count * 12 + suffix.Length];
+        BitConverter.GetBytes(0x0cU).CopyTo(data, 0);
+        BitConverter.GetBytes(data.Length - 12).CopyTo(data, 4);
+        BitConverter.GetBytes(0x1803ffffU).CopyTo(data, 8);
+        for (int index = 12; index < 0x2c; index++) data[index] = (byte)(index * 3);
+        BitConverter.GetBytes(points.Count).CopyTo(data, 0x2c);
+        BitConverter.GetBytes(type).CopyTo(data, 0x30);
+        for (int index = 0; index < points.Count; index++) WriteVector(data, 0x34 + index * 12, points[index]);
+        suffix.CopyTo(data, data.Length - suffix.Length);
+        return data;
     }
 
     private static byte[] Chunk(uint id, Action<BinaryWriter> write)

@@ -49,13 +49,19 @@ public sealed class StadiumEnvironmentArchive
         return new StadiumEnvironmentArchive(metPath, stadiums);
     }
 
-    public StadiumEnvironmentSaveResult SaveWithBackup()
+    public StadiumEnvironmentSaveResult SaveWithBackup(
+        IReadOnlyDictionary<string, byte[]>? splineReplacements = null)
     {
         Dictionary<string, byte[]> replacements = Stadiums.Where(stadium => stadium.IsChanged)
             .ToDictionary(stadium => stadium.SourcePath, stadium => stadium.Serialize(), StringComparer.OrdinalIgnoreCase);
+        int changedStadiums = replacements.Count;
+        if (splineReplacements != null)
+            foreach ((string path, byte[] data) in splineReplacements)
+                replacements[path] = data;
         METArchiveBatchSaveResult result = METArchiveBatchEditor.SaveWithBackup(
             _metPath, replacements, "stadium-environment");
-        return new StadiumEnvironmentSaveResult(result.BackupPath, result.ChangedEntryCount, result.RebuiltArchive);
+        return new StadiumEnvironmentSaveResult(result.BackupPath, changedStadiums, result.RebuiltArchive,
+            splineReplacements?.Count ?? 0);
     }
 
     public void ResetAll()
@@ -120,4 +126,8 @@ public sealed class StadiumEnvironment
     public override string ToString() => DisplayName;
 }
 
-public sealed record StadiumEnvironmentSaveResult(string? BackupPath, int ChangedStadiumCount, bool RebuiltArchive);
+public sealed record StadiumEnvironmentSaveResult(
+    string? BackupPath, int ChangedStadiumCount, bool RebuiltArchive, int ChangedSplineCount = 0)
+{
+    public int ChangedEntryCount => ChangedStadiumCount + ChangedSplineCount;
+}

@@ -34,7 +34,8 @@ public static class StadiumAmbientPreviewBuilder
         IDictionary<string, RenderWareScene> modelCache,
         int selectedAmbient,
         bool showModels,
-        bool showDisabled)
+        bool showDisabled,
+        IReadOnlyDictionary<string, StadiumSplineDocument>? splineDocuments = null)
     {
         ArgumentNullException.ThrowIfNull(archive);
         ArgumentNullException.ThrowIfNull(stadium);
@@ -64,7 +65,8 @@ public static class StadiumAmbientPreviewBuilder
                 : archive.FindAmbientModel(pathValue, modelValue, stadium.FolderName);
             if (asset != null) resolvedModels++;
 
-            IReadOnlyList<Vector3> pathPoints = ReadSpline(archive, Setting(ambient, "spline"));
+            IReadOnlyList<Vector3> pathPoints = ReadSpline(
+                archive, Setting(ambient, "spline"), splineDocuments);
             if (pathPoints.Count > 1) paths++;
             Vector3? position = ReadPosition(ambient, pathPoints);
             Vector3 hpr = ReadHpr(ambient);
@@ -271,12 +273,14 @@ public static class StadiumAmbientPreviewBuilder
         return relative == null ? Vector3.Zero : new Vector3(relative[3], relative[4], relative[5]);
     }
 
-    private static IReadOnlyList<Vector3> ReadSpline(RenderWareSceneArchive archive, string? value)
+    private static IReadOnlyList<Vector3> ReadSpline(RenderWareSceneArchive archive, string? value,
+        IReadOnlyDictionary<string, StadiumSplineDocument>? splineDocuments)
     {
         if (string.IsNullOrWhiteSpace(value)) return [];
-        string path = value.Split(';', 2)[0].Trim().TrimStart('/').Replace('\\', '/');
-        byte[]? data = archive.ReadRawPath(path.StartsWith("data/", StringComparison.OrdinalIgnoreCase)
-            ? path : "data/" + path);
+        string path = StadiumSplineDocument.NormalizePath(value);
+        if (splineDocuments?.TryGetValue(path, out StadiumSplineDocument? document) == true)
+            return document.Points;
+        byte[]? data = archive.ReadRawPath(path);
         return data == null ? [] : ParseSpline(data);
     }
 

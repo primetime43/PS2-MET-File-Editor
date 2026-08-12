@@ -7,6 +7,7 @@ internal sealed class RenderWareDetachedPreviewForm : Form
 {
     private readonly RenderWareScenePreviewControl _preview = new() { Dock = DockStyle.Fill };
     private readonly BackyardCameraPreset? _initialCamera;
+    public event EventHandler<RenderWarePreviewGuideClickedEventArgs>? GuideClicked;
 
     public RenderWareDetachedPreviewForm(RenderWareScene scene, bool perspective, bool hideBackdrop,
         bool showHelpers, bool cullBackfaces, bool wireframe,
@@ -30,6 +31,7 @@ internal sealed class RenderWareDetachedPreviewForm : Form
         _preview.Wireframe = wireframe;
         _preview.EnvironmentLight = environmentLight ?? Vector4.One;
         _preview.Guides = guides ?? [];
+        _preview.GuideClicked += (_, e) => GuideClicked?.Invoke(this, e);
         _preview.ShowGuideMarkers = true;
         _preview.ShowGuidePaths = true;
         _preview.ShowAllGuidePaths = false;
