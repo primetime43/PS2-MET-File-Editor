@@ -91,6 +91,31 @@ public sealed class RenderWareSceneArchiveTests : IDisposable
         Assert.Null(failure);
     }
 
+    [Fact]
+    public void DetachedPreviewOpensAsIndependentResizableWindow()
+    {
+        RenderWareScene scene = RenderWareSceneParser.Parse("data/models/test.dff",
+            RenderWareAssetKind.DffModel, CreateRigidDff());
+        Exception? failure = null;
+        Thread thread = new(() =>
+        {
+            try
+            {
+                using RenderWareDetachedPreviewForm preview = new(scene, true, false, false, false, false);
+                preview.Show();
+                Application.DoEvents();
+                Assert.True(preview.MaximizeBox);
+                Assert.True(preview.ClientSize.Width >= 1200);
+                preview.Close();
+            }
+            catch (Exception exception) { failure = exception; }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        Assert.True(thread.Join(TimeSpan.FromSeconds(10)), "Detached preview test did not finish.");
+        Assert.Null(failure);
+    }
+
     private static byte[] CreateRigidDff()
     {
         byte[] clumpStruct = Chunk(0x01, writer =>
@@ -161,8 +186,8 @@ public sealed class RenderWareSceneArchiveTests : IDisposable
                 WriteVector(structure, Vector3.Zero);
                 WriteVector(structure, Vector3.UnitX);
                 WriteVector(structure, Vector3.UnitY);
-                structure.Write((ushort)0); structure.Write((ushort)0);
-                structure.Write((ushort)1); structure.Write((ushort)2);
+                structure.Write((ushort)0); structure.Write((ushort)1);
+                structure.Write((ushort)2); structure.Write((ushort)0);
             }));
             writer.Write(Chunk(0x03, _ => { }));
         });

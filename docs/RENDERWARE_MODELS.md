@@ -33,7 +33,16 @@ they remain selectable so their stream metadata and original bytes can still be 
 - Drag with the left mouse button to orbit.
 - Use the mouse wheel to zoom.
 - Double-click the preview or select **Reset View** to restore the default camera.
+- **Perspective** uses a perspective-correct camera and UV interpolation; disable it for an
+  orthographic inspection view.
+- **Hide backdrop** removes sky-box and horizon materials so the stadium can be viewed from above.
+- **Show helpers** reveals the game's `C`, `WT`, and `HR` collision/trigger helper meshes. These use
+  tiny placeholder textures and are hidden by default; the tall white Boardwalk column is its `HR`
+  helper volume, not missing stadium art.
+- **Cull backfaces** is optional because some retail props intentionally use two-sided polygons.
 - **Wireframe** makes BSP sector density and overlapping geometry easier to inspect.
+- **Open Preview...** opens the selected model or stadium in an independent, resizable window with
+  the same view switches, reset control, and a maximize button.
 
 The solid renderer uses resolved archive PNG textures for DFF materials and decodes the RWS file's
 embedded platform-independent texture dictionary. All 1,154 retail RWS textures are supported. The
@@ -82,8 +91,9 @@ The 64-byte World struct used by the retail RWS files contains:
 
 Each plane-sector struct stores its split axis/type, split value, child types, and child bounds. Each
 world-sector struct starts with a material-window base, polygon and vertex counts, tight bounds, and
-legacy fields, followed by attribute arrays controlled by the World flags. Pre-3.6 polygons are four
-16-bit values in `material, vertex0, vertex1, vertex2` order.
+legacy fields, followed by attribute arrays controlled by the World flags. These retail streams use
+the modern four-word `vertex0, vertex1, vertex2, material` triangle layout; the sector material-window
+base is added to the stored material index.
 
 This parser and exporter are the foundation for later geometry replacement and map cloning. Safe
 editing should be added only with BSP rebuilding and texture-dictionary writing, rather than copying

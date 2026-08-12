@@ -461,9 +461,9 @@ internal static class RenderWareSceneParser
             RenderWareTriangle[] triangles = new RenderWareTriangle[triangleCount];
             for (int index = 0; index < triangleCount; index++, offset += 8)
             {
-                int material = materialBase + U16(data, offset);
-                triangles[index] = new RenderWareTriangle(U16(data, offset + 2), U16(data, offset + 4),
-                    U16(data, offset + 6), material);
+                int material = materialBase + U16(data, offset + 6);
+                triangles[index] = new RenderWareTriangle(U16(data, offset), U16(data, offset + 2),
+                    U16(data, offset + 4), material);
             }
             List<RenderWareSceneVertex> vertices = new(vertexCount);
             for (int vertex = 0; vertex < vertexCount; vertex++)

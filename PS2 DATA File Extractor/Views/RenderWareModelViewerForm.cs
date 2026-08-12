@@ -18,10 +18,15 @@ public sealed class RenderWareModelViewerForm : Form
     private readonly DataGridView _materials = Grid();
     private readonly DataGridView _chunks = Grid();
     private readonly CheckBox _wireframe = new() { Text = "Wireframe", AutoSize = true };
+    private readonly CheckBox _perspective = new() { Text = "Perspective", AutoSize = true, Checked = true };
+    private readonly CheckBox _cullBackfaces = new() { Text = "Cull backfaces", AutoSize = true };
+    private readonly CheckBox _hideSkyRoof = new() { Text = "Hide backdrop", AutoSize = true, Checked = true };
+    private readonly CheckBox _showHelpers = new() { Text = "Show helpers", AutoSize = true };
     private readonly Button _rawButton = Button("Export Raw...");
     private readonly Button _objButton = Button("Export OBJ...");
     private readonly Button _textureButton = Button("Export Textures...");
     private readonly Button _mapButton = Button("Export Texture Map...");
+    private readonly Button _detachButton = Button("Open Preview...");
     private IReadOnlyList<RenderWareAssetFile> _visible = Array.Empty<RenderWareAssetFile>();
     private RenderWareAssetFile? _selectedAsset;
     private RenderWareScene? _scene;
@@ -59,10 +64,15 @@ public sealed class RenderWareModelViewerForm : Form
         _filter.SelectedIndexChanged += (_, _) => ApplyFilter();
         _assets.SelectedIndexChanged += (_, _) => LoadSelected();
         _wireframe.CheckedChanged += (_, _) => _preview.Wireframe = _wireframe.Checked;
+        _perspective.CheckedChanged += (_, _) => _preview.Perspective = _perspective.Checked;
+        _cullBackfaces.CheckedChanged += (_, _) => _preview.CullBackfaces = _cullBackfaces.Checked;
+        _hideSkyRoof.CheckedChanged += (_, _) => _preview.HideSkyRoof = _hideSkyRoof.Checked;
+        _showHelpers.CheckedChanged += (_, _) => _preview.HideHelperGeometry = !_showHelpers.Checked;
         _rawButton.Click += (_, _) => ExportRaw();
         _objButton.Click += (_, _) => ExportObj();
         _textureButton.Click += (_, _) => ExportTextures();
         _mapButton.Click += (_, _) => ExportTextureMap();
+        _detachButton.Click += (_, _) => OpenDetachedPreview();
         Shown += (_, _) =>
         {
             ApplyDefaultLayout();
@@ -139,7 +149,8 @@ public sealed class RenderWareModelViewerForm : Form
         FlowLayoutPanel actions = new() { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = false };
         Button reset = Button("Reset View"); reset.Click += (_, _) => _preview.ResetView();
         Button close = Button("Close"); close.Click += (_, _) => Close();
-        actions.Controls.AddRange(new Control[] { _wireframe, reset, _rawButton, _objButton, _textureButton, _mapButton, close });
+        actions.Controls.AddRange(new Control[] { _perspective, _hideSkyRoof, _showHelpers, _cullBackfaces,
+            _wireframe, reset, _detachButton, _rawButton, _objButton, _textureButton, _mapButton, close });
         footer.Controls.Add(_status, 0, 0); footer.Controls.Add(actions, 1, 0);
         return footer;
     }
@@ -181,6 +192,7 @@ public sealed class RenderWareModelViewerForm : Form
                                 ? $"  |  {_scene.WorldSectorCount:N0} world sectors  |  {_scene.EmbeddedClumpCount:N0} clumps" : string.Empty);
             PopulateDetails();
             _rawButton.Enabled = true; _objButton.Enabled = _scene.Meshes.Count > 0;
+            _detachButton.Enabled = _scene.Meshes.Count > 0;
             _textureButton.Enabled = _scene.Textures.Count > 0; _mapButton.Enabled = _scene.MaterialCount > 0;
             _status.Text = _scene.Warnings.Count == 0
                 ? $"Loaded {_selectedAsset.Kind}: {_selectedAsset.Size:N0} bytes."
@@ -191,7 +203,8 @@ public sealed class RenderWareModelViewerForm : Form
             _scene = null; _preview.Scene = null; ClearDetails();
             _summary.Text = _selectedAsset.Path;
             _status.Text = exception.Message;
-            _rawButton.Enabled = true; _objButton.Enabled = false; _textureButton.Enabled = false; _mapButton.Enabled = false;
+            _rawButton.Enabled = true; _objButton.Enabled = false; _textureButton.Enabled = false;
+            _mapButton.Enabled = false; _detachButton.Enabled = false;
         }
         finally { UseWaitCursor = false; }
     }
@@ -243,6 +256,15 @@ public sealed class RenderWareModelViewerForm : Form
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
         File.WriteAllBytes(dialog.FileName, _archive.ReadRaw(_selectedAsset));
         _status.Text = $"Exported original file to {dialog.FileName}.";
+    }
+
+    private void OpenDetachedPreview()
+    {
+        if (_scene == null || _scene.Meshes.Count == 0) return;
+        RenderWareDetachedPreviewForm preview = new(_scene,
+            _perspective.Checked, _hideSkyRoof.Checked, _showHelpers.Checked,
+            _cullBackfaces.Checked, _wireframe.Checked);
+        preview.Show(this);
     }
 
     private void ExportObj()

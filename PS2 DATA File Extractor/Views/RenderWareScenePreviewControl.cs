@@ -10,7 +10,8 @@ public sealed class RenderWareScenePreviewControl : Control
     private RenderWareScene? _scene;
     private float _yaw = -0.55F, _pitch = -0.28F, _zoom = 1F;
     private Point _lastMouse;
-    private bool _rotating, _wireframe;
+    private bool _rotating, _wireframe, _perspective = true, _cullBackfaces, _hideSkyRoof = true,
+        _hideHelperGeometry = true;
 
     public RenderWareScenePreviewControl()
     {
@@ -34,9 +35,36 @@ public sealed class RenderWareScenePreviewControl : Control
         set { _wireframe = value; Invalidate(); }
     }
 
+    public bool Perspective
+    {
+        get => _perspective;
+        set { _perspective = value; Invalidate(); }
+    }
+
+    public bool CullBackfaces
+    {
+        get => _cullBackfaces;
+        set { _cullBackfaces = value; Invalidate(); }
+    }
+
+    public bool HideSkyRoof
+    {
+        get => _hideSkyRoof;
+        set { _hideSkyRoof = value; Invalidate(); }
+    }
+
+    public bool HideHelperGeometry
+    {
+        get => _hideHelperGeometry;
+        set { _hideHelperGeometry = value; Invalidate(); }
+    }
+
     public void ResetView()
     {
-        _yaw = -0.55F; _pitch = -0.28F; _zoom = 1F; Invalidate();
+        _yaw = -0.55F;
+        _pitch = _scene?.Kind == RenderWareAssetKind.RwsScene ? 0.36F : -0.28F;
+        _zoom = _scene?.Kind == RenderWareAssetKind.RwsScene ? 2.1F : 1F;
+        Invalidate();
     }
 
     protected override void OnMouseDown(MouseEventArgs e)
@@ -90,7 +118,9 @@ public sealed class RenderWareScenePreviewControl : Control
 
     private void DrawSolid(Graphics graphics)
     {
-        int width = Math.Clamp(Width, 1, 640), height = Math.Clamp(Height, 1, 360);
+        float renderScale = Math.Min(1F, Math.Min(900F / Math.Max(1, Width), 500F / Math.Max(1, Height)));
+        int width = Math.Max(1, (int)MathF.Round(Width * renderScale));
+        int height = Math.Max(1, (int)MathF.Round(Height * renderScale));
         int[] pixels = new int[width * height];
         float[] depth = Enumerable.Repeat(float.MinValue, pixels.Length).ToArray();
         Projection projection = BuildProjection(width, height);
@@ -98,18 +128,20 @@ public sealed class RenderWareScenePreviewControl : Control
         {
             ScreenVertex[] screen = mesh.Vertices.Select(vertex =>
             {
-                ProjectedPoint p = Rotate(vertex.Position);
-                return new ScreenVertex(projection.CenterX + (p.X - projection.ModelCenterX) * projection.Scale,
-                    projection.CenterY - (p.Y - projection.ModelCenterY) * projection.Scale,
-                    p.Depth, vertex.TextureCoordinate.X, vertex.TextureCoordinate.Y, vertex.Color.ToArgb());
+                ProjectedVertex p = Project(vertex.Position, projection);
+                Vector3 normal = RotateVector(vertex.Normal);
+                return new ScreenVertex(p.X, p.Y, p.Depth, vertex.TextureCoordinate.X * p.InverseW,
+                    vertex.TextureCoordinate.Y * p.InverseW, p.InverseW, vertex.Color.ToArgb(), normal);
             }).ToArray();
             foreach (RenderWareTriangle triangle in mesh.Triangles)
             {
                 if (!Valid(triangle, screen.Length)) continue;
                 RenderWareMaterial material = triangle.MaterialIndex >= 0 && triangle.MaterialIndex < mesh.Materials.Count
                     ? mesh.Materials[triangle.MaterialIndex] : new RenderWareMaterial(null, Color.LightGray);
+                if (ShouldHide(material))
+                    continue;
                 Rasterize(screen[triangle.First], screen[triangle.Second], screen[triangle.Third], material,
-                    _scene.ResolveTexture(material), pixels, depth, width, height);
+                    _scene.ResolveTexture(material), pixels, depth, width, height, _perspective, _cullBackfaces);
             }
         }
         using Bitmap bitmap = new(width, height, PixelFormat.Format32bppArgb);
@@ -130,12 +162,14 @@ public sealed class RenderWareScenePreviewControl : Control
         {
             PointF[] points = mesh.Vertices.Select(vertex =>
             {
-                ProjectedPoint p = Rotate(vertex.Position);
-                return new PointF(projection.CenterX + (p.X - projection.ModelCenterX) * projection.Scale,
-                    projection.CenterY - (p.Y - projection.ModelCenterY) * projection.Scale);
+                ProjectedVertex p = Project(vertex.Position, projection);
+                return new PointF(p.X, p.Y);
             }).ToArray();
             foreach (RenderWareTriangle triangle in mesh.Triangles)
             {
+                RenderWareMaterial material = triangle.MaterialIndex >= 0 && triangle.MaterialIndex < mesh.Materials.Count
+                    ? mesh.Materials[triangle.MaterialIndex] : new RenderWareMaterial(null, Color.LightGray);
+                if (ShouldHide(material)) continue;
                 if (current++ % stride != 0 || !Valid(triangle, points.Length)) continue;
                 graphics.DrawPolygon(pen, new[] { points[triangle.First], points[triangle.Second], points[triangle.Third] });
             }
@@ -144,36 +178,70 @@ public sealed class RenderWareScenePreviewControl : Control
 
     private Projection BuildProjection(int width, int height)
     {
-        IEnumerable<ProjectedPoint> all = _scene!.Meshes.SelectMany(mesh => mesh.Vertices).Select(vertex => Rotate(vertex.Position));
+        IReadOnlyList<Vector3> all = _scene!.Meshes.SelectMany(mesh => mesh.Vertices)
+            .Select(vertex => vertex.Position).ToList();
+        Vector3 minimum = new(float.MaxValue), maximum = new(float.MinValue);
+        foreach (Vector3 point in all) { minimum = Vector3.Min(minimum, point); maximum = Vector3.Max(maximum, point); }
+        Vector3 modelCenter = (minimum + maximum) * 0.5F;
+        float radius = Math.Max(0.001F, all.Max(point => Vector3.Distance(point, modelCenter)));
+        float availableWidth = Math.Max(1, width - 28), availableHeight = Math.Max(1, height - 52);
+        float halfFov = 25F * MathF.PI / 180F;
+        float baseFocalLength = availableHeight * 0.5F / MathF.Tan(halfFov);
+        float focalLength = baseFocalLength * _zoom;
+        float cameraDistance = 0F;
+
         float minX = float.MaxValue, maxX = float.MinValue, minY = float.MaxValue, maxY = float.MinValue;
-        foreach (ProjectedPoint p in all) { minX = Math.Min(minX, p.X); maxX = Math.Max(maxX, p.X); minY = Math.Min(minY, p.Y); maxY = Math.Max(maxY, p.Y); }
+        foreach (Vector3 point in all)
+        {
+            Vector3 rotated = RotateVector(point - modelCenter);
+            minX = Math.Min(minX, rotated.X); maxX = Math.Max(maxX, rotated.X);
+            minY = Math.Min(minY, rotated.Y); maxY = Math.Max(maxY, rotated.Y);
+            cameraDistance = Math.Max(cameraDistance,
+                rotated.Z + Math.Abs(rotated.X) * baseFocalLength / (availableWidth * 0.46F));
+            cameraDistance = Math.Max(cameraDistance,
+                rotated.Z + Math.Abs(rotated.Y) * baseFocalLength / (availableHeight * 0.46F));
+        }
+        cameraDistance += radius * 0.04F;
         float rangeX = Math.Max(0.001F, maxX - minX), rangeY = Math.Max(0.001F, maxY - minY);
-        float scale = Math.Min(Math.Max(1, width - 28) / rangeX, Math.Max(1, height - 52) / rangeY) * 0.92F * _zoom;
-        return new Projection(width / 2F, height / 2F + 9, (minX + maxX) / 2F, (minY + maxY) / 2F, scale);
+        float orthographicScale = Math.Min(availableWidth / rangeX, availableHeight / rangeY) * 0.92F * _zoom;
+        return new Projection(width / 2F, height / 2F + 9, modelCenter, orthographicScale,
+            focalLength, cameraDistance, (minX + maxX) / 2F, (minY + maxY) / 2F);
     }
 
-    private ProjectedPoint Rotate(Vector3 point)
+    private ProjectedVertex Project(Vector3 point, Projection projection)
+    {
+        Vector3 rotated = RotateVector(point - projection.ModelCenter);
+        if (!_perspective)
+            return new ProjectedVertex(projection.CenterX + (rotated.X - projection.OrthographicCenterX) * projection.Scale,
+                projection.CenterY - (rotated.Y - projection.OrthographicCenterY) * projection.Scale,
+                rotated.Z, 1F);
+        float viewDistance = Math.Max(0.001F, projection.CameraDistance - rotated.Z);
+        float inverseW = 1F / viewDistance;
+        return new ProjectedVertex(projection.CenterX + rotated.X * projection.FocalLength * inverseW,
+            projection.CenterY - rotated.Y * projection.FocalLength * inverseW, inverseW, inverseW);
+    }
+
+    private Vector3 RotateVector(Vector3 point)
     {
         float cy = MathF.Cos(_yaw), sy = MathF.Sin(_yaw);
         float x = cy * point.X + sy * point.Z, z = -sy * point.X + cy * point.Z;
         float cp = MathF.Cos(_pitch), sp = MathF.Sin(_pitch);
-        return new ProjectedPoint(x, cp * point.Y - sp * z, sp * point.Y + cp * z);
+        return new Vector3(x, cp * point.Y - sp * z, sp * point.Y + cp * z);
     }
 
     private static void Rasterize(ScreenVertex a, ScreenVertex b, ScreenVertex c,
-        RenderWareMaterial material, RenderWareTexture? texture, int[] pixels, float[] depth, int width, int height)
+        RenderWareMaterial material, RenderWareTexture? texture, int[] pixels, float[] depth, int width, int height,
+        bool perspective, bool cullBackfaces)
     {
         float area = Edge(a.X, a.Y, b.X, b.Y, c.X, c.Y);
         if (Math.Abs(area) < 0.0001F) return;
+        if (cullBackfaces && area > 0F) return;
         int minX = Math.Clamp((int)MathF.Floor(MathF.Min(a.X, MathF.Min(b.X, c.X))), 0, width - 1);
         int maxX = Math.Clamp((int)MathF.Ceiling(MathF.Max(a.X, MathF.Max(b.X, c.X))), 0, width - 1);
         int minY = Math.Clamp((int)MathF.Floor(MathF.Min(a.Y, MathF.Min(b.Y, c.Y))), 0, height - 1);
         int maxY = Math.Clamp((int)MathF.Ceiling(MathF.Max(a.Y, MathF.Max(b.Y, c.Y))), 0, height - 1);
         float inverse = 1F / area;
-        Vector3 normal = Vector3.Cross(new Vector3(b.X - a.X, b.Y - a.Y, b.Depth - a.Depth),
-            new Vector3(c.X - a.X, c.Y - a.Y, c.Depth - a.Depth));
-        float shade = normal.LengthSquared() < 0.000001F ? 1F :
-            0.4F + 0.6F * Math.Abs(Vector3.Dot(Vector3.Normalize(normal), Vector3.Normalize(new Vector3(-0.25F, -0.45F, 1F))));
+        Vector3 light = Vector3.Normalize(new Vector3(-0.35F, 0.65F, 0.55F));
         for (int y = minY; y <= maxY; y++) for (int x = minX; x <= maxX; x++)
         {
             float px = x + 0.5F, py = y + 0.5F;
@@ -181,16 +249,25 @@ public sealed class RenderWareScenePreviewControl : Control
             float w1 = Edge(c.X, c.Y, a.X, a.Y, px, py) * inverse;
             float w2 = 1F - w0 - w1;
             if (w0 < -0.0001F || w1 < -0.0001F || w2 < -0.0001F) continue;
-            float z = a.Depth * w0 + b.Depth * w1 + c.Depth * w2;
+            float inverseW = a.InverseW * w0 + b.InverseW * w1 + c.InverseW * w2;
+            if (inverseW <= 0) continue;
+            float p0 = perspective ? a.InverseW * w0 / inverseW : w0;
+            float p1 = perspective ? b.InverseW * w1 / inverseW : w1;
+            float p2 = perspective ? c.InverseW * w2 / inverseW : w2;
+            float z = perspective ? inverseW : a.Depth * w0 + b.Depth * w1 + c.Depth * w2;
             int pixel = y * width + x;
             if (z <= depth[pixel]) continue;
+            float u = (a.UOverW * w0 + b.UOverW * w1 + c.UOverW * w2) / inverseW;
+            float v = (a.VOverW * w0 + b.VOverW * w1 + c.VOverW * w2) / inverseW;
             int color = texture == null ? unchecked((int)0xFFFFFFFF) : Sample(texture,
-                a.U * w0 + b.U * w1 + c.U * w2, a.V * w0 + b.V * w1 + c.V * w2,
-                material.AddressU, material.AddressV);
-            float vertexRed = InterpolateChannel(a.Color, b.Color, c.Color, 16, w0, w1, w2) / 255F;
-            float vertexGreen = InterpolateChannel(a.Color, b.Color, c.Color, 8, w0, w1, w2) / 255F;
-            float vertexBlue = InterpolateChannel(a.Color, b.Color, c.Color, 0, w0, w1, w2) / 255F;
-            float vertexAlpha = InterpolateChannel(a.Color, b.Color, c.Color, 24, w0, w1, w2) / 255F;
+                u, v, material.AddressU, material.AddressV);
+            float vertexRed = InterpolateChannel(a.Color, b.Color, c.Color, 16, p0, p1, p2) / 255F;
+            float vertexGreen = InterpolateChannel(a.Color, b.Color, c.Color, 8, p0, p1, p2) / 255F;
+            float vertexBlue = InterpolateChannel(a.Color, b.Color, c.Color, 0, p0, p1, p2) / 255F;
+            float vertexAlpha = InterpolateChannel(a.Color, b.Color, c.Color, 24, p0, p1, p2) / 255F;
+            Vector3 normal = a.Normal * p0 + b.Normal * p1 + c.Normal * p2;
+            float shade = normal.LengthSquared() < 0.000001F ? 1F :
+                0.38F + 0.62F * Math.Abs(Vector3.Dot(Vector3.Normalize(normal), light));
             int alpha = (int)(((color >>> 24) & 0xFF) * material.Color.A / 255F * vertexAlpha);
             if (alpha < 24) continue;
             int red = (int)(((color >>> 16) & 0xFF) * material.Color.R / 255F * vertexRed * shade);
@@ -216,6 +293,20 @@ public sealed class RenderWareScenePreviewControl : Control
         3 or 4 => Math.Clamp(value, 0F, 0.999999F),
         _ => value - MathF.Floor(value)
     };
+
+    private static bool IsSkyShellMaterial(string? textureName) =>
+        textureName?.Contains("sky", StringComparison.OrdinalIgnoreCase) == true ||
+        textureName?.Contains("backdrop", StringComparison.OrdinalIgnoreCase) == true ||
+        textureName?.Contains("horizon", StringComparison.OrdinalIgnoreCase) == true;
+
+    private bool ShouldHide(RenderWareMaterial material) =>
+        (_hideSkyRoof && IsSkyShellMaterial(material.TextureName)) ||
+        (_hideHelperGeometry && IsHelperMaterial(material.TextureName));
+
+    private static bool IsHelperMaterial(string? textureName) => textureName is not null &&
+        (textureName.Equals("C", StringComparison.OrdinalIgnoreCase) ||
+         textureName.Equals("WT", StringComparison.OrdinalIgnoreCase) ||
+         textureName.Equals("HR", StringComparison.OrdinalIgnoreCase));
 
     private static float InterpolateChannel(int a, int b, int c, int shift,
         float w0, float w1, float w2) =>
@@ -248,7 +339,9 @@ public sealed class RenderWareScenePreviewControl : Control
         new Rectangle(35, 35, Math.Max(1, Width - 70), Math.Max(1, Height - 70)), Color.FromArgb(220, 230, 235, 240),
         TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.WordBreak);
 
-    private readonly record struct ProjectedPoint(float X, float Y, float Depth);
-    private readonly record struct ScreenVertex(float X, float Y, float Depth, float U, float V, int Color);
-    private readonly record struct Projection(float CenterX, float CenterY, float ModelCenterX, float ModelCenterY, float Scale);
+    private readonly record struct ProjectedVertex(float X, float Y, float Depth, float InverseW);
+    private readonly record struct ScreenVertex(float X, float Y, float Depth, float UOverW, float VOverW,
+        float InverseW, int Color, Vector3 Normal);
+    private readonly record struct Projection(float CenterX, float CenterY, Vector3 ModelCenter, float Scale,
+        float FocalLength, float CameraDistance, float OrthographicCenterX, float OrthographicCenterY);
 }
