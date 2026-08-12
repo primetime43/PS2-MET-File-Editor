@@ -36,6 +36,12 @@ public sealed class StadiumEnvironmentEditorForm : Form
     {
         Text = "Show collision helpers", AutoSize = true
     };
+    private readonly NumericUpDown[] _homeRunOffset = CreateHomeRunOffsetValues();
+    private readonly NumericUpDown[] _homeRunScale = CreateHomeRunScaleValues();
+    private readonly Label _homeRunTransformStatus = new()
+    {
+        AutoSize = true, Margin = new Padding(10, 7, 0, 0), ForeColor = SystemColors.GrayText
+    };
     private readonly TextBox _rawText = new()
     {
         Dock = DockStyle.Fill,
@@ -119,6 +125,8 @@ public sealed class StadiumEnvironmentEditorForm : Form
     private StadiumAmbientPreviewResult? _ambientPreview;
     private readonly Dictionary<string, RenderWareScene> _ambientModelCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, StadiumSplineDocument> _splineDocuments = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, StadiumHomeRunBoundaryDocument> _homeRunBoundaries =
+        new(StringComparer.OrdinalIgnoreCase);
     private readonly List<AmbientPlaybackMesh> _playbackMeshes = [];
     private readonly List<RenderWareDetachedPreviewForm> _detachedPreviews = [];
     private readonly System.Windows.Forms.Timer _ambientPlaybackTimer = new() { Interval = 80 };
@@ -133,8 +141,10 @@ public sealed class StadiumEnvironmentEditorForm : Form
     private RenderWareAnimationBinding? _activeAmbientBinding;
     private RenderWareSkinnedModel? _activeAmbientModel;
     private StadiumHomeRunEvent? _pendingHomeRunEvent;
+    private string? _homeRunTransformUnavailableReason;
     private int _selectedSplinePoint = -1;
-    private bool _ambientPlaying, _updatingScrubber, _loadingSpline, _loadingAnimation, _loadingPlacement;
+    private bool _ambientPlaying, _updatingScrubber, _loadingSpline, _loadingAnimation, _loadingPlacement,
+        _loadingHomeRunTransform;
     private bool _loading;
 
     public StadiumEnvironmentEditorForm(StadiumEnvironmentArchive archive, string metPath)
@@ -157,7 +167,7 @@ public sealed class StadiumEnvironmentEditorForm : Form
             Dock = DockStyle.Top,
             Height = 50,
             Padding = new Padding(12, 8, 12, 4),
-            Text = "Create, clone, place, and edit fielddata ambient objects and movement paths while viewing the textured stadium. Lighting, cameras, positions, paths, and compatible ANM motion update immediately; particles, movies, and collision behavior still require the game."
+            Text = "Create, clone, place, and edit stadium objects while viewing the textured field. Lighting, cameras, paths, ANM motion, and the actual home-run boundary update immediately; particles, movies, and ball-collision simulation still require the game."
         };
         TableLayoutPanel selector = new()
         {
@@ -220,7 +230,11 @@ public sealed class StadiumEnvironmentEditorForm : Form
         _showDisabledAmbients.CheckedChanged += (_, _) => RefreshAmbientComposition();
         _showAmbientPaths.CheckedChanged += (_, _) => UpdatePreviewGuides();
         _showHomeRunHelpers.CheckedChanged += (_, _) =>
+        {
             _preview.HideHelperGeometry = !_showHomeRunHelpers.Checked;
+            foreach (RenderWareDetachedPreviewForm preview in _detachedPreviews.Where(form => !form.IsDisposed))
+                preview.SetShowHelpers(_showHomeRunHelpers.Checked);
+        };
         _tabs.SelectedIndexChanged += (_, _) => RefreshRawText();
         _playAmbient.Click += (_, _) => PlayAmbient();
         _pauseAmbient.Click += (_, _) => PauseAmbient();
@@ -236,6 +250,8 @@ public sealed class StadiumEnvironmentEditorForm : Form
         _splineGrid.SelectionChanged += (_, _) => SelectSplineGridPoint();
         foreach (NumericUpDown value in _ambientPosition.Concat(_ambientRotation))
             value.ValueChanged += (_, _) => PlacementValueChanged();
+        foreach (NumericUpDown value in _homeRunOffset.Concat(_homeRunScale))
+            value.ValueChanged += (_, _) => HomeRunTransformValueChanged();
         HookGrid(_fieldGrid);
         HookGrid(_collisionGrid);
         HookGrid(_ambientGrid);
@@ -442,14 +458,14 @@ public sealed class StadiumEnvironmentEditorForm : Form
     private Control BuildHomeRunEditor()
     {
         TableLayoutPanel layout = new() { Dock = DockStyle.Fill, RowCount = 3, ColumnCount = 1 };
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 82));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 124));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
 
         GroupBox boundary = new() { Text = "Home Run Boundary", Dock = DockStyle.Fill };
         TableLayoutPanel boundaryLayout = new()
         {
-            Dock = DockStyle.Fill, ColumnCount = 5, Padding = new Padding(6, 4, 6, 3)
+            Dock = DockStyle.Fill, ColumnCount = 5, RowCount = 2, Padding = new Padding(6, 4, 6, 3)
         };
         boundaryLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         boundaryLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
@@ -463,6 +479,19 @@ public sealed class StadiumEnvironmentEditorForm : Form
         _showHomeRunHelpers.Margin = new Padding(10, 7, 8, 0);
         boundaryLayout.Controls.Add(_showHomeRunHelpers, 3, 0);
         boundaryLayout.Controls.Add(_homeRunBoundaryInfo, 4, 0);
+        FlowLayoutPanel transform = new()
+        {
+            Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false, AutoScroll = true, Margin = new Padding(0, 4, 0, 0)
+        };
+        transform.Controls.Add(PlacementLabel("Move X / Y / Z:"));
+        foreach (NumericUpDown value in _homeRunOffset) transform.Controls.Add(value);
+        transform.Controls.Add(PlacementLabel("Scale X / Y / Z:"));
+        foreach (NumericUpDown value in _homeRunScale) transform.Controls.Add(value);
+        transform.Controls.Add(SplineButton("Reset Boundary", (_, _) => ResetHomeRunBoundary()));
+        transform.Controls.Add(_homeRunTransformStatus);
+        boundaryLayout.Controls.Add(transform, 0, 1);
+        boundaryLayout.SetColumnSpan(transform, 5);
         boundary.Controls.Add(boundaryLayout);
 
         SplitContainer split = new() { Dock = DockStyle.Fill, SplitterDistance = 300, FixedPanel = FixedPanel.Panel1 };
@@ -596,6 +625,20 @@ public sealed class StadiumEnvironmentEditorForm : Form
             Increment = 1, Width = 92, ThousandsSeparator = true, Margin = new Padding(2, 2, 2, 0)
         }).ToArray();
 
+    private static NumericUpDown[] CreateHomeRunOffsetValues() => Enumerable.Range(0, 3)
+        .Select(_ => new NumericUpDown
+        {
+            Minimum = -50000, Maximum = 50000, DecimalPlaces = 1, Increment = 25,
+            Width = 88, ThousandsSeparator = true, Margin = new Padding(2, 2, 2, 0)
+        }).ToArray();
+
+    private static NumericUpDown[] CreateHomeRunScaleValues() => Enumerable.Range(0, 3)
+        .Select(_ => new NumericUpDown
+        {
+            Minimum = 0.05M, Maximum = 10, DecimalPlaces = 2, Increment = 0.05M,
+            Value = 1, Width = 72, Margin = new Padding(2, 2, 2, 0)
+        }).ToArray();
+
     private Control BuildSplineEditor()
     {
         TableLayoutPanel layout = new() { Dock = DockStyle.Fill, RowCount = 3, ColumnCount = 1, Padding = new Padding(5, 2, 5, 4) };
@@ -661,6 +704,8 @@ public sealed class StadiumEnvironmentEditorForm : Form
         _preview.Scene = null;
         _preview.Guides = [];
         _activePreviewCamera = null;
+        _homeRunTransformUnavailableReason = null;
+        LoadHomeRunTransformEditor();
         if (_current == null) return;
         RenderWareAssetFile? asset = _sceneArchive.FindStadiumScene(_current.FolderName);
         if (asset == null)
@@ -673,7 +718,33 @@ public sealed class StadiumEnvironmentEditorForm : Form
         try
         {
             UseWaitCursor = true;
-            _scene = _sceneArchive.LoadScene(asset);
+            RenderWareScene loadedScene = _sceneArchive.LoadScene(asset);
+            string tag = StadiumHomeRunAnalyzer.HomeRunMaterialTag(_current.Document);
+            if (_homeRunBoundaries.TryGetValue(asset.Path, out StadiumHomeRunBoundaryDocument? existing) &&
+                existing.MaterialTag.Equals(tag, StringComparison.OrdinalIgnoreCase))
+            {
+                _scene = existing.PreviewScene;
+            }
+            else
+            {
+                if (existing?.IsChanged == true)
+                    throw new InvalidOperationException(
+                        "Reset the unsaved home-run boundary before changing its collision material tag.");
+                try
+                {
+                    StadiumHomeRunBoundaryDocument boundary = StadiumHomeRunBoundaryDocument.Create(
+                        loadedScene, _sceneArchive.ReadRaw(asset), tag);
+                    _homeRunBoundaries[asset.Path] = boundary;
+                    _scene = boundary.PreviewScene;
+                }
+                catch (InvalidDataException exception)
+                {
+                    _homeRunBoundaries.Remove(asset.Path);
+                    _scene = loadedScene;
+                    _homeRunTransformUnavailableReason = exception.Message;
+                }
+            }
+            LoadHomeRunTransformEditor();
             RebuildAmbientPreview(resetView: true);
             ConfigureAmbientPlayback();
             ApplyLivePreviewSettings();
@@ -681,6 +752,7 @@ public sealed class StadiumEnvironmentEditorForm : Form
         catch (Exception exception)
         {
             _scene = null;
+            LoadHomeRunTransformEditor();
             _preview.Scene = null;
             _previewSummary.Text = asset.Path;
             _previewStatus.Text = "Preview unavailable: " + exception.Message;
@@ -834,11 +906,77 @@ public sealed class StadiumEnvironmentEditorForm : Form
             return;
         }
         StadiumHomeRunBoundary boundary = StadiumHomeRunAnalyzer.AnalyzeBoundary(_scene, tag);
+        StadiumHomeRunBoundaryDocument? document = CurrentHomeRunBoundaryDocument();
+        string edited = document?.IsChanged == true
+            ? $"  |  moved {VectorText(document.Offset)}, scale {VectorText(document.Scale)}"
+            : string.Empty;
         _homeRunBoundaryInfo.Text = boundary.IsPresent
-            ? $"{boundary.TriangleCount:N0} tagged triangles in {boundary.MeshCount:N0} sectors  |  " +
-              $"bounds {VectorText(boundary.Minimum)} to {VectorText(boundary.Maximum)}  |  size {VectorText(boundary.Size)}"
+            ? $"{boundary.TriangleCount:N0} tagged triangles in {boundary.MeshCount:N0} mesh{(boundary.MeshCount == 1 ? string.Empty : "es")}  |  " +
+              $"bounds {VectorText(boundary.Minimum)} to {VectorText(boundary.Maximum)}  |  size {VectorText(boundary.Size)}{edited}"
             : $"The RWS contains no polygons using material '{tag}'. Home runs will not have a matching trigger surface.";
     }
+
+    private StadiumHomeRunBoundaryDocument? CurrentHomeRunBoundaryDocument()
+    {
+        string? path = _scene?.SourcePath;
+        return path != null && _homeRunBoundaries.TryGetValue(path, out StadiumHomeRunBoundaryDocument? document)
+            ? document : null;
+    }
+
+    private void LoadHomeRunTransformEditor()
+    {
+        StadiumHomeRunBoundaryDocument? document = CurrentHomeRunBoundaryDocument();
+        _loadingHomeRunTransform = true;
+        foreach (NumericUpDown value in _homeRunOffset.Concat(_homeRunScale)) value.Enabled = document != null;
+        for (int index = 0; index < 3; index++)
+        {
+            Vector3 offset = document?.Offset ?? Vector3.Zero;
+            Vector3 scale = document?.Scale ?? Vector3.One;
+            _homeRunOffset[index].Value = (decimal)(index == 0 ? offset.X : index == 1 ? offset.Y : offset.Z);
+            _homeRunScale[index].Value = (decimal)(index == 0 ? scale.X : index == 1 ? scale.Y : scale.Z);
+        }
+        _homeRunTransformStatus.Text = document == null
+            ? _homeRunTransformUnavailableReason ?? "This RWS has no isolated editable home-run clump."
+            : $"Moves {document.ChangedVertexCount:N0} HR-only vertices; saved inside the RWS.";
+        _loadingHomeRunTransform = false;
+    }
+
+    private void HomeRunTransformValueChanged()
+    {
+        if (_loadingHomeRunTransform) return;
+        StadiumHomeRunBoundaryDocument? document = CurrentHomeRunBoundaryDocument();
+        if (document == null) return;
+        try
+        {
+            Vector3 offset = Values(_homeRunOffset);
+            Vector3 scale = Values(_homeRunScale);
+            document.Apply(offset, scale);
+            _scene = document.PreviewScene;
+            _showHomeRunHelpers.Checked = true;
+            RebuildAmbientPreview();
+            UpdateSummaryAndStatus();
+        }
+        catch (Exception exception)
+        {
+            MessageBox.Show(this, exception.Message, "Unable to Move Home Run Boundary",
+                MessageBoxButtons.OK, MessageBoxIcon.Error);
+            LoadHomeRunTransformEditor();
+        }
+    }
+
+    private void ResetHomeRunBoundary()
+    {
+        StadiumHomeRunBoundaryDocument? document = CurrentHomeRunBoundaryDocument();
+        if (document == null) return;
+        document.Reset();
+        _scene = document.PreviewScene;
+        LoadHomeRunTransformEditor();
+        RebuildAmbientPreview();
+        UpdateSummaryAndStatus();
+    }
+
+    private static Vector3 Values(IReadOnlyList<NumericUpDown> values) => new(
+        (float)values[0].Value, (float)values[1].Value, (float)values[2].Value);
 
     private void ApplyHomeRunMaterialTag()
     {
@@ -847,6 +985,15 @@ public sealed class StadiumEnvironmentEditorForm : Form
         if (tag.Length == 0 || tag.IndexOfAny(new[] { '\r', '\n', ';', '{', '}' }) >= 0)
         {
             MessageBox.Show(this, "Enter one existing RWS material name without punctuation.",
+                "Home Run Material", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+        StadiumHomeRunBoundaryDocument? boundaryDocument = CurrentHomeRunBoundaryDocument();
+        if (boundaryDocument?.IsChanged == true &&
+            !boundaryDocument.MaterialTag.Equals(tag, StringComparison.OrdinalIgnoreCase))
+        {
+            MessageBox.Show(this,
+                "Reset the unsaved home-run boundary geometry before selecting a different collision material.",
                 "Home Run Material", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
@@ -859,10 +1006,13 @@ public sealed class StadiumEnvironmentEditorForm : Form
             return;
         }
         setting.Value = tag;
+        if (_scene != null && (boundaryDocument == null ||
+                              !boundaryDocument.MaterialTag.Equals(tag, StringComparison.OrdinalIgnoreCase)))
+            _homeRunBoundaries.Remove(_scene.SourcePath);
         LoadSettings(_collisionGrid, _current.Document.CollisionSettings);
         RefreshRawText();
         UpdateSummaryAndStatus();
-        UpdateHomeRunBoundary();
+        LoadStadiumScene();
         if (_scene != null && !StadiumHomeRunAnalyzer.AnalyzeBoundary(_scene, tag).IsPresent)
             MessageBox.Show(this,
                 $"The tag was changed, but this stadium RWS has no polygons using '{tag}'. " +
@@ -1871,7 +2021,24 @@ public sealed class StadiumEnvironmentEditorForm : Form
         else if (ReferenceEquals(grid, _collisionGrid) &&
                  setting.Key.Equals("homerun", StringComparison.OrdinalIgnoreCase))
         {
-            UpdateHomeRunBoundary();
+            StadiumHomeRunBoundaryDocument? boundary = CurrentHomeRunBoundaryDocument();
+            if (boundary?.IsChanged == true &&
+                !boundary.MaterialTag.Equals(setting.Value, StringComparison.OrdinalIgnoreCase))
+            {
+                setting.Value = boundary.MaterialTag;
+                LoadSettings(_collisionGrid, _current.Document.CollisionSettings);
+                RefreshRawText();
+                MessageBox.Show(this,
+                    "Reset the unsaved home-run boundary geometry before selecting a different collision material.",
+                    "Home Run Material", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+            else
+            {
+                if (_scene != null && (boundary == null ||
+                    !boundary.MaterialTag.Equals(setting.Value, StringComparison.OrdinalIgnoreCase)))
+                    _homeRunBoundaries.Remove(_scene.SourcePath);
+                LoadStadiumScene();
+            }
         }
     }
 
@@ -1907,9 +2074,11 @@ public sealed class StadiumEnvironmentEditorForm : Form
             : $"Game loads {declared} of {actual} ambient blocks";
         int changed = _archive.ChangedStadiumCount;
         int splines = _splineDocuments.Values.Count(document => document.IsChanged);
-        _status.Text = changed == 0 && splines == 0 ? "No unsaved stadium changes."
+        int boundaries = _homeRunBoundaries.Values.Count(document => document.IsChanged);
+        _status.Text = changed == 0 && splines == 0 && boundaries == 0 ? "No unsaved stadium changes."
             : $"{changed} fielddata file{(changed == 1 ? string.Empty : "s")} and " +
-              $"{splines} spline path{(splines == 1 ? string.Empty : "s")} changed.";
+              $"{splines} spline path{(splines == 1 ? string.Empty : "s")} and " +
+              $"{boundaries} home-run boundar{(boundaries == 1 ? "y" : "ies")} changed.";
     }
 
     private void ResetAll()
@@ -1918,6 +2087,7 @@ public sealed class StadiumEnvironmentEditorForm : Form
         _loading = true;
         _archive.ResetAll();
         _splineDocuments.Clear();
+        _homeRunBoundaries.Clear();
         _stadiums.Items.Clear();
         _stadiums.Items.AddRange(_archive.Stadiums.Cast<object>().ToArray());
         _stadiums.SelectedIndex = _stadiums.Items.Count == 0 ? -1 : Math.Clamp(selected, 0, _stadiums.Items.Count - 1);
@@ -1931,13 +2101,18 @@ public sealed class StadiumEnvironmentEditorForm : Form
         _fieldGrid.EndEdit();
         _collisionGrid.EndEdit();
         _ambientGrid.EndEdit();
+        _homeRunGrid.EndEdit();
         _splineGrid.EndEdit();
         int changed = _archive.ChangedStadiumCount;
         Dictionary<string, byte[]> splineChanges = _splineDocuments.Values
             .Where(document => document.IsChanged)
             .ToDictionary(document => document.SourcePath, document => document.Serialize(),
                 StringComparer.OrdinalIgnoreCase);
-        if (changed == 0 && splineChanges.Count == 0)
+        Dictionary<string, byte[]> boundaryChanges = _homeRunBoundaries.Values
+            .Where(document => document.IsChanged)
+            .ToDictionary(document => document.SourcePath, document => document.Serialize(),
+                StringComparer.OrdinalIgnoreCase);
+        if (changed == 0 && splineChanges.Count == 0 && boundaryChanges.Count == 0)
         {
             MessageBox.Show(this, "No stadium files were changed.", "Nothing to Save",
                 MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -1945,7 +2120,8 @@ public sealed class StadiumEnvironmentEditorForm : Form
         }
         if (MessageBox.Show(this,
                 $"Write {changed} fielddata file{(changed == 1 ? string.Empty : "s")} and " +
-                $"{splineChanges.Count} spline path{(splineChanges.Count == 1 ? string.Empty : "s")} to DATA.MET?\n\n" +
+                $"{splineChanges.Count} spline path{(splineChanges.Count == 1 ? string.Empty : "s")} and " +
+                $"{boundaryChanges.Count} RWS home-run boundar{(boundaryChanges.Count == 1 ? "y" : "ies")} to DATA.MET?\n\n" +
                 "A timestamped DATA.MET backup will be created first.",
                 "Save Stadium Environments", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
             return;
@@ -1954,11 +2130,12 @@ public sealed class StadiumEnvironmentEditorForm : Form
         {
             UseWaitCursor = true;
             Enabled = false;
-            StadiumEnvironmentSaveResult result = _archive.SaveWithBackup(splineChanges);
+            StadiumEnvironmentSaveResult result = _archive.SaveWithBackup(splineChanges, boundaryChanges);
             string rebuild = result.RebuiltArchive ? "\nThe archive was resized with sector alignment preserved." : string.Empty;
             MessageBox.Show(this,
                 $"Saved {result.ChangedStadiumCount} fielddata file{(result.ChangedStadiumCount == 1 ? string.Empty : "s")} and " +
-                $"{result.ChangedSplineCount} spline path{(result.ChangedSplineCount == 1 ? string.Empty : "s")}.\n\n" +
+                $"{result.ChangedSplineCount} spline path{(result.ChangedSplineCount == 1 ? string.Empty : "s")} and " +
+                $"{result.ChangedRwsCount} RWS home-run boundar{(result.ChangedRwsCount == 1 ? "y" : "ies")}.\n\n" +
                 $"Backup: {result.BackupPath}{rebuild}",
                 "Stadium Environments Saved", MessageBoxButtons.OK, MessageBoxIcon.Information);
             DialogResult = DialogResult.OK;

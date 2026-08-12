@@ -270,7 +270,14 @@ public sealed class RenderWareScene
 }
 
 public sealed record RenderWareSceneMesh(string Name, IReadOnlyList<RenderWareSceneVertex> Vertices,
-    IReadOnlyList<RenderWareTriangle> Triangles, IReadOnlyList<RenderWareMaterial> Materials, string SourceType);
+    IReadOnlyList<RenderWareTriangle> Triangles, IReadOnlyList<RenderWareMaterial> Materials, string SourceType)
+{
+    public RenderWareWorldSectorSource? WorldSectorSource { get; init; }
+    public RenderWareGeometrySource? GeometrySource { get; init; }
+}
+public sealed record RenderWareWorldSectorSource(int PositionDataOffset, int BoundsOffset);
+public sealed record RenderWareGeometrySource(
+    int PositionDataOffset, int BoundingSphereOffset, Matrix4x4 LocalToWorld);
 public readonly record struct RenderWareSceneVertex(Vector3 Position, Vector3 Normal,
     Vector2 TextureCoordinate, Color Color);
 public sealed record RenderWareChunkInfo(uint Id, string Name, int Offset, int Length, uint Version);
@@ -372,7 +379,11 @@ internal static class RenderWareSceneParser
                     vertex.TextureCoordinate, vertex.Color);
             }).ToList();
             result.Add(new RenderWareSceneMesh($"Clump atomic {atomicIndex++}", vertices,
-                geometry.Triangles, geometry.Materials, "Clump"));
+                geometry.Triangles, geometry.Materials, "Clump")
+            {
+                GeometrySource = geometry.Source == null ? null : new RenderWareGeometrySource(
+                    geometry.Source.PositionDataOffset, geometry.Source.BoundingSphereOffset, transform)
+            });
         }
         return result;
     }
@@ -440,13 +451,18 @@ internal static class RenderWareSceneParser
             triangles[index] = new RenderWareTriangle(U16(data, offset + 2), U16(data, offset),
                 U16(data, offset + 6), U16(data, offset + 4));
         Vector3[]? positions = null, normals = null;
+        GeometrySourceData? source = null;
         for (int morph = 0; morph < morphCount; morph++)
         {
+            int boundingSphereOffset = offset;
             offset += 16;
             bool hasPositions = I32(data, offset) != 0, hasNormals = I32(data, offset + 4) != 0;
             offset += 8;
+            int positionDataOffset = offset;
             Vector3[]? p = hasPositions ? ReadVectors(data, ref offset, vertexCount) : null;
             Vector3[]? n = hasNormals ? ReadVectors(data, ref offset, vertexCount) : null;
+            if (positions == null && p != null)
+                source = new GeometrySourceData(positionDataOffset, boundingSphereOffset);
             positions ??= p; normals ??= n;
         }
         if (positions == null || offset != structureEnd)
@@ -459,7 +475,7 @@ internal static class RenderWareSceneParser
         for (int vertex = 0; vertex < vertexCount; vertex++)
             vertices.Add(new RenderWareSceneVertex(positions[vertex], normals?[vertex] ?? Vector3.UnitY,
                 uv[vertex], colors[vertex]));
-        return new GeometryData(vertices, triangles, materials);
+        return new GeometryData(vertices, triangles, materials, source);
     }
 
     private static WorldResult ParseWorld(string sourcePath, byte[] data, int world)
@@ -512,6 +528,7 @@ internal static class RenderWareSceneParser
             if (headerSize < 36 || headerSize > 128 || vertexCount < 0 || triangleCount < 0)
                 throw new InvalidDataException($"'{sourcePath}' has malformed World sector arrays.");
             int offset = p + headerSize;
+            int positionDataOffset = offset;
             Vector3[] positions = ReadVectors(data, ref offset, vertexCount);
             Vector3[] normals = Enumerable.Repeat(Vector3.UnitY, vertexCount).ToArray();
             if ((flags & 0x10) != 0)
@@ -539,7 +556,10 @@ internal static class RenderWareSceneParser
             List<RenderWareSceneVertex> vertices = new(vertexCount);
             for (int vertex = 0; vertex < vertexCount; vertex++)
                 vertices.Add(new RenderWareSceneVertex(positions[vertex], normals[vertex], uv[vertex], colors[vertex]));
-            meshes.Add(new RenderWareSceneMesh($"World sector {sectorNumber}", vertices, triangles, materials, "World sector"));
+            meshes.Add(new RenderWareSceneMesh($"World sector {sectorNumber}", vertices, triangles, materials, "World sector")
+            {
+                WorldSectorSource = new RenderWareWorldSectorSource(positionDataOffset, p + 12)
+            });
         }
     }
 
@@ -764,7 +784,9 @@ internal static class RenderWareSceneParser
     private static float F32(ReadOnlySpan<byte> data, int offset) => BitConverter.Int32BitsToSingle(I32(data, offset));
 
     private sealed record GeometryData(IReadOnlyList<RenderWareSceneVertex> Vertices,
-        IReadOnlyList<RenderWareTriangle> Triangles, IReadOnlyList<RenderWareMaterial> Materials);
+        IReadOnlyList<RenderWareTriangle> Triangles, IReadOnlyList<RenderWareMaterial> Materials,
+        GeometrySourceData? Source);
+    private sealed record GeometrySourceData(int PositionDataOffset, int BoundingSphereOffset);
     private sealed record WorldResult(IReadOnlyList<RenderWareSceneMesh> Meshes, int PlaneSectors, int WorldSectors);
     private sealed record DecodedEmbeddedTexture(string Name, RenderWareTexture Texture);
     private sealed record DecodedRwImage(int Width, int Height, int[] Pixels);

@@ -50,7 +50,8 @@ public sealed class StadiumEnvironmentArchive
     }
 
     public StadiumEnvironmentSaveResult SaveWithBackup(
-        IReadOnlyDictionary<string, byte[]>? splineReplacements = null)
+        IReadOnlyDictionary<string, byte[]>? splineReplacements = null,
+        IReadOnlyDictionary<string, byte[]>? rwsReplacements = null)
     {
         Dictionary<string, byte[]> replacements = Stadiums.Where(stadium => stadium.IsChanged)
             .ToDictionary(stadium => stadium.SourcePath, stadium => stadium.Serialize(), StringComparer.OrdinalIgnoreCase);
@@ -58,10 +59,13 @@ public sealed class StadiumEnvironmentArchive
         if (splineReplacements != null)
             foreach ((string path, byte[] data) in splineReplacements)
                 replacements[path] = data;
+        if (rwsReplacements != null)
+            foreach ((string path, byte[] data) in rwsReplacements)
+                replacements[path] = data;
         METArchiveBatchSaveResult result = METArchiveBatchEditor.SaveWithBackup(
             _metPath, replacements, "stadium-environment");
         return new StadiumEnvironmentSaveResult(result.BackupPath, changedStadiums, result.RebuiltArchive,
-            splineReplacements?.Count ?? 0);
+            splineReplacements?.Count ?? 0, rwsReplacements?.Count ?? 0);
     }
 
     public void ResetAll()
@@ -157,7 +161,8 @@ public sealed class StadiumEnvironment
 }
 
 public sealed record StadiumEnvironmentSaveResult(
-    string? BackupPath, int ChangedStadiumCount, bool RebuiltArchive, int ChangedSplineCount = 0)
+    string? BackupPath, int ChangedStadiumCount, bool RebuiltArchive,
+    int ChangedSplineCount = 0, int ChangedRwsCount = 0)
 {
-    public int ChangedEntryCount => ChangedStadiumCount + ChangedSplineCount;
+    public int ChangedEntryCount => ChangedStadiumCount + ChangedSplineCount + ChangedRwsCount;
 }

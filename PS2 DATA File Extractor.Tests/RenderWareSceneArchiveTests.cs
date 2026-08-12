@@ -220,6 +220,75 @@ public sealed class RenderWareSceneArchiveTests : IDisposable
         Assert.Equal(new Vector3(6, 9, 12), boundary.Maximum);
     }
 
+    [Fact]
+    public void HomeRunBoundaryDocumentMovesAndScalesOnlyTaggedClumpVertices()
+    {
+        const int positionOffset = 32, sphereOffset = 96;
+        byte[] raw = Enumerable.Repeat((byte)0xCC, 160).ToArray();
+        RenderWareSceneVertex[] vertices =
+        [
+            new(new Vector3(-10, 0, -2), Vector3.UnitY, Vector2.Zero, Color.White),
+            new(new Vector3(10, 0, -2), Vector3.UnitY, Vector2.Zero, Color.White),
+            new(new Vector3(0, 20, 2), Vector3.UnitY, Vector2.Zero, Color.White)
+        ];
+        for (int index = 0; index < vertices.Length; index++)
+            WriteVector(raw, positionOffset + index * 12, vertices[index].Position);
+        RenderWareSceneMesh mesh = new("Home run clump", vertices,
+            [new RenderWareTriangle(0, 1, 2, 0)], [new RenderWareMaterial("HR", Color.White)], "Clump")
+        {
+            GeometrySource = new RenderWareGeometrySource(positionOffset, sphereOffset, Matrix4x4.Identity)
+        };
+        RenderWareScene scene = new("data/fields/test/test.rws", RenderWareAssetKind.RwsScene,
+            [mesh], [], 0, 0, 1, [], []);
+        StadiumHomeRunBoundaryDocument document = StadiumHomeRunBoundaryDocument.Create(scene, raw, "HR");
+
+        document.Apply(new Vector3(5, 10, -3), new Vector3(2, 0.5F, 1));
+        byte[] changed = document.Serialize();
+
+        Assert.Equal(new Vector3(-15, 15, -5), document.PreviewScene.Meshes[0].Vertices[0].Position);
+        Assert.Equal(new Vector3(25, 15, -5), document.PreviewScene.Meshes[0].Vertices[1].Position);
+        Assert.Equal(new Vector3(5, 25, -1), document.PreviewScene.Meshes[0].Vertices[2].Position);
+        Assert.Equal(-15F, BitConverter.ToSingle(changed, positionOffset));
+        Assert.Equal(0xCC, changed[0]);
+        Assert.Equal(raw.Length, changed.Length);
+        Assert.True(document.IsChanged);
+        document.Reset();
+        Assert.False(document.IsChanged);
+        Assert.Equal(raw, document.Serialize());
+    }
+
+    [Fact]
+    public void HomeRunBoundaryDocumentHonorsRotatedAndTranslatedClumpFrame()
+    {
+        const int positionOffset = 16, sphereOffset = 80;
+        byte[] raw = new byte[128];
+        Vector3[] local = [new(-2, 0, 0), new(2, 0, 0), new(0, 4, 1)];
+        Matrix4x4 frame = Matrix4x4.CreateRotationY(MathF.PI / 4) *
+                          Matrix4x4.CreateTranslation(100, 20, -50);
+        RenderWareSceneVertex[] world = local.Select(position => new RenderWareSceneVertex(
+            Vector3.Transform(position, frame), Vector3.UnitY, Vector2.Zero, Color.White)).ToArray();
+        for (int index = 0; index < local.Length; index++)
+            WriteVector(raw, positionOffset + index * 12, local[index]);
+        RenderWareSceneMesh mesh = new("HR", world,
+            [new RenderWareTriangle(0, 1, 2, 0)], [new RenderWareMaterial("HR", Color.White)], "Clump")
+        {
+            GeometrySource = new RenderWareGeometrySource(positionOffset, sphereOffset, frame)
+        };
+        RenderWareScene scene = new("field.rws", RenderWareAssetKind.RwsScene,
+            [mesh], [], 0, 0, 1, [], []);
+        StadiumHomeRunBoundaryDocument document = StadiumHomeRunBoundaryDocument.Create(scene, raw, "HR");
+        Vector3 move = new(30, 5, -10);
+
+        document.Apply(move, Vector3.One);
+
+        AssertVectorNear(world[0].Position + move, document.PreviewScene.Meshes[0].Vertices[0].Position);
+        Assert.True(Matrix4x4.Invert(frame, out Matrix4x4 inverse));
+        Vector3 expectedLocal = Vector3.Transform(world[0].Position + move, inverse);
+        byte[] changed = document.Serialize();
+        AssertVectorNear(expectedLocal, new Vector3(BitConverter.ToSingle(changed, positionOffset),
+            BitConverter.ToSingle(changed, positionOffset + 4), BitConverter.ToSingle(changed, positionOffset + 8)));
+    }
+
     [Theory]
     [InlineData(3D, 12D, 2F, true, true, 0.5F)]
     [InlineData(3D, 12D, 2F, false, true, 1F)]

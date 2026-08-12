@@ -7,6 +7,7 @@ internal sealed class RenderWareDetachedPreviewForm : Form
 {
     private readonly RenderWareScenePreviewControl _preview = new() { Dock = DockStyle.Fill };
     private readonly BackyardCameraPreset? _initialCamera;
+    private CheckBox? _helpersBox;
     public event EventHandler<RenderWarePreviewGuideClickedEventArgs>? GuideClicked;
 
     public RenderWareDetachedPreviewForm(RenderWareScene scene, bool perspective, bool hideBackdrop,
@@ -51,6 +52,12 @@ internal sealed class RenderWareDetachedPreviewForm : Form
         if (IsDisposed) return;
         _preview.SetScene(scene, resetView: false);
         _preview.Guides = guides;
+    }
+
+    public void SetShowHelpers(bool value)
+    {
+        if (_helpersBox != null) _helpersBox.Checked = value;
+        else _preview.HideHelperGeometry = !value;
     }
 
     private Control BuildToolbar(bool perspective, bool hideBackdrop, bool showHelpers,
@@ -116,6 +123,7 @@ internal sealed class RenderWareDetachedPreviewForm : Form
             value => _preview.HideSkyRoof = value);
         CheckBox helpersBox = Check("Show helpers", showHelpers,
             value => _preview.HideHelperGeometry = !value);
+        _helpersBox = helpersBox;
         CheckBox cullBox = Check("Cull backfaces", cullBackfaces,
             value => _preview.CullBackfaces = value);
         CheckBox wireframeBox = Check("Wireframe", wireframe,

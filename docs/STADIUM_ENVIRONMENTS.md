@@ -94,15 +94,23 @@ the game's ball-collision simulation.
 
 The `collision { homerun HR; }` directive does not contain coordinates. Its value is the name of an
 RWS material, and polygons assigned that material form the spatial home-run trigger surface. The tab
-therefore reports the matching triangle/sector count and its XYZ bounds, and **Show collision helpers**
+therefore reports the matching triangle/mesh count and its XYZ bounds, and **Show collision helpers**
 makes the helper geometry visible over the textured stadium. Changing the material tag can point the
 game at another material already present in that RWS, but it does not move any polygons.
 
-Actually raising, lowering, widening, or reshaping the home-run line requires moving the vertices of
-the `HR` helper mesh and rebuilding the RenderWare world BSP/collision data. The current RWS parser is
-read-only for that geometry, so the editor intentionally does not offer an unsafe coordinate edit yet.
-An external model edit alone is also insufficient unless the rebuilt RWS preserves the material and
-collision partitioning expected by the game.
+Retail analysis confirmed that every stadium stores its `HR` polygons in a separate embedded clump:
+none of those vertices are shared with the visible stadium or another collision material. The editor
+therefore exposes **Move X / Y / Z** and **Scale X / Y / Z** controls for that actual surface. X moves
+or widens the line left/right, Y raises/lowers or changes its height, and Z moves or deepens it toward
+the outfield. Scaling uses the original boundary center as its pivot. Changes appear immediately when
+collision helpers are visible, persist while switching stadiums, and **Reset Boundary** restores the
+original RWS bytes.
+
+The writer converts edited world coordinates through the clump's original frame, modifies only its
+position floats and morph-target bounding sphere, and keeps the RWS entry exactly the same size. The
+stadium's RenderWare world sectors and BSP remain untouched because the HR clump is outside that world
+geometry. Fielddata, spline, and changed RWS entries are committed together under one timestamped
+`DATA.MET` backup.
 
 ## Loader behavior recovered in Ghidra
 
@@ -157,8 +165,8 @@ preserves internal separators.
 
 ## Safety
 
-Saving writes changed `fielddata.txt` and `.spl` entries together under one timestamped `DATA.MET`
-backup. Spline serialization preserves the unknown header and any suffix data, updates the RenderWare
+Saving writes changed `fielddata.txt`, `.spl`, and home-run `.rws` entries together under one
+timestamped `DATA.MET` backup. Spline serialization preserves the unknown header and any suffix data, updates the RenderWare
 chunk length and point count, and writes XYZ as little-endian floats. If edited text or an added
 waypoint grows beyond its original entry, the shared MET rebuilder moves subsequent entries on
 2048-byte boundaries and updates offsets. A failed multi-entry save restores the original archive

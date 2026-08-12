@@ -213,6 +213,32 @@ public sealed class StadiumEnvironmentArchiveTests : IDisposable
     }
 
     [Fact]
+    public void ArchiveSavesFixedSizeRwsBoundaryWithTheOtherStadiumAssets()
+    {
+        Directory.CreateDirectory(_tempDirectory);
+        string metPath = Path.Combine(_tempDirectory, "DATA.MET");
+        CreateArchive(metPath);
+        StadiumEnvironmentArchive archive = StadiumEnvironmentArchive.Load(metPath);
+        byte[] replacement = Enumerable.Repeat((byte)0x5A, 64).ToArray();
+
+        StadiumEnvironmentSaveResult result = archive.SaveWithBackup(null,
+            new Dictionary<string, byte[]>
+            {
+                ["data/fields/test_rws/test.rws"] = replacement
+            });
+
+        Assert.Equal(1, result.ChangedRwsCount);
+        Assert.Equal(1, result.ChangedEntryCount);
+        METFileStructure structure = METFileReader.ReadMETFile(metPath);
+        FileEntry entry = structure.GetEntryByPath("data/fields/test_rws/test.rws")!;
+        using FileStream stream = File.OpenRead(metPath);
+        stream.Position = entry.Offset;
+        byte[] actual = new byte[entry.OriginalSize];
+        stream.ReadExactly(actual);
+        Assert.Equal(replacement, actual);
+    }
+
+    [Fact]
     public void StadiumEditorIncludesResizableLiveScenePreview()
     {
         Directory.CreateDirectory(_tempDirectory);
@@ -250,11 +276,13 @@ public sealed class StadiumEnvironmentArchiveTests : IDisposable
         byte[] day = Encoding.ASCII.GetBytes(Sample);
         byte[] night = Encoding.ASCII.GetBytes(Sample.Replace("Test field", "Test night"));
         byte[] spline = new byte[0x34 + 24];
+        byte[] rws = Enumerable.Range(0, 64).Select(value => (byte)value).ToArray();
         BitConverter.GetBytes(0x0cU).CopyTo(spline, 0);
         BitConverter.GetBytes(spline.Length - 12).CopyTo(spline, 4);
         BitConverter.GetBytes(2).CopyTo(spline, 0x2c);
         int splineOffset = 6144;
-        int totalLength = splineOffset + spline.Length;
+        int rwsOffset = 8192;
+        int totalLength = rwsOffset + rws.Length;
         using FileStream stream = new(path, FileMode.Create, FileAccess.ReadWrite);
         using BinaryWriter writer = new(stream);
         writer.Write(FirstOffset);
@@ -262,6 +290,7 @@ public sealed class StadiumEnvironmentArchiveTests : IDisposable
         WriteEntry(writer, FirstOffset, day.Length, "data/fields/drivein/fielddata.txt");
         WriteEntry(writer, SecondOffset, night.Length, "data/fields/driveinnight/fielddata.txt");
         WriteEntry(writer, splineOffset, spline.Length, "data/fields/drivein/path.spl");
+        WriteEntry(writer, rwsOffset, rws.Length, "data/fields/test_rws/test.rws");
         writer.Write(new byte[12]);
         stream.Position = FirstOffset;
         writer.Write(day);
@@ -269,6 +298,8 @@ public sealed class StadiumEnvironmentArchiveTests : IDisposable
         writer.Write(night);
         stream.Position = splineOffset;
         writer.Write(spline);
+        stream.Position = rwsOffset;
+        writer.Write(rws);
     }
 
     private static void WriteEntry(BinaryWriter writer, int offset, int size, string path)
