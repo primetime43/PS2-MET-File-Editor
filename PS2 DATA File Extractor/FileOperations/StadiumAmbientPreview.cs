@@ -23,6 +23,8 @@ public sealed record StadiumAmbientPreviewResult(
     int ResolvedModelCount,
     int PathCount);
 
+public sealed record StadiumAmbientPathSample(Vector3 Position, Vector3 Direction);
+
 public static class StadiumAmbientPreviewBuilder
 {
     public static StadiumAmbientPreviewResult Build(
@@ -128,6 +130,71 @@ public static class StadiumAmbientPreviewBuilder
         return points;
     }
 
+    public static StadiumAmbientPathSample SamplePath(IReadOnlyList<Vector3> points, float progress)
+    {
+        ArgumentNullException.ThrowIfNull(points);
+        if (points.Count == 0) return new StadiumAmbientPathSample(Vector3.Zero, Vector3.UnitZ);
+        if (points.Count == 1) return new StadiumAmbientPathSample(points[0], Vector3.UnitZ);
+        progress = Math.Clamp(progress, 0F, 1F);
+        float total = 0F;
+        float[] lengths = new float[points.Count - 1];
+        for (int index = 0; index < lengths.Length; index++)
+        {
+            lengths[index] = Vector3.Distance(points[index], points[index + 1]);
+            total += lengths[index];
+        }
+        if (total <= 0.000001F) return new StadiumAmbientPathSample(points[0], Vector3.UnitZ);
+        float wanted = total * progress, passed = 0F;
+        for (int index = 0; index < lengths.Length; index++)
+        {
+            float length = lengths[index];
+            if (wanted > passed + length && index < lengths.Length - 1)
+            {
+                passed += length;
+                continue;
+            }
+            Vector3 direction = length <= 0.000001F ? Vector3.UnitZ :
+                Vector3.Normalize(points[index + 1] - points[index]);
+            float amount = length <= 0.000001F ? 0F : Math.Clamp((wanted - passed) / length, 0F, 1F);
+            return new StadiumAmbientPathSample(Vector3.Lerp(points[index], points[index + 1], amount), direction);
+        }
+        Vector3 lastDirection = points[^1] - points[^2];
+        if (lastDirection.LengthSquared() <= 0.000001F) lastDirection = Vector3.UnitZ;
+        else lastDirection = Vector3.Normalize(lastDirection);
+        return new StadiumAmbientPathSample(points[^1], lastDirection);
+    }
+
+    public static float GetPreviewSpeed(FieldDataAmbient ambient)
+    {
+        ArgumentNullException.ThrowIfNull(ambient);
+        float[]? speed = Numbers(Setting(ambient, "speed"), 1);
+        if (speed is { Length: > 0 } && speed[0] > 0F) return speed[0];
+        float[]? random = Numbers(Setting(ambient, "randFloatSpeed"), 2);
+        if (random is { Length: > 1 })
+        {
+            float average = (Math.Abs(random[0]) + Math.Abs(random[1])) * 0.5F;
+            if (average > 0F) return average;
+        }
+        return 1F;
+    }
+
+    public static double EstimatePreviewDuration(FieldDataAmbient ambient) =>
+        Math.Clamp(12D / GetPreviewSpeed(ambient), 2D, 60D);
+
+    public static Matrix4x4 CreatePlaybackDelta(FieldDataAmbient ambient, Vector3 basePosition,
+        StadiumAmbientPathSample sample, bool facePath)
+    {
+        ArgumentNullException.ThrowIfNull(ambient);
+        Vector3 baseHpr = ReadHpr(ambient);
+        Vector3 currentHpr = baseHpr;
+        if (facePath && sample.Direction.LengthSquared() > 0.000001F)
+            currentHpr.X += MathF.Atan2(sample.Direction.X, sample.Direction.Z) * 180F / MathF.PI;
+        Matrix4x4 baseline = CreateTransform(basePosition, baseHpr);
+        return Matrix4x4.Invert(baseline, out Matrix4x4 inverse)
+            ? inverse * CreateTransform(sample.Position, currentHpr)
+            : Matrix4x4.CreateTranslation(sample.Position - basePosition);
+    }
+
     private static RenderWareScene GetModel(RenderWareSceneArchive archive, RenderWareAssetFile asset,
         IDictionary<string, RenderWareScene> cache)
     {
@@ -199,7 +266,9 @@ public static class StadiumAmbientPreviewBuilder
     private static Vector3 ReadHpr(FieldDataAmbient ambient)
     {
         float[]? hpr = Numbers(Setting(ambient, "hpr"), 3);
-        return hpr == null ? Vector3.Zero : new Vector3(hpr[0], hpr[1], hpr[2]);
+        if (hpr != null) return new Vector3(hpr[0], hpr[1], hpr[2]);
+        float[]? relative = Numbers(Setting(ambient, "relPosHpr"), 6);
+        return relative == null ? Vector3.Zero : new Vector3(relative[3], relative[4], relative[5]);
     }
 
     private static IReadOnlyList<Vector3> ReadSpline(RenderWareSceneArchive archive, string? value)

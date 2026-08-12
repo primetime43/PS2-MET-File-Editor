@@ -143,6 +143,56 @@ public sealed class RenderWareSceneArchiveTests : IDisposable
     }
 
     [Fact]
+    public void SamplesSplineByDistanceInsteadOfRawPointIndex()
+    {
+        Vector3[] points = [Vector3.Zero, new Vector3(10, 0, 0), new Vector3(10, 0, 30)];
+
+        StadiumAmbientPathSample quarter = StadiumAmbientPreviewBuilder.SamplePath(points, 0.25F);
+        StadiumAmbientPathSample half = StadiumAmbientPreviewBuilder.SamplePath(points, 0.5F);
+
+        Assert.Equal(new Vector3(10, 0, 0), quarter.Position);
+        Assert.Equal(new Vector3(10, 0, 10), half.Position);
+        Assert.Equal(Vector3.UnitZ, half.Direction);
+    }
+
+    [Fact]
+    public void SplineSamplingClampsEndsAndHandlesRepeatedPoints()
+    {
+        Vector3[] points = [new Vector3(4, 5, 6), new Vector3(4, 5, 6), new Vector3(7, 5, 6)];
+
+        Assert.Equal(points[0], StadiumAmbientPreviewBuilder.SamplePath(points, -2F).Position);
+        Assert.Equal(points[^1], StadiumAmbientPreviewBuilder.SamplePath(points, 2F).Position);
+    }
+
+    [Theory]
+    [InlineData("speed 3.0;", 3F, 4D)]
+    [InlineData("randFloatSpeed 2.0 4.0;", 3F, 4D)]
+    [InlineData("anim bird.anm; 0.0 0.0;", 1F, 12D)]
+    public void DerivesStablePreviewCycleFromRetailSpeedDirectives(
+        string directive, float expectedSpeed, double expectedDuration)
+    {
+        FieldDataAmbient ambient = Assert.Single(FieldDataDocument.Parse(
+            $"field {{\r\n  numAmbs 1;\r\n}}\r\namb {{\r\n  {directive}\r\n}}\r\n").Ambients);
+
+        Assert.Equal(expectedSpeed, StadiumAmbientPreviewBuilder.GetPreviewSpeed(ambient));
+        Assert.Equal(expectedDuration, StadiumAmbientPreviewBuilder.EstimatePreviewDuration(ambient));
+    }
+
+    [Fact]
+    public void PlaybackDeltaMovesPlacedModelToSampleAndFacesItsTangent()
+    {
+        FieldDataAmbient ambient = Assert.Single(FieldDataDocument.Parse(
+            "field {\r\n  numAmbs 1;\r\n}\r\namb {\r\n  pos 10 0 20;\r\n  hpr 0 0 0;\r\n}\r\n").Ambients);
+        StadiumAmbientPathSample sample = new(new Vector3(30, 0, 40), Vector3.UnitX);
+
+        Matrix4x4 delta = StadiumAmbientPreviewBuilder.CreatePlaybackDelta(
+            ambient, new Vector3(10, 0, 20), sample, facePath: true);
+
+        AssertVectorNear(new Vector3(30, 0, 40), Vector3.Transform(new Vector3(10, 0, 20), delta));
+        AssertVectorNear(Vector3.UnitX, Vector3.Normalize(Vector3.TransformNormal(Vector3.UnitZ, delta)));
+    }
+
+    [Fact]
     public void ResolvesRetailAmbientModelWithArgumentsAfterItsFilename()
     {
         Directory.CreateDirectory(_temp);
@@ -375,6 +425,11 @@ public sealed class RenderWareSceneArchiveTests : IDisposable
         BitConverter.GetBytes(value.X).CopyTo(destination, offset);
         BitConverter.GetBytes(value.Y).CopyTo(destination, offset + 4);
         BitConverter.GetBytes(value.Z).CopyTo(destination, offset + 8);
+    }
+
+    private static void AssertVectorNear(Vector3 expected, Vector3 actual)
+    {
+        Assert.InRange(Vector3.Distance(expected, actual), 0F, 0.0001F);
     }
 
     public void Dispose()

@@ -31,7 +31,8 @@ To access the .MET files, you need to extract the game files from the ISO using 
   positions, animations, and speeds across all 15 `fielddata.txt` stadium variants. Its joined textured
   RWS viewer loads the matching stadium automatically and previews ambient-light, fielddata cameras,
   placed ambient DFF models, disabled objects, and retail spline movement paths live. Ambient objects
-  can be selected from either the list or the 3D preview, with a larger detachable preview when needed.
+  can be selected from either the list or the 3D preview; path-driven objects can be played, looped,
+  scrubbed, speed-adjusted, and turned along their path in both the embedded and detachable preview.
   Loader details are documented in
   [`docs/STADIUM_ENVIRONMENTS.md`](docs/STADIUM_ENVIRONMENTS.md).
 - **Gameplay Tweaks...** on the **Game Tools** tab provides validated tabs for 285 ball, bat/power-up, field physics,

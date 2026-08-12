@@ -33,16 +33,20 @@ The preview applies these edits immediately after a grid value is committed:
 - Only the selected movement path is shown by default. **All movement paths** enables the complete
   overlay, while the detached preview provides independent marker visibility and Off/Selected/All
   path modes so field POV views stay readable.
+- A selected spline ambient can be played, paused, stopped, looped, or scrubbed. The model and its
+  marker move by distance along the path, and **Face path** turns the model toward the current path
+  tangent. The preview cycle uses the ambient's `speed` value, or the midpoint of `randFloatSpeed`,
+  with an additional 0.25x–4x viewing-rate control. Open detached previews remain synchronized.
 
 The view menu also includes the executable-derived gameplay batting POV and the normal orbit view.
 Camera previews support mouse-look, WASD movement, Q/E height adjustment, and Shift for faster
 movement. The third HPR component is roll; the lightweight software preview currently shows heading
 and pitch but does not simulate roll.
 
-The ambient overlay is a placement preview: it does not yet play an assigned ANM, move a model along
-its spline, or simulate particles and movies. Collision responses and those runtime behaviors still
-require the game. The RWS contains the static stadium mesh; the editor adds resolved ambient DFFs and
-movement guides to that mesh only for visualization.
+The ambient overlay is still a preview: spline motion is implemented, but assigned skeletal ANM
+motion, particles, movies, event triggers, and exact game-side random timing are not simulated.
+Collision responses and those runtime behaviors still require the game. The RWS contains the static
+stadium mesh; the editor adds resolved ambient DFFs and movement guides for visualization.
 
 ## Loader behavior recovered in Ghidra
 

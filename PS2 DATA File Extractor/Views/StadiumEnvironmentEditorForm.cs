@@ -1,4 +1,5 @@
 using PS2_DATA_File_Extractor.FileOperations;
+using System.Diagnostics;
 using System.Globalization;
 using System.Numerics;
 
@@ -37,6 +38,20 @@ public sealed class StadiumEnvironmentEditorForm : Form
     private readonly CheckBox _showAmbientModels = new() { Text = "Ambient models", AutoSize = true, Checked = true };
     private readonly CheckBox _showDisabledAmbients = new() { Text = "Disabled translucent", AutoSize = true, Checked = true };
     private readonly CheckBox _showAmbientPaths = new() { Text = "All movement paths", AutoSize = true };
+    private readonly Button _playAmbient = new() { Text = "Play", Width = 54, Height = 27 };
+    private readonly Button _pauseAmbient = new() { Text = "Pause", Width = 58, Height = 27 };
+    private readonly Button _stopAmbient = new() { Text = "Stop", Width = 54, Height = 27 };
+    private readonly TrackBar _ambientScrubber = new()
+    {
+        Minimum = 0, Maximum = 1000, TickStyle = TickStyle.None, Width = 125, Height = 27, AutoSize = false
+    };
+    private readonly ComboBox _ambientPlaybackRate = new()
+    {
+        DropDownStyle = ComboBoxStyle.DropDownList, Width = 58
+    };
+    private readonly CheckBox _loopAmbient = new() { Text = "Loop", AutoSize = true, Checked = true };
+    private readonly CheckBox _faceAmbientPath = new() { Text = "Face path", AutoSize = true, Checked = true };
+    private readonly Label _ambientPlaybackTime = new() { AutoSize = true, Margin = new Padding(6, 8, 4, 0) };
     private readonly Label _previewSummary = new()
     {
         Dock = DockStyle.Fill, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft
@@ -55,14 +70,23 @@ public sealed class StadiumEnvironmentEditorForm : Form
     private RenderWareScene? _previewScene;
     private StadiumAmbientPreviewResult? _ambientPreview;
     private readonly Dictionary<string, RenderWareScene> _ambientModelCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<(IList<RenderWareSceneVertex> Vertices, RenderWareSceneVertex[] Baseline)> _playbackMeshes = [];
+    private readonly List<RenderWareDetachedPreviewForm> _detachedPreviews = [];
+    private readonly System.Windows.Forms.Timer _ambientPlaybackTimer = new() { Interval = 80 };
+    private readonly Stopwatch _ambientPlaybackWatch = new();
     private Vector4 _previewLight = Vector4.One;
     private BackyardCameraPreset? _activePreviewCamera;
+    private double _ambientPlaybackPosition, _ambientPlaybackStart, _ambientPlaybackDuration;
+    private bool _ambientPlaying, _updatingScrubber;
     private bool _loading;
 
     public StadiumEnvironmentEditorForm(StadiumEnvironmentArchive archive, string metPath)
     {
         _archive = archive;
         _sceneArchive = RenderWareSceneArchive.Load(metPath);
+        _ambientPlaybackRate.Items.AddRange(new object[] { "0.25×", "0.5×", "1×", "2×", "4×" });
+        _ambientPlaybackRate.SelectedIndex = 2;
+        _ambientPlaybackTimer.Tick += AmbientPlaybackTimer_Tick;
         Text = "Stadium Editor and Live Preview - DATA.MET";
         StartPosition = FormStartPosition.CenterParent;
         ClientSize = new Size(1500, 860);
@@ -74,7 +98,7 @@ public sealed class StadiumEnvironmentEditorForm : Form
             Dock = DockStyle.Top,
             Height = 50,
             Padding = new Padding(12, 8, 12, 4),
-            Text = "Edit fielddata.txt while viewing the textured stadium and placed ambient models. Lighting, cameras, model positions, and movement paths update immediately; animation, particles, movies, and collision behavior still require the game."
+            Text = "Edit fielddata.txt while viewing the textured stadium and placed ambient models. Lighting, cameras, positions, and spline playback update immediately; particles, movies, collision behavior, and skeletal ANM motion still require the game."
         };
         TableLayoutPanel selector = new()
         {
@@ -132,16 +156,32 @@ public sealed class StadiumEnvironmentEditorForm : Form
         _stadiums.SelectedIndexChanged += (_, _) => LoadSelectedStadium();
         _ambientList.SelectedIndexChanged += (_, _) => LoadSelectedAmbient();
         _preview.GuideClicked += (_, e) => SelectAmbient(e.Key);
-        _showAmbientModels.CheckedChanged += (_, _) => RebuildAmbientPreview();
-        _showDisabledAmbients.CheckedChanged += (_, _) => RebuildAmbientPreview();
+        _showAmbientModels.CheckedChanged += (_, _) => RefreshAmbientComposition();
+        _showDisabledAmbients.CheckedChanged += (_, _) => RefreshAmbientComposition();
         _showAmbientPaths.CheckedChanged += (_, _) => UpdatePreviewGuides();
         _tabs.SelectedIndexChanged += (_, _) => RefreshRawText();
+        _playAmbient.Click += (_, _) => PlayAmbient();
+        _pauseAmbient.Click += (_, _) => PauseAmbient();
+        _stopAmbient.Click += (_, _) => StopAmbientPlayback(render: true);
+        _ambientScrubber.Scroll += (_, _) => ScrubAmbient();
+        _ambientPlaybackRate.SelectedIndexChanged += (_, _) => RebasePlaybackClock();
+        _faceAmbientPath.CheckedChanged += (_, _) => ApplyPlaybackFrame();
         HookGrid(_fieldGrid);
         HookGrid(_collisionGrid);
         HookGrid(_ambientGrid);
         Shown += (_, _) => ApplyDefaultWorkspaceLayout();
         if (_stadiums.Items.Count > 0) _stadiums.SelectedIndex = 0;
         _status.Text = $"Loaded {_archive.Stadiums.Count} stadium variants from {metPath}.";
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            CloseDetachedPreviews();
+            _ambientPlaybackTimer.Dispose();
+        }
+        base.Dispose(disposing);
     }
 
     private Control BuildWorkspace()
@@ -162,7 +202,7 @@ public sealed class StadiumEnvironmentEditorForm : Form
         };
         pane.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
         pane.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        pane.RowStyles.Add(new RowStyle(SizeType.Absolute, 128));
+        pane.RowStyles.Add(new RowStyle(SizeType.Absolute, 166));
 
         TableLayoutPanel heading = new() { Dock = DockStyle.Fill, ColumnCount = 2 };
         heading.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -173,9 +213,10 @@ public sealed class StadiumEnvironmentEditorForm : Form
         heading.Controls.Add(_previewSummary, 0, 0);
         heading.Controls.Add(openLarge, 1, 0);
 
-        TableLayoutPanel toolbar = new() { Dock = DockStyle.Fill, RowCount = 3, ColumnCount = 1 };
+        TableLayoutPanel toolbar = new() { Dock = DockStyle.Fill, RowCount = 4, ColumnCount = 1 };
         toolbar.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
         toolbar.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));
+        toolbar.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
         toolbar.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         FlowLayoutPanel actions = new()
         {
@@ -214,9 +255,25 @@ public sealed class StadiumEnvironmentEditorForm : Form
             PreviewLabel("Fielddata:"), _showAmbientModels, _showDisabledAmbients, _showAmbientPaths,
             new Label { Text = "Click a marker to select its ambient block.", AutoSize = true, Margin = new Padding(10, 8, 0, 0) }
         });
+        FlowLayoutPanel playback = new()
+        {
+            Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false, AutoScroll = true, Margin = Padding.Empty
+        };
+        _ambientScrubber.Margin = new Padding(5, 5, 5, 0);
+        foreach (CheckBox check in new[] { _loopAmbient, _faceAmbientPath })
+            check.Margin = new Padding(6, 8, 6, 0);
+        playback.Controls.AddRange(new Control[]
+        {
+            PreviewLabel("Path:"), _playAmbient, _pauseAmbient, _stopAmbient,
+            _ambientScrubber, _ambientPlaybackTime, PreviewLabel("Rate:"), _ambientPlaybackRate,
+            _loopAmbient, _faceAmbientPath
+        });
         toolbar.Controls.Add(actions, 0, 0);
         toolbar.Controls.Add(ambientActions, 0, 1);
-        toolbar.Controls.Add(_previewStatus, 0, 2);
+        toolbar.Controls.Add(playback, 0, 2);
+        toolbar.Controls.Add(_previewStatus, 0, 3);
+        UpdatePlaybackControls();
 
         pane.Controls.Add(heading, 0, 0);
         pane.Controls.Add(_preview, 0, 1);
@@ -326,6 +383,8 @@ public sealed class StadiumEnvironmentEditorForm : Form
     private void LoadSelectedStadium()
     {
         if (_loading) return;
+        StopAmbientPlayback(render: false);
+        CloseDetachedPreviews();
         _current = _stadiums.SelectedItem as StadiumEnvironment;
         if (_current == null) return;
         _source.Text = _current.SourcePath;
@@ -360,6 +419,7 @@ public sealed class StadiumEnvironmentEditorForm : Form
             UseWaitCursor = true;
             _scene = _sceneArchive.LoadScene(asset);
             RebuildAmbientPreview(resetView: true);
+            ConfigureAmbientPlayback();
             ApplyLivePreviewSettings();
         }
         catch (Exception exception)
@@ -391,6 +451,7 @@ public sealed class StadiumEnvironmentEditorForm : Form
             UpdateAmbientInfo();
             _previewSummary.Text = $"{Path.GetFileName(_scene.SourcePath)}  |  {_scene.VertexCount:N0} field vertices  |  " +
                                    $"{_ambientPreview.VisibleModelCount:N0} ambient models  |  {_ambientPreview.PathCount:N0} paths";
+            SyncDetachedPreviews();
         }
         catch (Exception exception)
         {
@@ -416,8 +477,17 @@ public sealed class StadiumEnvironmentEditorForm : Form
         int selected = (_ambientList.SelectedItem as AmbientListItem)?.Ambient.Index ?? -1;
         _preview.Guides = _ambientPreview.Items
             .Where(item => item.Anchor.HasValue)
-            .Select(item => new RenderWarePreviewGuide(item.AmbientIndex, item.Name, item.Anchor!.Value,
-                item.PathPoints, item.IsLoaded, item.AmbientIndex == selected))
+            .Select(item =>
+            {
+                Vector3 position = item.Anchor!.Value;
+                if (item.AmbientIndex == selected && item.PathPoints.Count > 1 && _ambientPlaybackDuration > 0)
+                {
+                    float progress = (float)Math.Clamp(_ambientPlaybackPosition / _ambientPlaybackDuration, 0, 1);
+                    position = StadiumAmbientPreviewBuilder.SamplePath(item.PathPoints, progress).Position;
+                }
+                return new RenderWarePreviewGuide(item.AmbientIndex, item.Name, position,
+                    item.PathPoints, item.IsLoaded, item.AmbientIndex == selected);
+            })
             .ToList();
         _preview.ShowGuideMarkers = true;
         _preview.ShowGuidePaths = true;
@@ -456,7 +526,11 @@ public sealed class StadiumEnvironmentEditorForm : Form
         string path = visual.PathPoints.Count > 1 ? $"Path: {visual.PathPoints.Count} points" : "No movement path";
         string animations = visual.Animations.Count == 0 ? "No ANM assignment" :
             "ANM: " + string.Join(", ", visual.Animations.Take(3)) + (visual.Animations.Count > 3 ? "…" : string.Empty);
-        _ambientInfo.Text = $"{visual.AssetPath ?? visual.AssetKind}  |  {position}  |  {path}\r\n{animations}  —  {visual.Note}";
+        FieldDataAmbient? ambient = SelectedAmbient();
+        string speed = ambient != null && visual.PathPoints.Count > 1
+            ? $"Field speed {StadiumAmbientPreviewBuilder.GetPreviewSpeed(ambient):0.##}; preview cycle {_ambientPlaybackDuration:0.#}s"
+            : "No spline playback";
+        _ambientInfo.Text = $"{visual.AssetPath ?? visual.AssetKind}  |  {position}  |  {path}\r\n{animations}  |  {speed}  —  {visual.Note}";
     }
 
     private void SelectAmbient(int ambientIndex)
@@ -561,7 +635,205 @@ public sealed class StadiumEnvironmentEditorForm : Form
         RenderWareDetachedPreviewForm preview = new(_previewScene, true, _preview.HideSkyRoof,
             !_preview.HideHelperGeometry, _preview.CullBackfaces, _preview.Wireframe,
             _previewLight, _activePreviewCamera, _preview.Guides);
+        _detachedPreviews.Add(preview);
+        preview.FormClosed += (_, _) => _detachedPreviews.Remove(preview);
         preview.Show(this);
+    }
+
+    private void ConfigureAmbientPlayback()
+    {
+        FieldDataAmbient? ambient = SelectedAmbient();
+        StadiumAmbientVisual? visual = SelectedAmbientVisual();
+        _ambientPlaybackPosition = 0;
+        _ambientPlaybackDuration = ambient != null && visual?.PathPoints.Count > 1
+            ? StadiumAmbientPreviewBuilder.EstimatePreviewDuration(ambient) : 0;
+        CapturePlaybackMeshes(ambient);
+        UpdatePlaybackControls();
+        UpdateAmbientInfo();
+    }
+
+    private void RefreshAmbientComposition()
+    {
+        StopAmbientPlayback(render: false);
+        RebuildAmbientPreview();
+        ConfigureAmbientPlayback();
+    }
+
+    private void PlayAmbient()
+    {
+        if (_ambientPlaybackDuration <= 0) return;
+        if (_ambientPlaybackPosition >= _ambientPlaybackDuration - 0.0001)
+            SetAmbientPlaybackPosition(0, render: true);
+        _ambientPlaybackStart = _ambientPlaybackPosition;
+        _ambientPlaybackWatch.Restart();
+        _ambientPlaying = true;
+        _ambientPlaybackTimer.Start();
+        UpdatePlaybackControls();
+    }
+
+    private void PauseAmbient()
+    {
+        if (!_ambientPlaying) return;
+        AmbientPlaybackTimer_Tick(this, EventArgs.Empty);
+        _ambientPlaying = false;
+        _ambientPlaybackTimer.Stop();
+        _ambientPlaybackWatch.Stop();
+        UpdatePlaybackControls();
+    }
+
+    private void StopAmbientPlayback(bool render)
+    {
+        _ambientPlaying = false;
+        _ambientPlaybackTimer.Stop();
+        _ambientPlaybackWatch.Reset();
+        _ambientPlaybackStart = 0;
+        SetAmbientPlaybackPosition(0, render);
+    }
+
+    private void AmbientPlaybackTimer_Tick(object? sender, EventArgs e)
+    {
+        if (!_ambientPlaying || _ambientPlaybackDuration <= 0) return;
+        double position = _ambientPlaybackStart + _ambientPlaybackWatch.Elapsed.TotalSeconds * PlaybackRate();
+        if (position >= _ambientPlaybackDuration)
+        {
+            if (_loopAmbient.Checked)
+            {
+                position %= _ambientPlaybackDuration;
+                _ambientPlaybackStart = position;
+                _ambientPlaybackWatch.Restart();
+            }
+            else
+            {
+                position = _ambientPlaybackDuration;
+                _ambientPlaying = false;
+                _ambientPlaybackTimer.Stop();
+                _ambientPlaybackWatch.Stop();
+            }
+        }
+        SetAmbientPlaybackPosition(position, render: true);
+    }
+
+    private void ScrubAmbient()
+    {
+        if (_updatingScrubber || _ambientPlaybackDuration <= 0) return;
+        double position = _ambientScrubber.Value / (double)_ambientScrubber.Maximum * _ambientPlaybackDuration;
+        SetAmbientPlaybackPosition(position, render: true);
+        if (_ambientPlaying)
+        {
+            _ambientPlaybackStart = _ambientPlaybackPosition;
+            _ambientPlaybackWatch.Restart();
+        }
+    }
+
+    private void RebasePlaybackClock()
+    {
+        if (!_ambientPlaying) return;
+        AmbientPlaybackTimer_Tick(this, EventArgs.Empty);
+        _ambientPlaybackStart = _ambientPlaybackPosition;
+        _ambientPlaybackWatch.Restart();
+    }
+
+    private void SetAmbientPlaybackPosition(double position, bool render)
+    {
+        _ambientPlaybackPosition = Math.Clamp(position, 0, Math.Max(0, _ambientPlaybackDuration));
+        UpdatePlaybackControls();
+        if (render && _ambientPlaybackDuration > 0)
+            ApplyPlaybackFrame();
+    }
+
+    private void UpdatePlaybackControls()
+    {
+        bool available = _ambientPlaybackDuration > 0;
+        _playAmbient.Enabled = available && !_ambientPlaying;
+        _pauseAmbient.Enabled = available && _ambientPlaying;
+        _stopAmbient.Enabled = available;
+        _ambientScrubber.Enabled = available;
+        _ambientPlaybackRate.Enabled = available;
+        _loopAmbient.Enabled = available;
+        _faceAmbientPath.Enabled = available;
+        _updatingScrubber = true;
+        _ambientScrubber.Value = !available ? 0 : Math.Clamp(
+            (int)Math.Round(_ambientPlaybackPosition / _ambientPlaybackDuration * _ambientScrubber.Maximum),
+            _ambientScrubber.Minimum, _ambientScrubber.Maximum);
+        _updatingScrubber = false;
+        _ambientPlaybackTime.Text = available
+            ? $"{_ambientPlaybackPosition:0.0} / {_ambientPlaybackDuration:0.0}s"
+            : "No spline selected";
+    }
+
+    private double PlaybackRate() => _ambientPlaybackRate.SelectedIndex switch
+    {
+        0 => 0.25,
+        1 => 0.5,
+        3 => 2,
+        4 => 4,
+        _ => 1
+    };
+
+    private void CapturePlaybackMeshes(FieldDataAmbient? ambient)
+    {
+        _playbackMeshes.Clear();
+        if (ambient == null || _previewScene == null) return;
+        string prefix = $"Ambient {ambient.Index + 1:00}:";
+        foreach (RenderWareSceneMesh mesh in _previewScene.Meshes.Where(item =>
+                     item.Name.StartsWith(prefix, StringComparison.Ordinal)))
+        {
+            if (mesh.Vertices is IList<RenderWareSceneVertex> vertices && !vertices.IsReadOnly)
+                _playbackMeshes.Add((vertices, vertices.ToArray()));
+        }
+    }
+
+    private void ApplyPlaybackFrame()
+    {
+        FieldDataAmbient? ambient = SelectedAmbient();
+        StadiumAmbientVisual? visual = SelectedAmbientVisual();
+        if (ambient == null || visual?.Anchor == null || visual.PathPoints.Count <= 1 ||
+            _ambientPlaybackDuration <= 0) return;
+        float progress = (float)Math.Clamp(_ambientPlaybackPosition / _ambientPlaybackDuration, 0, 1);
+        StadiumAmbientPathSample sample = StadiumAmbientPreviewBuilder.SamplePath(visual.PathPoints, progress);
+        Matrix4x4 delta = StadiumAmbientPreviewBuilder.CreatePlaybackDelta(
+            ambient, visual.Anchor.Value, sample, _faceAmbientPath.Checked);
+        foreach ((IList<RenderWareSceneVertex> vertices, RenderWareSceneVertex[] baseline) in _playbackMeshes)
+        {
+            for (int index = 0; index < baseline.Length; index++)
+            {
+                RenderWareSceneVertex vertex = baseline[index];
+                Vector3 normal = Vector3.TransformNormal(vertex.Normal, delta);
+                if (normal.LengthSquared() > 0.000001F) normal = Vector3.Normalize(normal);
+                vertices[index] = vertex with
+                {
+                    Position = Vector3.Transform(vertex.Position, delta),
+                    Normal = normal
+                };
+            }
+        }
+        UpdatePreviewGuides();
+        _preview.Invalidate();
+        SyncDetachedPreviews();
+    }
+
+    private FieldDataAmbient? SelectedAmbient() =>
+        (_ambientList.SelectedItem as AmbientListItem)?.Ambient;
+
+    private StadiumAmbientVisual? SelectedAmbientVisual()
+    {
+        int selected = SelectedAmbient()?.Index ?? -1;
+        return _ambientPreview?.Items.FirstOrDefault(item => item.AmbientIndex == selected);
+    }
+
+    private void SyncDetachedPreviews()
+    {
+        if (_previewScene == null) return;
+        foreach (RenderWareDetachedPreviewForm preview in _detachedPreviews.Where(form => !form.IsDisposed).ToList())
+            preview.UpdateScene(_previewScene, _preview.Guides);
+        _detachedPreviews.RemoveAll(form => form.IsDisposed);
+    }
+
+    private void CloseDetachedPreviews()
+    {
+        foreach (RenderWareDetachedPreviewForm preview in _detachedPreviews.ToList())
+            if (!preview.IsDisposed) preview.Close();
+        _detachedPreviews.Clear();
     }
 
     private void LoadAmbientList()
@@ -586,9 +858,11 @@ public sealed class StadiumEnvironmentEditorForm : Form
     private void LoadSelectedAmbient()
     {
         if (_loading) return;
+        StopAmbientPlayback(render: false);
         FieldDataAmbient? ambient = (_ambientList.SelectedItem as AmbientListItem)?.Ambient;
         LoadSettings(_ambientGrid, ambient?.Settings ?? Array.Empty<FieldDataSetting>());
         RebuildAmbientPreview();
+        ConfigureAmbientPlayback();
     }
 
     private void LoadSettings(DataGridView grid, IReadOnlyList<FieldDataSetting> settings)
@@ -653,8 +927,14 @@ public sealed class StadiumEnvironmentEditorForm : Form
         {
             ApplyPreviewCamera();
         }
-        if (ReferenceEquals(grid, _ambientGrid) ||
-            ReferenceEquals(grid, _fieldGrid) && setting.Key.Equals("numAmbs", StringComparison.OrdinalIgnoreCase))
+        if (ReferenceEquals(grid, _ambientGrid))
+        {
+            StopAmbientPlayback(render: false);
+            RebuildAmbientPreview();
+            ConfigureAmbientPlayback();
+        }
+        else if (ReferenceEquals(grid, _fieldGrid) &&
+                 setting.Key.Equals("numAmbs", StringComparison.OrdinalIgnoreCase))
         {
             RebuildAmbientPreview();
         }

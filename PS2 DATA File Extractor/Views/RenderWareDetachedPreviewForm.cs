@@ -44,6 +44,13 @@ internal sealed class RenderWareDetachedPreviewForm : Form
         };
     }
 
+    public void UpdateScene(RenderWareScene scene, IReadOnlyList<RenderWarePreviewGuide> guides)
+    {
+        if (IsDisposed) return;
+        _preview.SetScene(scene, resetView: false);
+        _preview.Guides = guides;
+    }
+
     private Control BuildToolbar(bool perspective, bool hideBackdrop, bool showHelpers,
         bool cullBackfaces, bool wireframe, bool hasGuides)
     {
