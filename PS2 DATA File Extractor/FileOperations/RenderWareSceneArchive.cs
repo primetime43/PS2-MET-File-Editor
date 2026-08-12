@@ -16,6 +16,26 @@ public sealed record RenderWareAssetFile(FileEntry Entry, RenderWareAssetKind Ki
 
 public sealed class RenderWareSceneArchive
 {
+    private static readonly IReadOnlyDictionary<string, string> StadiumScenePaths =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["aquadome"] = "data/fields/aquadome_rws/aquadome_ps2.rws",
+            ["boardwalk"] = "data/fields/boardwalk_rws/boardwalk_ps2.rws",
+            ["desert"] = "data/fields/desert_rws/desert_ps2.rws",
+            ["desertnight"] = "data/fields/desertnight_rws/desert_ps2_night.rws",
+            ["drivein"] = "data/fields/drivein_rws/drivein_field.rws",
+            ["driveinnight"] = "data/fields/driveinnight_rws/drivein_night.rws",
+            ["frazier"] = "data/fields/frazier_rws/frazier_field.rws",
+            ["gatorflats"] = "data/fields/gatorflats_rws/gatorflats.rws",
+            ["gatorflatsnight"] = "data/fields/gatorflatsnight_rws/gatorflats_night.rws",
+            ["memorial"] = "data/fields/memorial_rws/hem_field.rws",
+            ["quantum"] = "data/fields/quantum_rws/quantum_field.rws",
+            ["scrapyard"] = "data/fields/scrapyard_rws/scrap_ps2.rws",
+            ["steele"] = "data/fields/steele_rws/steel_ps2.rws",
+            ["wheeler"] = "data/fields/wheeler_rws/wheeler_ps2.rws",
+            ["wheelernight"] = "data/fields/wheelernight_rws/wheeler_ps2_night.rws"
+        };
+
     private readonly string _metPath;
     private readonly IReadOnlyList<FileEntry> _entries;
 
@@ -38,6 +58,16 @@ public sealed class RenderWareSceneArchive
     public int RwsCount => Assets.Count(asset => asset.Kind == RenderWareAssetKind.RwsScene);
 
     public static RenderWareSceneArchive Load(string metPath) => new(metPath, METFileReader.ReadMETFile(metPath));
+
+    public static string? GetStadiumScenePath(string folderName) =>
+        StadiumScenePaths.TryGetValue(folderName, out string? path) ? path : null;
+
+    public RenderWareAssetFile? FindStadiumScene(string folderName)
+    {
+        string? path = GetStadiumScenePath(folderName);
+        return path == null ? null : Assets.FirstOrDefault(asset =>
+            asset.Path.Replace('\\', '/').Equals(path, StringComparison.OrdinalIgnoreCase));
+    }
 
     public RenderWareScene LoadScene(RenderWareAssetFile asset)
     {

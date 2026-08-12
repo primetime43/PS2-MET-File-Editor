@@ -11,6 +11,7 @@ public sealed class RenderWareScenePreviewControl : Control
     private float _yaw = -0.55F, _pitch = -0.28F, _zoom = 1F, _panX, _panY;
     private float _fieldHeading, _fieldPitch;
     private Vector3 _fieldPosition;
+    private Vector4 _environmentLight = Vector4.One;
     private Point _lastMouse;
     private bool _rotating, _panning, _wireframe, _perspective = true, _cullBackfaces, _hideSkyRoof = true,
         _hideHelperGeometry = true, _fieldCamera;
@@ -69,6 +70,17 @@ public sealed class RenderWareScenePreviewControl : Control
     public bool IsFieldCamera => _fieldCamera;
     public float MovementSpeed { get; set; } = 900F;
     public Vector3 FieldCameraPosition => _fieldPosition;
+    public Vector4 EnvironmentLight
+    {
+        get => _environmentLight;
+        set
+        {
+            _environmentLight = new Vector4(
+                Math.Clamp(value.X, 0F, 4F), Math.Clamp(value.Y, 0F, 4F),
+                Math.Clamp(value.Z, 0F, 4F), Math.Clamp(value.W, 0F, 4F));
+            Invalidate();
+        }
+    }
 
     public void SetFieldCamera(BackyardCameraPreset preset)
     {
@@ -297,7 +309,8 @@ public sealed class RenderWareScenePreviewControl : Control
                 if (!screen[triangle.First].Visible || !screen[triangle.Second].Visible || !screen[triangle.Third].Visible)
                     continue;
                 Rasterize(screen[triangle.First], screen[triangle.Second], screen[triangle.Third], material,
-                    _scene.ResolveTexture(material), pixels, depth, width, height, _perspective, _cullBackfaces);
+                    _scene.ResolveTexture(material), pixels, depth, width, height, _perspective, _cullBackfaces,
+                    _environmentLight);
             }
         }
         using Bitmap bitmap = new(width, height, PixelFormat.Format32bppArgb);
@@ -323,7 +336,7 @@ public sealed class RenderWareScenePreviewControl : Control
         {
             Rasterize(first, ProjectFieldVertex(polygon[index], projection),
                 ProjectFieldVertex(polygon[index + 1], projection), material, texture,
-                pixels, depth, width, height, true, _cullBackfaces);
+                pixels, depth, width, height, true, _cullBackfaces, _environmentLight);
         }
     }
 
@@ -519,7 +532,7 @@ public sealed class RenderWareScenePreviewControl : Control
 
     private static void Rasterize(ScreenVertex a, ScreenVertex b, ScreenVertex c,
         RenderWareMaterial material, RenderWareTexture? texture, int[] pixels, float[] depth, int width, int height,
-        bool perspective, bool cullBackfaces)
+        bool perspective, bool cullBackfaces, Vector4 environmentLight)
     {
         float area = Edge(a.X, a.Y, b.X, b.Y, c.X, c.Y);
         if (Math.Abs(area) < 0.0001F) return;
@@ -558,9 +571,9 @@ public sealed class RenderWareScenePreviewControl : Control
                 0.38F + 0.62F * Math.Abs(Vector3.Dot(Vector3.Normalize(normal), light));
             int alpha = (int)(((color >>> 24) & 0xFF) * material.Color.A / 255F * vertexAlpha);
             if (alpha < 24) continue;
-            int red = (int)(((color >>> 16) & 0xFF) * material.Color.R / 255F * vertexRed * shade);
-            int green = (int)(((color >>> 8) & 0xFF) * material.Color.G / 255F * vertexGreen * shade);
-            int blue = (int)((color & 0xFF) * material.Color.B / 255F * vertexBlue * shade);
+            int red = (int)(((color >>> 16) & 0xFF) * material.Color.R / 255F * vertexRed * shade * environmentLight.X);
+            int green = (int)(((color >>> 8) & 0xFF) * material.Color.G / 255F * vertexGreen * shade * environmentLight.Y);
+            int blue = (int)((color & 0xFF) * material.Color.B / 255F * vertexBlue * shade * environmentLight.Z);
             pixels[pixel] = (alpha << 24) | (Math.Clamp(red, 0, 255) << 16) |
                             (Math.Clamp(green, 0, 255) << 8) | Math.Clamp(blue, 0, 255);
             depth[pixel] = z;

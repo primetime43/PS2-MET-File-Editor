@@ -13,6 +13,28 @@ amb { ... }
 The stadium editor changes recognized directive values in place. Comments, blank lines, repeated
 animation directives, unusual spacing, and unrecognized lines remain byte-for-byte unchanged.
 
+## Joined live stadium preview
+
+Selecting a stadium also loads its matching textured RenderWare `.rws` scene beside the editor.
+The split bar can resize the editor and preview, and **Open Large Preview...** opens the same scene
+in its own navigable window.
+
+The preview applies these edits immediately after a grid value is committed:
+
+- `ambLight` changes the rendered red, green, and blue light multipliers.
+- `camPos` and `camHpr` update the **Fielddata camera** view.
+- `commPos` and `commHpr` update the **Commentator camera** view.
+
+The view menu also includes the executable-derived gameplay batting POV and the normal orbit view.
+Camera previews support mouse-look, WASD movement, Q/E height adjustment, and Shift for faster
+movement. The third HPR component is roll; the lightweight software preview currently shows heading
+and pitch but does not simulate roll.
+
+Collision tags and ambient behavior are still edited in the same joined window, but their full effects
+require the game. The RWS contains the static stadium mesh; runtime collision responses, particles,
+movies, scripted ambient DFF instances, and their animations are created by game code rather than
+being baked into that static scene.
+
 ## Loader behavior recovered in Ghidra
 
 `BaseballField::LoadField` at `0x0013e520` constructs the selected field path, appends the

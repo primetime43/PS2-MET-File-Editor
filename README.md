@@ -28,8 +28,10 @@ To access the .MET files, you need to extract the game files from the ISO using 
   and batch-save textures. PNG, BMP, and JPEG imports are converted and resized to the original game
   texture dimensions. See [3D player appearances](docs/PLAYER_APPEARANCE.md).
 - **Stadium Editor...** edits lighting, cameras, collision tags, and ambient models, particles,
-  positions, animations, and speeds across all 15 `fielddata.txt` stadium variants. Loader details are
-  documented in [`docs/STADIUM_ENVIRONMENTS.md`](docs/STADIUM_ENVIRONMENTS.md).
+  positions, animations, and speeds across all 15 `fielddata.txt` stadium variants. Its joined textured
+  RWS viewer loads the matching stadium automatically and previews ambient-light and fielddata camera
+  edits live, with a larger detachable preview when needed. Loader details are documented in
+  [`docs/STADIUM_ENVIRONMENTS.md`](docs/STADIUM_ENVIRONMENTS.md).
 - **Gameplay Tweaks...** on the **Game Tools** tab provides validated tabs for 285 ball, bat/power-up, field physics,
   simulation, practice/cheat, and game-default values stored in `DATA.MET`.
 - **Animation Viewer / Editor...** parses all 2,884 RenderWare ANM files, reconstructs their unnamed
@@ -82,7 +84,9 @@ patch makes selected content available to every save in the rebuilt ISO. See
 1. Open `DATA.MET` in the MET File Editor and make any archive changes.
 2. Select **Player Editor...** in the main window to modify player names, skills, pitch ratings, identity, or
    clone appearance values directly in the game's `*_stats.dat` records.
-3. Select **Stadium Editor...** to edit field lighting, cameras, collisions, and ambient objects.
+3. Select **Stadium Editor...** to edit field lighting, cameras, collisions, and ambient objects while
+   viewing the matching textured stadium. Choose **Fielddata camera**, **Commentator camera**, or
+   **Game batting POV** above the preview to inspect the field from those coordinates.
 4. For structured game tuning, select **Gameplay Tweaks...**, edit values in the category
    tabs, and select **Save to DATA.MET**. Comments and unsupported INI keys are preserved.
 5. Save any other MET changes; resizing and backups are handled automatically.

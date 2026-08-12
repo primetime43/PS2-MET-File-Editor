@@ -1,10 +1,13 @@
 using PS2_DATA_File_Extractor.FileOperations;
+using System.Globalization;
+using System.Numerics;
 
 namespace PS2_DATA_File_Extractor;
 
 public sealed class StadiumEnvironmentEditorForm : Form
 {
     private readonly StadiumEnvironmentArchive _archive;
+    private readonly RenderWareSceneArchive _sceneArchive;
     private readonly ComboBox _stadiums = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 260 };
     private readonly Label _source = new() { AutoEllipsis = true, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft };
     private readonly Label _summary = new() { AutoSize = true, Margin = new Padding(14, 8, 0, 0) };
@@ -23,25 +26,44 @@ public sealed class StadiumEnvironmentEditorForm : Form
     };
     private readonly TabControl _tabs = new() { Dock = DockStyle.Fill };
     private readonly Label _status = new() { Dock = DockStyle.Bottom, Height = 30, Padding = new Padding(12, 5, 12, 2) };
+    private readonly SplitContainer _workspaceSplit = new() { Dock = DockStyle.Fill, FixedPanel = FixedPanel.Panel1 };
+    private readonly RenderWareScenePreviewControl _preview = new()
+    {
+        Dock = DockStyle.Fill,
+        HideSkyRoof = false,
+        HideHelperGeometry = true
+    };
+    private readonly ComboBox _previewView = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 170 };
+    private readonly Label _previewSummary = new()
+    {
+        Dock = DockStyle.Fill, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft
+    };
+    private readonly Label _previewStatus = new()
+    {
+        Dock = DockStyle.Fill, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft
+    };
     private StadiumEnvironment? _current;
+    private RenderWareScene? _scene;
+    private Vector4 _previewLight = Vector4.One;
+    private BackyardCameraPreset? _activePreviewCamera;
     private bool _loading;
 
     public StadiumEnvironmentEditorForm(StadiumEnvironmentArchive archive, string metPath)
     {
         _archive = archive;
-        Text = "Stadium Environment Editor - DATA.MET";
+        _sceneArchive = RenderWareSceneArchive.Load(metPath);
+        Text = "Stadium Editor and Live Preview - DATA.MET";
         StartPosition = FormStartPosition.CenterParent;
-        ClientSize = new Size(1060, 720);
-        MinimumSize = new Size(820, 580);
+        ClientSize = new Size(1500, 860);
+        MinimumSize = new Size(1120, 680);
         AutoScaleMode = AutoScaleMode.Dpi;
 
         Label instructions = new()
         {
             Dock = DockStyle.Top,
-            Height = 56,
+            Height = 50,
             Padding = new Padding(12, 8, 12, 4),
-            Text = "Edit stadium lighting, camera positions, collision tags, ambient models, particles, positions, " +
-                   "animations, and movement speeds stored in fielddata.txt. Unknown lines and comments are preserved."
+            Text = "Edit fielddata.txt while viewing the matching textured stadium. Ambient light and fielddata camera changes update the preview immediately; gameplay collision and ambient behavior still require the game."
         };
         TableLayoutPanel selector = new()
         {
@@ -86,7 +108,7 @@ public sealed class StadiumEnvironmentEditorForm : Form
         reset.Click += (_, _) => ResetAll();
         buttons.Controls.AddRange(new Control[] { cancel, save, reset });
 
-        Controls.Add(_tabs);
+        Controls.Add(BuildWorkspace());
         Controls.Add(_status);
         Controls.Add(buttons);
         Controls.Add(pathPanel);
@@ -102,8 +124,108 @@ public sealed class StadiumEnvironmentEditorForm : Form
         HookGrid(_fieldGrid);
         HookGrid(_collisionGrid);
         HookGrid(_ambientGrid);
+        Shown += (_, _) => ApplyDefaultWorkspaceLayout();
         if (_stadiums.Items.Count > 0) _stadiums.SelectedIndex = 0;
         _status.Text = $"Loaded {_archive.Stadiums.Count} stadium variants from {metPath}.";
+    }
+
+    private Control BuildWorkspace()
+    {
+        _workspaceSplit.Panel1.Controls.Add(_tabs);
+        _workspaceSplit.Panel2.Controls.Add(BuildPreviewPane());
+        return _workspaceSplit;
+    }
+
+    private Control BuildPreviewPane()
+    {
+        TableLayoutPanel pane = new()
+        {
+            Dock = DockStyle.Fill,
+            RowCount = 3,
+            ColumnCount = 1,
+            Padding = new Padding(6, 3, 8, 6)
+        };
+        pane.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
+        pane.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        pane.RowStyles.Add(new RowStyle(SizeType.Absolute, 94));
+
+        TableLayoutPanel heading = new() { Dock = DockStyle.Fill, ColumnCount = 2 };
+        heading.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        heading.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        _previewSummary.Font = new Font(Font, FontStyle.Bold);
+        Button openLarge = new() { Text = "Open Large Preview...", AutoSize = true, Margin = new Padding(8, 7, 2, 5) };
+        openLarge.Click += (_, _) => OpenLargePreview();
+        heading.Controls.Add(_previewSummary, 0, 0);
+        heading.Controls.Add(openLarge, 1, 0);
+
+        TableLayoutPanel toolbar = new() { Dock = DockStyle.Fill, RowCount = 2, ColumnCount = 1 };
+        toolbar.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
+        toolbar.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        FlowLayoutPanel actions = new()
+        {
+            Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false, AutoScroll = true, Margin = Padding.Empty
+        };
+        _previewView.Items.AddRange(new object[]
+        {
+            "Fit / orbit view", "Fielddata camera", "Commentator camera", "Game batting POV"
+        });
+        _previewView.SelectedIndexChanged += (_, _) => ApplyPreviewCamera();
+        _previewView.SelectedIndex = 0;
+        CheckBox backdrop = PreviewCheck("Hide backdrop", false, value => _preview.HideSkyRoof = value);
+        CheckBox helpers = PreviewCheck("Show helpers", false, value => _preview.HideHelperGeometry = !value);
+        CheckBox wireframe = PreviewCheck("Wireframe", false, value => _preview.Wireframe = value);
+        Button zoomOut = PreviewButton("Zoom −", (_, _) => _preview.ZoomOut());
+        Button zoomIn = PreviewButton("Zoom +", (_, _) => _preview.ZoomIn());
+        Button fit = PreviewButton("Fit View", (_, _) =>
+        {
+            _previewView.SelectedIndex = 0;
+            _preview.ResetView();
+        });
+        actions.Controls.AddRange(new Control[]
+        {
+            PreviewLabel("View:"), _previewView, backdrop, helpers, wireframe, zoomOut, zoomIn, fit
+        });
+        toolbar.Controls.Add(actions, 0, 0);
+        toolbar.Controls.Add(_previewStatus, 0, 1);
+
+        pane.Controls.Add(heading, 0, 0);
+        pane.Controls.Add(_preview, 0, 1);
+        pane.Controls.Add(toolbar, 0, 2);
+        return pane;
+    }
+
+    private void ApplyDefaultWorkspaceLayout()
+    {
+        int available = Math.Max(0, _workspaceSplit.ClientSize.Width - _workspaceSplit.SplitterWidth);
+        int editorMinimum = Math.Min(520, available);
+        int previewMinimum = Math.Min(480, Math.Max(0, available - editorMinimum));
+        int maximumEditor = Math.Max(editorMinimum, available - previewMinimum);
+        int desired = Math.Clamp((int)(available * 0.46F), editorMinimum, maximumEditor);
+        _workspaceSplit.Panel1MinSize = 0;
+        _workspaceSplit.Panel2MinSize = 0;
+        _workspaceSplit.SplitterDistance = desired;
+        _workspaceSplit.Panel1MinSize = editorMinimum;
+        _workspaceSplit.Panel2MinSize = Math.Min(previewMinimum, Math.Max(0, available - desired));
+    }
+
+    private static Label PreviewLabel(string text) => new()
+    {
+        Text = text, AutoSize = true, Margin = new Padding(2, 8, 4, 0)
+    };
+
+    private static CheckBox PreviewCheck(string text, bool value, Action<bool> changed)
+    {
+        CheckBox check = new() { Text = text, Checked = value, AutoSize = true, Margin = new Padding(6, 7, 2, 0) };
+        check.CheckedChanged += (_, _) => changed(check.Checked);
+        return check;
+    }
+
+    private static Button PreviewButton(string text, EventHandler clicked)
+    {
+        Button button = new() { Text = text, AutoSize = true, Margin = new Padding(4, 3, 0, 1) };
+        button.Click += clicked;
+        return button;
     }
 
     private void BuildTabs()
@@ -147,19 +269,19 @@ public sealed class StadiumEnvironmentEditorForm : Form
         };
         grid.Columns.Add(new DataGridViewTextBoxColumn
         {
-            HeaderText = "Setting", ReadOnly = true, Width = 220
+            HeaderText = "Setting", ReadOnly = true, Width = 170
         });
         grid.Columns.Add(new DataGridViewTextBoxColumn
         {
-            HeaderText = "Directive", ReadOnly = true, Width = 150
+            HeaderText = "Directive", ReadOnly = true, Width = 115
         });
         grid.Columns.Add(new DataGridViewTextBoxColumn
         {
-            HeaderText = "Value", AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill, MinimumWidth = 260
+            HeaderText = "Value", AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill, MinimumWidth = 170
         });
         grid.Columns.Add(new DataGridViewTextBoxColumn
         {
-            HeaderText = "Format", ReadOnly = true, Width = 105
+            HeaderText = "Format", ReadOnly = true, Width = 90
         });
         return grid;
     }
@@ -182,6 +304,137 @@ public sealed class StadiumEnvironmentEditorForm : Form
         LoadAmbientList();
         RefreshRawText();
         UpdateSummaryAndStatus();
+        LoadStadiumScene();
+    }
+
+    private void LoadStadiumScene()
+    {
+        _scene = null;
+        _preview.Scene = null;
+        _activePreviewCamera = null;
+        if (_current == null) return;
+        RenderWareAssetFile? asset = _sceneArchive.FindStadiumScene(_current.FolderName);
+        if (asset == null)
+        {
+            _previewSummary.Text = $"{_current.DisplayName} — no matching RWS scene";
+            _previewStatus.Text = "The fielddata remains editable, but this archive has no mapped stadium model.";
+            return;
+        }
+
+        try
+        {
+            UseWaitCursor = true;
+            _scene = _sceneArchive.LoadScene(asset);
+            _preview.Scene = _scene;
+            _previewSummary.Text = $"{Path.GetFileName(_scene.SourcePath)}  |  {_scene.VertexCount:N0} vertices  |  " +
+                                   $"{_scene.TriangleCount:N0} triangles  |  {_scene.Textures.Count:N0} textures";
+            ApplyLivePreviewSettings();
+        }
+        catch (Exception exception)
+        {
+            _scene = null;
+            _preview.Scene = null;
+            _previewSummary.Text = asset.Path;
+            _previewStatus.Text = "Preview unavailable: " + exception.Message;
+        }
+        finally
+        {
+            UseWaitCursor = false;
+        }
+    }
+
+    private void ApplyLivePreviewSettings()
+    {
+        if (_current == null || _scene == null) return;
+        ApplyPreviewLight();
+        ApplyPreviewCamera();
+        UpdateOrbitLightStatus();
+    }
+
+    private void ApplyPreviewLight()
+    {
+        if (_current == null || _scene == null) return;
+        _previewLight = ReadVector(_current.Document.FieldSettings, "ambLight", 4, Vector4.One);
+        _preview.EnvironmentLight = _previewLight;
+    }
+
+    private void UpdateOrbitLightStatus()
+    {
+        if (_previewView.SelectedIndex == 0)
+        {
+            _previewStatus.Text = $"Live ambient light: {_previewLight.X:0.##}, {_previewLight.Y:0.##}, " +
+                                  $"{_previewLight.Z:0.##}, {_previewLight.W:0.##}. Select a fielddata camera to preview camPos/camHpr edits.";
+        }
+    }
+
+    private void ApplyPreviewCamera()
+    {
+        if (_scene == null || _current == null) return;
+        BackyardCameraPreset? preset = _previewView.SelectedIndex switch
+        {
+            1 => ReadCamera("camPos", "camHpr", "Fielddata camera",
+                "Live camPos/camHpr from fielddata.txt (team-photo/presentation camera)"),
+            2 => ReadCamera("commPos", "commHpr", "Commentator camera",
+                "Live commPos/commHpr from fielddata.txt"),
+            3 => BackyardFieldCoordinates.CameraPresets[0],
+            _ => null
+        };
+        _activePreviewCamera = preset;
+        if (preset == null)
+        {
+            _preview.ResetView();
+            if (_previewView.SelectedIndex == 0)
+                _previewStatus.Text = "Orbit view. Drag to rotate, right-drag to pan, and use the mouse wheel to zoom.";
+            return;
+        }
+        _preview.SetFieldCamera(preset);
+        _previewStatus.Text = preset.Source + "  •  drag to look  •  WASD move  •  Q/E height";
+        BeginInvoke(_preview.Focus);
+    }
+
+    private BackyardCameraPreset? ReadCamera(string positionKey, string hprKey, string name, string source)
+    {
+        if (_current == null) return null;
+        float[]? position = ReadNumbers(_current.Document.FieldSettings, positionKey, 3);
+        float[]? hpr = ReadNumbers(_current.Document.FieldSettings, hprKey, 2);
+        if (position == null || hpr == null)
+        {
+            _previewStatus.Text = $"{name} needs valid {positionKey} and {hprKey} values.";
+            return null;
+        }
+        return new BackyardCameraPreset(name, new Vector3(position[0], position[1], position[2]),
+            hpr[0], hpr[1], source + "; roll is not shown by this preview");
+    }
+
+    private static Vector4 ReadVector(IReadOnlyList<FieldDataSetting> settings, string key, int count, Vector4 fallback)
+    {
+        float[]? values = ReadNumbers(settings, key, count);
+        return values == null ? fallback : new Vector4(values[0], values[1], values[2], values[3]);
+    }
+
+    private static float[]? ReadNumbers(IReadOnlyList<FieldDataSetting> settings, string key, int minimumCount)
+    {
+        string? value = settings.FirstOrDefault(setting =>
+            setting.Key.Equals(key, StringComparison.OrdinalIgnoreCase))?.Value;
+        if (value == null) return null;
+        string[] parts = value.Replace(';', ' ').Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length < minimumCount) return null;
+        float[] numbers = new float[parts.Length];
+        for (int index = 0; index < parts.Length; index++)
+        {
+            if (!float.TryParse(parts[index], NumberStyles.Float, CultureInfo.InvariantCulture, out numbers[index]) ||
+                !float.IsFinite(numbers[index])) return null;
+        }
+        return numbers;
+    }
+
+    private void OpenLargePreview()
+    {
+        if (_scene == null) return;
+        RenderWareDetachedPreviewForm preview = new(_scene, true, _preview.HideSkyRoof,
+            !_preview.HideHelperGeometry, _preview.CullBackfaces, _preview.Wireframe,
+            _previewLight, _activePreviewCamera);
+        preview.Show(this);
     }
 
     private void LoadAmbientList()
@@ -257,6 +510,21 @@ public sealed class StadiumEnvironmentEditorForm : Form
         if (setting.Key.Equals("numAmbs", StringComparison.OrdinalIgnoreCase)) LoadAmbientList();
         RefreshRawText();
         UpdateSummaryAndStatus();
+        if (ReferenceEquals(grid, _fieldGrid) && setting.Key.Equals("ambLight", StringComparison.OrdinalIgnoreCase))
+        {
+            ApplyPreviewLight();
+            UpdateOrbitLightStatus();
+        }
+        else if (ReferenceEquals(grid, _fieldGrid) &&
+                 (_previewView.SelectedIndex == 1 &&
+                  (setting.Key.Equals("camPos", StringComparison.OrdinalIgnoreCase) ||
+                   setting.Key.Equals("camHpr", StringComparison.OrdinalIgnoreCase)) ||
+                  _previewView.SelectedIndex == 2 &&
+                  (setting.Key.Equals("commPos", StringComparison.OrdinalIgnoreCase) ||
+                   setting.Key.Equals("commHpr", StringComparison.OrdinalIgnoreCase))))
+        {
+            ApplyPreviewCamera();
+        }
     }
 
     private void UseAllAmbientBlocks()

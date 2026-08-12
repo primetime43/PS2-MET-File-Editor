@@ -1,6 +1,8 @@
 using PS2_DATA_File_Extractor.FileOperations;
 using PS2_DATA_File_Extractor.Models;
+using PS2_DATA_File_Extractor;
 using System.Text;
+using System.Windows.Forms;
 
 namespace PS2_DATA_File_Extractor.Tests;
 
@@ -124,6 +126,34 @@ public sealed class StadiumEnvironmentArchiveTests : IDisposable
         Assert.True(structure.ValidateStructure().IsValid);
     }
 
+    [Fact]
+    public void StadiumEditorIncludesResizableLiveScenePreview()
+    {
+        Directory.CreateDirectory(_tempDirectory);
+        string metPath = Path.Combine(_tempDirectory, "DATA.MET");
+        CreateArchive(metPath);
+        StadiumEnvironmentArchive archive = StadiumEnvironmentArchive.Load(metPath);
+        Exception? failure = null;
+        Thread thread = new(() =>
+        {
+            try
+            {
+                using StadiumEnvironmentEditorForm editor = new(archive, metPath);
+                editor.Show();
+                Application.DoEvents();
+                Assert.True(editor.MinimumSize.Width >= 1100);
+                Assert.Contains("Live Preview", editor.Text);
+                Assert.True(ContainsControl<RenderWareScenePreviewControl>(editor));
+                editor.Close();
+            }
+            catch (Exception exception) { failure = exception; }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        Assert.True(thread.Join(TimeSpan.FromSeconds(10)), "Stadium editor test did not finish.");
+        Assert.Null(failure);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_tempDirectory)) Directory.Delete(_tempDirectory, recursive: true);
@@ -154,5 +184,14 @@ public sealed class StadiumEnvironmentArchiveTests : IDisposable
         writer.Write(size);
         writer.Write(pathBytes.Length);
         writer.Write(pathBytes);
+    }
+
+    private static bool ContainsControl<T>(Control parent) where T : Control
+    {
+        foreach (Control child in parent.Controls)
+        {
+            if (child is T || ContainsControl<T>(child)) return true;
+        }
+        return false;
     }
 }

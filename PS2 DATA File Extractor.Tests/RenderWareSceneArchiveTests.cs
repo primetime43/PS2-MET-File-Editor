@@ -96,6 +96,26 @@ public sealed class RenderWareSceneArchiveTests : IDisposable
         Assert.False(preview.IsFieldCamera);
     }
 
+    [Theory]
+    [InlineData("aquadome", "data/fields/aquadome_rws/aquadome_ps2.rws")]
+    [InlineData("driveinnight", "data/fields/driveinnight_rws/drivein_night.rws")]
+    [InlineData("memorial", "data/fields/memorial_rws/hem_field.rws")]
+    [InlineData("wheelernight", "data/fields/wheelernight_rws/wheeler_ps2_night.rws")]
+    public void StadiumFielddataFoldersMapToRetailRwsScenes(string folder, string expected)
+    {
+        Assert.Equal(expected, RenderWareSceneArchive.GetStadiumScenePath(folder));
+    }
+
+    [Fact]
+    public void PreviewAppliesLiveFielddataAmbientLight()
+    {
+        using RenderWareScenePreviewControl preview = new();
+
+        preview.EnvironmentLight = new Vector4(0.8F, 0.7F, 0.6F, 1F);
+
+        Assert.Equal(new Vector4(0.8F, 0.7F, 0.6F, 1F), preview.EnvironmentLight);
+    }
+
     [Fact]
     public void ViewerOpensAfterApplyingItsDefaultSplitterLayout()
     {
@@ -135,7 +155,8 @@ public sealed class RenderWareSceneArchiveTests : IDisposable
         {
             try
             {
-                using RenderWareDetachedPreviewForm preview = new(scene, true, false, false, false, false);
+                using RenderWareDetachedPreviewForm preview = new(scene, true, false, false, false, false,
+                    Vector4.One, BackyardFieldCoordinates.CameraPresets[0]);
                 preview.Show();
                 Application.DoEvents();
                 Assert.True(preview.MaximizeBox);

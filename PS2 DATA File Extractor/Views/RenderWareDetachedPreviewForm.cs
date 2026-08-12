@@ -1,14 +1,18 @@
 using PS2_DATA_File_Extractor.FileOperations;
+using System.Numerics;
 
 namespace PS2_DATA_File_Extractor;
 
 internal sealed class RenderWareDetachedPreviewForm : Form
 {
     private readonly RenderWareScenePreviewControl _preview = new() { Dock = DockStyle.Fill };
+    private readonly BackyardCameraPreset? _initialCamera;
 
     public RenderWareDetachedPreviewForm(RenderWareScene scene, bool perspective, bool hideBackdrop,
-        bool showHelpers, bool cullBackfaces, bool wireframe)
+        bool showHelpers, bool cullBackfaces, bool wireframe,
+        Vector4? environmentLight = null, BackyardCameraPreset? initialCamera = null)
     {
+        _initialCamera = initialCamera;
         Text = $"3D Preview - {Path.GetFileName(scene.SourcePath)}";
         StartPosition = FormStartPosition.CenterParent;
         MinimumSize = new Size(720, 480);
@@ -23,10 +27,15 @@ internal sealed class RenderWareDetachedPreviewForm : Form
         _preview.HideHelperGeometry = !showHelpers;
         _preview.CullBackfaces = cullBackfaces;
         _preview.Wireframe = wireframe;
+        _preview.EnvironmentLight = environmentLight ?? Vector4.One;
 
         Controls.Add(_preview);
         Controls.Add(BuildToolbar(perspective, hideBackdrop, showHelpers, cullBackfaces, wireframe));
-        Shown += (_, _) => _preview.ResetView();
+        Shown += (_, _) =>
+        {
+            if (_initialCamera == null) _preview.ResetView();
+            else _preview.SetFieldCamera(_initialCamera);
+        };
     }
 
     private Control BuildToolbar(bool perspective, bool hideBackdrop, bool showHelpers,
@@ -48,8 +57,9 @@ internal sealed class RenderWareDetachedPreviewForm : Form
 
         ComboBox views = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 205 };
         views.Items.Add("Fit / orbit view");
-        foreach (BackyardCameraPreset preset in BackyardFieldCoordinates.CameraPresets) views.Items.Add(preset);
-        views.SelectedIndex = 0;
+        if (_initialCamera != null) views.Items.Add(_initialCamera);
+        foreach (BackyardCameraPreset preset in BackyardFieldCoordinates.CameraPresets)
+            if (!Equals(preset, _initialCamera)) views.Items.Add(preset);
         Label cameraInfo = new()
         {
             AutoSize = true,
@@ -62,7 +72,7 @@ internal sealed class RenderWareDetachedPreviewForm : Form
             {
                 _preview.SetFieldCamera(preset);
                 cameraInfo.Text = preset.Source + "  •  WASD/QE move, drag to look";
-                BeginInvoke(_preview.Focus);
+                if (IsHandleCreated) BeginInvoke(_preview.Focus);
             }
             else
             {
@@ -70,6 +80,7 @@ internal sealed class RenderWareDetachedPreviewForm : Form
                 cameraInfo.Text = "Orbit: drag rotate • right-drag pan • wheel zoom";
             }
         };
+        views.SelectedIndex = _initialCamera == null ? 0 : 1;
         ComboBox speed = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 85 };
         speed.Items.AddRange(new object[] { "Slow", "Normal", "Fast" });
         speed.SelectedIndex = 1;
