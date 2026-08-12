@@ -40,7 +40,8 @@ public sealed class StadiumEnvironmentEditorForm : Form
     private readonly NumericUpDown[] _homeRunScale = CreateHomeRunScaleValues();
     private readonly Label _homeRunTransformStatus = new()
     {
-        AutoSize = true, Margin = new Padding(10, 7, 0, 0), ForeColor = SystemColors.GrayText
+        Dock = DockStyle.Fill, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft,
+        Margin = new Padding(5, 1, 0, 0), ForeColor = SystemColors.GrayText
     };
     private readonly TextBox _rawText = new()
     {
@@ -458,14 +459,14 @@ public sealed class StadiumEnvironmentEditorForm : Form
     private Control BuildHomeRunEditor()
     {
         TableLayoutPanel layout = new() { Dock = DockStyle.Fill, RowCount = 3, ColumnCount = 1 };
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 124));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 154));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 44));
 
         GroupBox boundary = new() { Text = "Home Run Boundary", Dock = DockStyle.Fill };
         TableLayoutPanel boundaryLayout = new()
         {
-            Dock = DockStyle.Fill, ColumnCount = 5, RowCount = 2, Padding = new Padding(6, 4, 6, 3)
+            Dock = DockStyle.Fill, ColumnCount = 5, RowCount = 4, Padding = new Padding(6, 4, 6, 3)
         };
         boundaryLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         boundaryLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
@@ -479,22 +480,44 @@ public sealed class StadiumEnvironmentEditorForm : Form
         _showHomeRunHelpers.Margin = new Padding(10, 7, 8, 0);
         boundaryLayout.Controls.Add(_showHomeRunHelpers, 3, 0);
         boundaryLayout.Controls.Add(_homeRunBoundaryInfo, 4, 0);
-        FlowLayoutPanel transform = new()
+        FlowLayoutPanel move = new()
         {
             Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight,
-            WrapContents = false, AutoScroll = true, Margin = new Padding(0, 4, 0, 0)
+            WrapContents = false, Margin = new Padding(0, 2, 0, 0)
         };
-        transform.Controls.Add(PlacementLabel("Move X / Y / Z:"));
-        foreach (NumericUpDown value in _homeRunOffset) transform.Controls.Add(value);
-        transform.Controls.Add(PlacementLabel("Scale X / Y / Z:"));
-        foreach (NumericUpDown value in _homeRunScale) transform.Controls.Add(value);
-        transform.Controls.Add(SplineButton("Reset Boundary", (_, _) => ResetHomeRunBoundary()));
-        transform.Controls.Add(_homeRunTransformStatus);
-        boundaryLayout.Controls.Add(transform, 0, 1);
-        boundaryLayout.SetColumnSpan(transform, 5);
+        move.Controls.Add(PlacementLabel("Move X / Y / Z:"));
+        foreach (NumericUpDown value in _homeRunOffset) move.Controls.Add(value);
+        boundaryLayout.Controls.Add(move, 0, 1);
+        boundaryLayout.SetColumnSpan(move, 5);
+
+        FlowLayoutPanel scale = new()
+        {
+            Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false, Margin = Padding.Empty
+        };
+        scale.Controls.Add(PlacementLabel("Scale X / Y / Z:"));
+        foreach (NumericUpDown value in _homeRunScale) scale.Controls.Add(value);
+        scale.Controls.Add(SplineButton("Reset Boundary", (_, _) => ResetHomeRunBoundary()));
+        boundaryLayout.Controls.Add(scale, 0, 2);
+        boundaryLayout.SetColumnSpan(scale, 5);
+        boundaryLayout.Controls.Add(_homeRunTransformStatus, 0, 3);
+        boundaryLayout.SetColumnSpan(_homeRunTransformStatus, 5);
         boundary.Controls.Add(boundaryLayout);
 
-        SplitContainer split = new() { Dock = DockStyle.Fill, SplitterDistance = 300, FixedPanel = FixedPanel.Panel1 };
+        SplitContainer split = new() { Dock = DockStyle.Fill, FixedPanel = FixedPanel.Panel1 };
+        bool splitInitialized = false;
+        split.SizeChanged += (_, _) =>
+        {
+            if (splitInitialized || split.ClientSize.Width < 480) return;
+            int available = split.ClientSize.Width - split.SplitterWidth;
+            int desired = Math.Clamp((int)(available * 0.34F), 180, Math.Max(180, available - 280));
+            split.Panel1MinSize = 0;
+            split.Panel2MinSize = 0;
+            split.SplitterDistance = desired;
+            split.Panel1MinSize = Math.Min(180, desired);
+            split.Panel2MinSize = Math.Min(280, Math.Max(0, available - desired));
+            splitInitialized = true;
+        };
         split.Panel1.Controls.Add(_homeRunList);
         TableLayoutPanel details = new() { Dock = DockStyle.Fill, RowCount = 2, ColumnCount = 1 };
         details.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
@@ -503,25 +526,34 @@ public sealed class StadiumEnvironmentEditorForm : Form
         details.Controls.Add(_homeRunEventInfo, 0, 1);
         split.Panel2.Controls.Add(details);
 
+        TableLayoutPanel footer = new()
+        {
+            Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Padding = new Padding(2, 4, 2, 2)
+        };
+        footer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        footer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         FlowLayoutPanel actions = new()
         {
-            Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight,
-            WrapContents = false, AutoScroll = true, Padding = new Padding(2, 4, 2, 2)
+            AutoSize = true, WrapContents = false, FlowDirection = FlowDirection.LeftToRight,
+            Margin = Padding.Empty
         };
         actions.Controls.AddRange(new Control[]
         {
             SplineButton("Trigger Selected Event", (_, _) => TriggerSelectedHomeRunEvent()),
             SplineButton("Stop Preview", (_, _) => StopHomeRunEventPreview()),
-            SplineButton("Open in Ambient Editor", (_, _) => OpenHomeRunAmbient()),
-            new Label
-            {
-                Text = "The trigger preview honors hrDelay and plays the selected model/path/ANM; sounds are identified but not synthesized.",
-                AutoSize = true, Margin = new Padding(12, 8, 0, 0), ForeColor = SystemColors.GrayText
-            }
+            SplineButton("Open in Ambient Editor", (_, _) => OpenHomeRunAmbient())
         });
+        Label help = new()
+        {
+            Text = "The trigger preview honors hrDelay and plays the selected model/path/ANM; sounds are identified but not synthesized.",
+            Dock = DockStyle.Fill, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft,
+            Margin = new Padding(12, 0, 0, 0), ForeColor = SystemColors.GrayText
+        };
+        footer.Controls.Add(actions, 0, 0);
+        footer.Controls.Add(help, 1, 0);
         layout.Controls.Add(boundary, 0, 0);
         layout.Controls.Add(split, 0, 1);
-        layout.Controls.Add(actions, 0, 2);
+        layout.Controls.Add(footer, 0, 2);
         return layout;
     }
 

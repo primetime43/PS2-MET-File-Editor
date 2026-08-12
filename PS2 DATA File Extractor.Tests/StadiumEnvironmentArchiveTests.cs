@@ -1,6 +1,7 @@
 using PS2_DATA_File_Extractor.FileOperations;
 using PS2_DATA_File_Extractor.Models;
 using PS2_DATA_File_Extractor;
+using System.Drawing;
 using System.Text;
 using System.Windows.Forms;
 
@@ -256,6 +257,18 @@ public sealed class StadiumEnvironmentArchiveTests : IDisposable
                 Assert.Contains("Live Preview", editor.Text);
                 Assert.True(ContainsControl<RenderWareScenePreviewControl>(editor));
                 Assert.True(ContainsTab(editor, "Home Run Events"));
+                TabPage homeRunPage = FindTab(editor, "Home Run Events")!;
+                ((TabControl)homeRunPage.Parent!).SelectedTab = homeRunPage;
+                editor.PerformLayout();
+                Application.DoEvents();
+                foreach (string caption in new[] { "Trigger Selected Event", "Stop Preview", "Open in Ambient Editor" })
+                {
+                    Button button = FindControl<Button>(homeRunPage, control => control.Text == caption)!;
+                    Rectangle bounds = homeRunPage.RectangleToClient(
+                        new Rectangle(button.PointToScreen(Point.Empty), button.Size));
+                    Assert.True(homeRunPage.ClientRectangle.Contains(bounds), $"{caption} is clipped by the Home Run Events tab.");
+                }
+                Assert.Equal(6, FindControls<NumericUpDown>(homeRunPage).Count);
                 editor.Close();
             }
             catch (Exception exception) { failure = exception; }
@@ -328,5 +341,30 @@ public sealed class StadiumEnvironmentArchiveTests : IDisposable
                 ContainsTab(child, text)) return true;
         }
         return false;
+    }
+
+    private static TabPage? FindTab(Control parent, string text) =>
+        FindControl<TabPage>(parent, control => control.Text.Equals(text, StringComparison.Ordinal));
+
+    private static T? FindControl<T>(Control parent, Func<T, bool> predicate) where T : Control
+    {
+        foreach (Control child in parent.Controls)
+        {
+            if (child is T match && predicate(match)) return match;
+            T? nested = FindControl(child, predicate);
+            if (nested != null) return nested;
+        }
+        return null;
+    }
+
+    private static List<T> FindControls<T>(Control parent) where T : Control
+    {
+        List<T> matches = [];
+        foreach (Control child in parent.Controls)
+        {
+            if (child is T match) matches.Add(match);
+            matches.AddRange(FindControls<T>(child));
+        }
+        return matches;
     }
 }
