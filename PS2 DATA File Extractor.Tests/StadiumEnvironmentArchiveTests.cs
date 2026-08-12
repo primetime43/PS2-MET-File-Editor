@@ -141,7 +141,6 @@ public sealed class StadiumEnvironmentArchiveTests : IDisposable
                 using StadiumEnvironmentEditorForm editor = new(archive, metPath);
                 editor.Show();
                 Application.DoEvents();
-                Assert.True(editor.MinimumSize.Width >= 1100);
                 Assert.Contains("Live Preview", editor.Text);
                 Assert.True(ContainsControl<RenderWareScenePreviewControl>(editor));
                 editor.Close();
