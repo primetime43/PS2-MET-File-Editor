@@ -83,6 +83,12 @@ public sealed class StadiumEnvironmentEditorForm : Form
         Dock = DockStyle.Bottom, Height = 58, Padding = new Padding(5, 4, 5, 2),
         AutoEllipsis = true, BorderStyle = BorderStyle.FixedSingle
     };
+    private readonly NumericUpDown[] _ambientPosition = CreatePlacementValues();
+    private readonly NumericUpDown[] _ambientRotation = CreatePlacementValues();
+    private readonly Label _placementStatus = new()
+    {
+        AutoSize = true, Margin = new Padding(8, 7, 0, 0), ForeColor = SystemColors.GrayText
+    };
     private readonly GroupBox _splineEditor = new() { Text = "Movement Path Waypoints (.spl)", Dock = DockStyle.Fill };
     private readonly Label _splineStatus = new()
     {
@@ -107,7 +113,7 @@ public sealed class StadiumEnvironmentEditorForm : Form
     private RenderWareAnimationBinding? _activeAmbientBinding;
     private RenderWareSkinnedModel? _activeAmbientModel;
     private int _selectedSplinePoint = -1;
-    private bool _ambientPlaying, _updatingScrubber, _loadingSpline, _loadingAnimation;
+    private bool _ambientPlaying, _updatingScrubber, _loadingSpline, _loadingAnimation, _loadingPlacement;
     private bool _loading;
 
     public StadiumEnvironmentEditorForm(StadiumEnvironmentArchive archive, string metPath)
@@ -129,7 +135,7 @@ public sealed class StadiumEnvironmentEditorForm : Form
             Dock = DockStyle.Top,
             Height = 50,
             Padding = new Padding(12, 8, 12, 4),
-            Text = "Edit fielddata.txt and movement-path waypoints while viewing the textured stadium. Lighting, cameras, positions, paths, and compatible ambient ANM motion update immediately; particles, movies, and collision behavior still require the game."
+            Text = "Create, clone, place, and edit fielddata ambient objects and movement paths while viewing the textured stadium. Lighting, cameras, positions, paths, and compatible ANM motion update immediately; particles, movies, and collision behavior still require the game."
         };
         TableLayoutPanel selector = new()
         {
@@ -203,6 +209,8 @@ public sealed class StadiumEnvironmentEditorForm : Form
         _splineGrid.CellValidating += SplineGrid_CellValidating;
         _splineGrid.CellValueChanged += SplineGrid_CellValueChanged;
         _splineGrid.SelectionChanged += (_, _) => SelectSplineGridPoint();
+        foreach (NumericUpDown value in _ambientPosition.Concat(_ambientRotation))
+            value.ValueChanged += (_, _) => PlacementValueChanged();
         HookGrid(_fieldGrid);
         HookGrid(_collisionGrid);
         HookGrid(_ambientGrid);
@@ -376,15 +384,18 @@ public sealed class StadiumEnvironmentEditorForm : Form
         TabPage ambientPage = new("Ambient Objects") { Padding = new Padding(6) };
         SplitContainer split = new() { Dock = DockStyle.Fill, SplitterDistance = 310, FixedPanel = FixedPanel.Panel1 };
         split.Panel1.Controls.Add(_ambientList);
-        TableLayoutPanel ambientDetails = new() { Dock = DockStyle.Fill, RowCount = 3, ColumnCount = 1 };
+        TableLayoutPanel ambientDetails = new() { Dock = DockStyle.Fill, RowCount = 4, ColumnCount = 1 };
         ambientDetails.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        ambientDetails.RowStyles.Add(new RowStyle(SizeType.Absolute, 86));
         ambientDetails.RowStyles.Add(new RowStyle(SizeType.Absolute, 58));
         ambientDetails.RowStyles.Add(new RowStyle(SizeType.Absolute, 245));
         ambientDetails.Controls.Add(_ambientGrid, 0, 0);
-        ambientDetails.Controls.Add(_ambientInfo, 0, 1);
-        ambientDetails.Controls.Add(BuildSplineEditor(), 0, 2);
+        ambientDetails.Controls.Add(BuildPlacementEditor(), 0, 1);
+        ambientDetails.Controls.Add(_ambientInfo, 0, 2);
+        ambientDetails.Controls.Add(BuildSplineEditor(), 0, 3);
         split.Panel2.Controls.Add(ambientDetails);
         ambientPage.Controls.Add(split);
+        ambientPage.Controls.Add(BuildAmbientObjectToolbar());
 
         TabPage rawPage = new("Raw Preview") { Padding = new Padding(6) };
         rawPage.Controls.Add(_rawText);
@@ -446,6 +457,57 @@ public sealed class StadiumEnvironmentEditorForm : Form
         grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Z", FillWeight = 100 });
         return grid;
     }
+
+    private Control BuildAmbientObjectToolbar()
+    {
+        FlowLayoutPanel toolbar = new()
+        {
+            Dock = DockStyle.Top, Height = 42, FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false, AutoScroll = true, Padding = new Padding(2, 4, 2, 3)
+        };
+        toolbar.Controls.AddRange(new Control[]
+        {
+            SplineButton("New Object...", (_, _) => CreateAmbientObject()),
+            SplineButton("Clone Selected", (_, _) => CloneSelectedAmbient()),
+            SplineButton("Copy to Stadium...", (_, _) => CopyAmbientToStadium()),
+            SplineButton("Delete Selected", (_, _) => DeleteSelectedAmbient()),
+            new Label
+            {
+                Text = "New and cloned objects are enabled automatically through numAmbs.",
+                AutoSize = true, Margin = new Padding(12, 8, 0, 0), ForeColor = SystemColors.GrayText
+            }
+        });
+        return toolbar;
+    }
+
+    private Control BuildPlacementEditor()
+    {
+        GroupBox box = new() { Text = "Placement", Dock = DockStyle.Fill, Padding = new Padding(6, 4, 6, 4) };
+        FlowLayoutPanel row = new()
+        {
+            Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = true, AutoScroll = true, Padding = new Padding(2, 2, 2, 0)
+        };
+        row.Controls.Add(PlacementLabel("Position:"));
+        foreach (NumericUpDown value in _ambientPosition) row.Controls.Add(value);
+        row.Controls.Add(PlacementLabel("H / P / R:"));
+        foreach (NumericUpDown value in _ambientRotation) row.Controls.Add(value);
+        row.Controls.Add(_placementStatus);
+        box.Controls.Add(row);
+        return box;
+    }
+
+    private static Label PlacementLabel(string text) => new()
+    {
+        Text = text, AutoSize = true, Margin = new Padding(5, 7, 3, 0)
+    };
+
+    private static NumericUpDown[] CreatePlacementValues() => Enumerable.Range(0, 3)
+        .Select(_ => new NumericUpDown
+        {
+            Minimum = -1000000, Maximum = 1000000, DecimalPlaces = 3,
+            Increment = 1, Width = 92, ThousandsSeparator = true, Margin = new Padding(2, 2, 2, 0)
+        }).ToArray();
 
     private Control BuildSplineEditor()
     {
@@ -1302,8 +1364,160 @@ public sealed class StadiumEnvironmentEditorForm : Form
         FieldDataAmbient? ambient = (_ambientList.SelectedItem as AmbientListItem)?.Ambient;
         LoadSettings(_ambientGrid, ambient?.Settings ?? Array.Empty<FieldDataSetting>());
         LoadSplineEditor(ambient);
+        LoadPlacementEditor(ambient);
         RebuildAmbientPreview();
         ConfigureAmbientPlayback();
+    }
+
+    private void CreateAmbientObject()
+    {
+        if (_current == null) return;
+        using AmbientObjectCreatorForm dialog = new(_sceneArchive, _animationArchive, _current.FolderName);
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+        try
+        {
+            int index = _current.AddAmbient(dialog.ObjectName, dialog.Settings);
+            ReloadCurrentDocument(index);
+            _status.Text = $"Created ambient object {index + 1:00}. Save Stadiums to write it to DATA.MET.";
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidDataException)
+        {
+            MessageBox.Show(this, exception.Message, "Unable to Create Ambient Object",
+                MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
+    private void CloneSelectedAmbient()
+    {
+        if (_current == null || SelectedAmbient() is not FieldDataAmbient source) return;
+        int index = _current.CloneAmbient(source.Index);
+        ReloadCurrentDocument(index);
+        _status.Text = $"Cloned ambient object {source.Index + 1:00} as {index + 1:00}.";
+    }
+
+    private void DeleteSelectedAmbient()
+    {
+        if (_current == null || SelectedAmbient() is not FieldDataAmbient ambient) return;
+        if (MessageBox.Show(this,
+                $"Delete ambient object {ambient.Index + 1:00}: {ambient.DisplayName}?\n\n" +
+                "This removes its complete amb { } block and updates numAmbs. The change is not written until you save.",
+                "Delete Ambient Object", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
+        int next = Math.Min(ambient.Index, Math.Max(0, _current.Document.Ambients.Count - 2));
+        _current.RemoveAmbient(ambient.Index);
+        ReloadCurrentDocument(_current.Document.Ambients.Count == 0 ? -1 : next);
+        _status.Text = "Ambient object deleted. Save Stadiums to write the change to DATA.MET.";
+    }
+
+    private void CopyAmbientToStadium()
+    {
+        if (_current == null || SelectedAmbient() is not FieldDataAmbient ambient) return;
+        StadiumEnvironment? target = SelectTargetStadium(_current);
+        if (target == null) return;
+        int index = target.CloneAmbientFrom(_current, ambient.Index,
+            $"Copy of {ambient.DisplayName} from {_current.DisplayName}");
+        _stadiums.SelectedItem = target;
+        if (ReferenceEquals(_current, target)) ReloadCurrentDocument(index);
+        else SelectAmbient(index);
+        _status.Text = $"Copied the object to {target.DisplayName} as ambient {index + 1:00}.";
+    }
+
+    private StadiumEnvironment? SelectTargetStadium(StadiumEnvironment source)
+    {
+        using Form dialog = new()
+        {
+            Text = "Copy Ambient Object to Stadium", StartPosition = FormStartPosition.CenterParent,
+            ClientSize = new Size(470, 145), MinimizeBox = false, MaximizeBox = false,
+            FormBorderStyle = FormBorderStyle.FixedDialog, AutoScaleMode = AutoScaleMode.Dpi
+        };
+        ComboBox choices = new()
+        {
+            Dock = DockStyle.Top, DropDownStyle = ComboBoxStyle.DropDownList, Margin = new Padding(12), Height = 28
+        };
+        choices.Items.AddRange(_archive.Stadiums.Where(item => !ReferenceEquals(item, source)).Cast<object>().ToArray());
+        if (choices.Items.Count > 0) choices.SelectedIndex = 0;
+        Label label = new()
+        {
+            Text = "Destination stadium:", Dock = DockStyle.Top, Height = 35, Padding = new Padding(12, 10, 12, 2)
+        };
+        FlowLayoutPanel buttons = new()
+        {
+            Dock = DockStyle.Bottom, Height = 52, FlowDirection = FlowDirection.RightToLeft,
+            Padding = new Padding(8)
+        };
+        Button cancel = new() { Text = "Cancel", AutoSize = true, DialogResult = DialogResult.Cancel };
+        Button copy = new() { Text = "Copy Object", AutoSize = true, DialogResult = DialogResult.OK };
+        buttons.Controls.AddRange(new Control[] { cancel, copy });
+        dialog.Controls.Add(choices);
+        dialog.Controls.Add(label);
+        dialog.Controls.Add(buttons);
+        dialog.AcceptButton = copy;
+        dialog.CancelButton = cancel;
+        return dialog.ShowDialog(this) == DialogResult.OK ? choices.SelectedItem as StadiumEnvironment : null;
+    }
+
+    private void ReloadCurrentDocument(int ambientIndex)
+    {
+        if (_current == null) return;
+        StopAmbientPlayback(render: false);
+        LoadSettings(_fieldGrid, _current.Document.FieldSettings);
+        LoadSettings(_collisionGrid, _current.Document.CollisionSettings);
+        LoadAmbientList();
+        _loading = true;
+        _ambientList.SelectedIndex = ambientIndex < 0 || _ambientList.Items.Count == 0
+            ? -1 : Math.Clamp(ambientIndex, 0, _ambientList.Items.Count - 1);
+        _loading = false;
+        LoadSelectedAmbient();
+        RefreshRawText();
+        UpdateSummaryAndStatus();
+        _tabs.SelectedIndex = 2;
+    }
+
+    private void LoadPlacementEditor(FieldDataAmbient? ambient)
+    {
+        _loadingPlacement = true;
+        bool available = ambient != null;
+        foreach (NumericUpDown value in _ambientPosition.Concat(_ambientRotation)) value.Enabled = available;
+        float[]? position = ambient == null ? null : ReadNumbers(ambient.Settings, "pos", 3);
+        float[]? relative = ambient == null ? null : ReadNumbers(ambient.Settings, "relPosHpr", 6);
+        float[]? rotation = ambient == null ? null : ReadNumbers(ambient.Settings, "hpr", 3);
+        Vector3? splineStart = _currentSpline?.Points.Count > 0 ? _currentSpline.Points[0] : null;
+        for (int index = 0; index < 3; index++)
+        {
+            float fallback = index switch
+            {
+                0 => splineStart?.X ?? 0,
+                1 => splineStart?.Y ?? 0,
+                _ => splineStart?.Z ?? 0
+            };
+            SetPlacementValue(_ambientPosition[index], position?[index] ?? relative?[index] ?? fallback);
+            SetPlacementValue(_ambientRotation[index], rotation?[index] ?? relative?[index + 3] ?? 0);
+        }
+        bool hasSpline = ambient?.Settings.Any(setting =>
+            setting.Key.Equals("spline", StringComparison.OrdinalIgnoreCase)) == true;
+        _placementStatus.Text = ambient == null ? "Select an object"
+            : hasSpline && position == null
+                ? "Showing the spline start; changing a value adds a fixed pos override"
+                : "Changes update the 3D preview immediately";
+        _loadingPlacement = false;
+    }
+
+    private void PlacementValueChanged()
+    {
+        if (_loadingPlacement || _current == null || SelectedAmbient() is not FieldDataAmbient ambient) return;
+        string position = string.Join(" ", _ambientPosition.Select(value =>
+            value.Value.ToString("0.###", CultureInfo.InvariantCulture)));
+        string rotation = string.Join(" ", _ambientRotation.Select(value =>
+            value.Value.ToString("0.###", CultureInfo.InvariantCulture)));
+        int index = ambient.Index;
+        _current.SetAmbientSetting(index, "pos", position);
+        _current.SetAmbientSetting(index, "hpr", rotation);
+        ReloadCurrentDocument(index);
+    }
+
+    private static void SetPlacementValue(NumericUpDown control, float value)
+    {
+        decimal converted = float.IsFinite(value) ? (decimal)value : 0;
+        control.Value = Math.Clamp(converted, control.Minimum, control.Maximum);
     }
 
     private void LoadSettings(DataGridView grid, IReadOnlyList<FieldDataSetting> settings)

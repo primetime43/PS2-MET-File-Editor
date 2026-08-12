@@ -51,9 +51,15 @@ public sealed class RenderWareSceneArchive
                     ? RenderWareAssetKind.RwsScene : RenderWareAssetKind.DffModel,
                 GetCategory(entry.Path)))
             .OrderBy(asset => asset.Path, StringComparer.OrdinalIgnoreCase).ToList();
+        SplinePaths = _entries
+            .Where(entry => Path.GetExtension(entry.Path).Equals(".spl", StringComparison.OrdinalIgnoreCase))
+            .Select(entry => entry.Path.Replace('\\', '/'))
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     public IReadOnlyList<RenderWareAssetFile> Assets { get; }
+    public IReadOnlyList<string> SplinePaths { get; }
     public int DffCount => Assets.Count(asset => asset.Kind == RenderWareAssetKind.DffModel);
     public int RwsCount => Assets.Count(asset => asset.Kind == RenderWareAssetKind.RwsScene);
 

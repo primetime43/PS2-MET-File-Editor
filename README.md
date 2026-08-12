@@ -35,6 +35,9 @@ To access the .MET files, you need to extract the game files from the ISO using 
   scrubbed, speed-adjusted, and turned along their path in both the embedded and detachable preview.
   The selected object's assigned `anim`, `animOnce`, and home-run ANM slots can be switched and played
   on its real skinned DFF while it moves, with independent path synchronization and ANM looping.
+  New ambient objects can be built from archive-backed DFF, compatible ANM, and SPL dropdowns; existing
+  blocks can be cloned, deleted, or copied between stadiums, and the placement controls update the 3D
+  preview immediately. `numAmbs` is adjusted without enabling intentionally disabled retail blocks.
   Retail `.spl` waypoints can also be selected in 3D, edited numerically, added, duplicated, deleted,
   reordered, reset, and saved back into `DATA.MET` with the fielddata changes.
   Loader details are documented in

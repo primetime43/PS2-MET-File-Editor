@@ -41,14 +41,17 @@ public sealed class FieldDataDocument
         FieldDataAmbient? currentAmbient = null;
         string pendingComment = string.Empty;
 
-        foreach (FieldDataTextLine line in lines)
+        int pendingCommentLine = -1;
+        for (int lineIndex = 0; lineIndex < lines.Count; lineIndex++)
         {
+            FieldDataTextLine line = lines[lineIndex];
             string trimmed = line.Content.Trim();
             if (section == null)
             {
                 if (trimmed.StartsWith("//", StringComparison.Ordinal))
                 {
                     pendingComment = trimmed[2..].Trim();
+                    pendingCommentLine = lineIndex;
                     continue;
                 }
 
@@ -66,18 +69,27 @@ public sealed class FieldDataDocument
                         string inlineComment = block.Groups["comment"].Value.Trim();
                         currentAmbient = new FieldDataAmbient(ambients.Count,
                             string.IsNullOrWhiteSpace(inlineComment) ? pendingComment : inlineComment);
+                        currentAmbient.StartLineIndex = lineIndex;
+                        currentAmbient.LeadingCommentLineIndex = string.IsNullOrWhiteSpace(inlineComment)
+                            ? pendingCommentLine : -1;
                         ambients.Add(currentAmbient);
                     }
                     pendingComment = string.Empty;
+                    pendingCommentLine = -1;
                     continue;
                 }
 
-                if (trimmed.Length > 0) pendingComment = string.Empty;
+                if (trimmed.Length > 0)
+                {
+                    pendingComment = string.Empty;
+                    pendingCommentLine = -1;
+                }
                 continue;
             }
 
             if (trimmed == "}")
             {
+                if (currentAmbient != null) currentAmbient.EndLineIndex = lineIndex;
                 section = null;
                 currentAmbient = null;
                 continue;
@@ -126,6 +138,97 @@ public sealed class FieldDataDocument
         return true;
     }
 
+    public FieldDataDocument CloneAmbient(int ambientIndex, string? comment = null)
+    {
+        FieldDataAmbient source = AmbientAt(ambientIndex);
+        string name = string.IsNullOrWhiteSpace(comment) ? $"Copy of {source.DisplayName}" : comment.Trim();
+        return InsertEnabledAmbientBlock(RenderAmbientBlock(source, name));
+    }
+
+    public FieldDataDocument CloneAmbientFrom(
+        FieldDataDocument sourceDocument,
+        int sourceAmbientIndex,
+        string? comment = null)
+    {
+        ArgumentNullException.ThrowIfNull(sourceDocument);
+        FieldDataAmbient source = sourceDocument.AmbientAt(sourceAmbientIndex);
+        string name = string.IsNullOrWhiteSpace(comment) ? $"Copy of {source.DisplayName}" : comment.Trim();
+        return InsertEnabledAmbientBlock(sourceDocument.RenderAmbientBlock(source, name));
+    }
+
+    public FieldDataDocument AddAmbient(
+        string comment,
+        IEnumerable<KeyValuePair<string, string>> settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        string newline = PreferredNewline();
+        StringBuilder block = new();
+        block.Append("amb { // ").Append(SafeComment(comment)).Append(newline);
+        foreach ((string key, string value) in settings)
+        {
+            if (!Regex.IsMatch(key, "^[A-Za-z][A-Za-z0-9]*$"))
+                throw new ArgumentException($"'{key}' is not a valid fielddata directive name.", nameof(settings));
+            if (!FieldDataValue.TryNormalize(GetValueKind(key), value, out string normalized, out string error))
+                throw new ArgumentException($"Invalid {key} value: {error}", nameof(settings));
+            block.Append('\t').Append(key);
+            if (normalized.Length > 0) block.Append(' ').Append(normalized);
+            block.Append(';').Append(newline);
+        }
+        block.Append('}').Append(newline);
+        return InsertEnabledAmbientBlock(block.ToString());
+    }
+
+    public FieldDataDocument RemoveAmbient(int ambientIndex)
+    {
+        FieldDataAmbient ambient = AmbientAt(ambientIndex);
+        int start = ambient.LeadingCommentLineIndex >= 0
+            ? ambient.LeadingCommentLineIndex : ambient.StartLineIndex;
+        if (start < 0 || ambient.EndLineIndex < start)
+            throw new InvalidDataException("The selected ambient block has incomplete source boundaries.");
+        StringBuilder text = new();
+        for (int index = 0; index < _lines.Count; index++)
+        {
+            if (index >= start && index <= ambient.EndLineIndex) continue;
+            text.Append(_lines[index].Render()).Append(_lines[index].Terminator);
+        }
+        FieldDataDocument result = Parse(text.ToString());
+        int loaded = DeclaredAmbientCount - (ambientIndex < DeclaredAmbientCount ? 1 : 0);
+        if (!result.TrySetDeclaredAmbientCount(Math.Clamp(loaded, 0, result.Ambients.Count)))
+            throw new InvalidDataException("The fielddata file has no editable numAmbs directive.");
+        return result;
+    }
+
+    public FieldDataDocument SetAmbientSetting(int ambientIndex, string key, string value)
+    {
+        FieldDataAmbient ambient = AmbientAt(ambientIndex);
+        FieldDataValueKind kind = GetValueKind(key);
+        if (!FieldDataValue.TryNormalize(kind, value, out string normalized, out string error))
+            throw new ArgumentException($"Invalid {key} value: {error}", nameof(value));
+        FieldDataSetting? existing = ambient.Settings.FirstOrDefault(setting =>
+            setting.Key.Equals(key, StringComparison.OrdinalIgnoreCase));
+        if (existing != null)
+        {
+            existing.Value = normalized;
+            return this;
+        }
+        if (!Regex.IsMatch(key, "^[A-Za-z][A-Za-z0-9]*$"))
+            throw new ArgumentException($"'{key}' is not a valid fielddata directive name.", nameof(key));
+        StringBuilder text = new();
+        for (int index = 0; index < _lines.Count; index++)
+        {
+            if (index == ambient.EndLineIndex)
+            {
+                string newline = _lines[index].Terminator.Length > 0
+                    ? _lines[index].Terminator : PreferredNewline();
+                text.Append('\t').Append(key);
+                if (normalized.Length > 0) text.Append(' ').Append(normalized);
+                text.Append(';').Append(newline);
+            }
+            text.Append(_lines[index].Render()).Append(_lines[index].Terminator);
+        }
+        return Parse(text.ToString());
+    }
+
     public override string ToString()
     {
         StringBuilder result = new();
@@ -135,6 +238,68 @@ public sealed class FieldDataDocument
             result.Append(line.Terminator);
         }
         return result.ToString();
+    }
+
+    private FieldDataAmbient AmbientAt(int index)
+    {
+        if (index < 0 || index >= Ambients.Count) throw new ArgumentOutOfRangeException(nameof(index));
+        return Ambients[index];
+    }
+
+    private string RenderAmbientBlock(FieldDataAmbient ambient, string comment)
+    {
+        if (ambient.StartLineIndex < 0 || ambient.EndLineIndex < ambient.StartLineIndex)
+            throw new InvalidDataException("The selected ambient block has incomplete source boundaries.");
+        StringBuilder result = new();
+        for (int index = ambient.StartLineIndex; index <= ambient.EndLineIndex; index++)
+        {
+            FieldDataTextLine line = _lines[index];
+            string content = index == ambient.StartLineIndex
+                ? Regex.Replace(line.Render(), @"^(?<indent>\s*)amb\s*\{.*$",
+                    match => $"{match.Groups["indent"].Value}amb {{ // {SafeComment(comment)}",
+                    RegexOptions.IgnoreCase)
+                : line.Render();
+            result.Append(content).Append(line.Terminator.Length == 0 ? PreferredNewline() : line.Terminator);
+        }
+        return result.ToString();
+    }
+
+    private FieldDataDocument InsertEnabledAmbientBlock(string block)
+    {
+        string newline = PreferredNewline();
+        int insertAmbient = Math.Clamp(DeclaredAmbientCount, 0, Ambients.Count);
+        int insertLine = insertAmbient < Ambients.Count
+            ? (Ambients[insertAmbient].LeadingCommentLineIndex >= 0
+                ? Ambients[insertAmbient].LeadingCommentLineIndex
+                : Ambients[insertAmbient].StartLineIndex)
+            : _lines.Count;
+        StringBuilder prefix = new(), suffix = new();
+        for (int index = 0; index < _lines.Count; index++)
+        {
+            StringBuilder target = index < insertLine ? prefix : suffix;
+            target.Append(_lines[index].Render()).Append(_lines[index].Terminator);
+        }
+        string before = prefix.ToString();
+        if (before.Length > 0 && !before.EndsWith('\n') && !before.EndsWith('\r')) before += newline;
+        if (before.Length > 0 && !before.EndsWith(newline + newline, StringComparison.Ordinal)) before += newline;
+        string inserted = block;
+        if (!inserted.EndsWith('\n') && !inserted.EndsWith('\r')) inserted += newline;
+        if (suffix.Length > 0 && !inserted.EndsWith(newline + newline, StringComparison.Ordinal)) inserted += newline;
+        FieldDataDocument result = Parse(before + inserted + suffix);
+        int loaded = Math.Min(result.Ambients.Count, DeclaredAmbientCount + 1);
+        if (!result.TrySetDeclaredAmbientCount(loaded))
+            throw new InvalidDataException("The fielddata file has no editable numAmbs directive.");
+        return result;
+    }
+
+    private string PreferredNewline() =>
+        _lines.Select(line => line.Terminator).FirstOrDefault(value => value.Length > 0) ?? Environment.NewLine;
+
+    private static string SafeComment(string value)
+    {
+        string result = (value ?? string.Empty).Replace('\r', ' ').Replace('\n', ' ')
+            .Replace('{', '(').Replace('}', ')').Trim();
+        return result.Length == 0 ? "New ambient object" : result;
     }
 
     private static List<FieldDataTextLine> SplitLines(string text)
@@ -183,6 +348,9 @@ public sealed class FieldDataAmbient
     }
 
     internal List<FieldDataSetting> SettingsInternal { get; } = new();
+    internal int StartLineIndex { get; set; } = -1;
+    internal int EndLineIndex { get; set; } = -1;
+    internal int LeadingCommentLineIndex { get; set; } = -1;
     public int Index { get; }
     public string Comment { get; }
     public IReadOnlyList<FieldDataSetting> Settings => SettingsInternal;

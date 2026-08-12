@@ -48,6 +48,29 @@ The preview applies these edits immediately after a grid value is committed:
   duplicated, deleted, or reordered. A spline retains at least two points, and **Reset This Path**
   restores its original archive data without affecting other unsaved paths.
 
+## Creating and cloning ambient objects
+
+The **Ambient Objects** tab can make structural changes to complete `amb { }` blocks:
+
+- **New Object...** selects a DFF from the archive (stadium assets are sorted first), optionally selects an ANM verified against
+  that model's HAnim track count, and optionally assigns an existing SPL movement path. Animation
+  behavior can be `anim`, `animOnce`, `hrAnim`, `hrAnimOnce`, or `hrAnimOnly`.
+- **Clone Selected** duplicates the complete rendered block, including unknown modded directives and
+  inline comments, then gives the clone its own label.
+- **Copy to Stadium...** preserves the source asset path and directives while inserting the clone into
+  another stadium's loaded ambient range.
+- **Delete Selected** removes the complete block. These operations remain unsaved until the main
+  **Save Stadiums to DATA.MET** button is used.
+- The six **Placement** values expose position and heading/pitch/roll directly. Editing them adds or
+  updates `pos` and `hpr` and immediately rebuilds the textured 3D preview. A newly created object with
+  an SPL starts at that path's first waypoint; changing its position later creates a fixed `pos`
+  override.
+
+New objects are inserted immediately after the currently loaded ambient range and `numAmbs` increases
+by one. This matters for Drive-In day and night: their existing intentionally unloaded tail block stays
+unloaded instead of being enabled as an accidental side effect. Deleting an unloaded block likewise
+does not change the loaded count.
+
 The view menu also includes the executable-derived gameplay batting POV and the normal orbit view.
 Camera previews support mouse-look, WASD movement, Q/E height adjustment, and Shift for faster
 movement. The third HPR component is roll; the lightweight software preview currently shows heading

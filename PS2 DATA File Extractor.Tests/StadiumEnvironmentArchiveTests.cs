@@ -84,6 +84,63 @@ public sealed class StadiumEnvironmentArchiveTests : IDisposable
         Assert.Contains("\tnumAmbs 2;", document.ToString());
     }
 
+    [Fact]
+    public void AmbientBlocksCanBeClonedAndRemovedWithoutLosingUnknownLines()
+    {
+        string text = Sample.Replace("\tballSplash;", "\tballSplash;\r\n\tcustomModDirective keep this; // preserved");
+        FieldDataDocument original = FieldDataDocument.Parse(text);
+
+        FieldDataDocument cloned = original.CloneAmbient(0, "Second flying object");
+
+        Assert.Equal(2, cloned.DeclaredAmbientCount);
+        Assert.Equal(2, cloned.Ambients.Count);
+        Assert.Equal("Second flying object", cloned.Ambients[1].Comment);
+        Assert.Equal(2, cloned.ToString().Split("customModDirective keep this").Length - 1);
+        FieldDataDocument removed = cloned.RemoveAmbient(0);
+        Assert.Single(removed.Ambients);
+        Assert.Equal(1, removed.DeclaredAmbientCount);
+        Assert.Contains("customModDirective keep this; // preserved", removed.ToString());
+    }
+
+    [Fact]
+    public void NewAndCrossStadiumAmbientObjectsRetainAssetAssignments()
+    {
+        FieldDataDocument source = FieldDataDocument.Parse(Sample);
+        FieldDataDocument target = FieldDataDocument.Parse(Sample)
+            .AddAmbient("New bird", new Dictionary<string, string>
+            {
+                ["path"] = "Fields/CommonAmbients",
+                ["model"] = "bird.dff",
+                ["anim"] = "bird.anm; 0.0 0.0",
+                ["pos"] = "10 20 30",
+                ["hpr"] = "0 90 0"
+            });
+
+        target = target.CloneAmbientFrom(source, 0, "Copied plane");
+
+        Assert.Equal(3, target.DeclaredAmbientCount);
+        Assert.Equal("bird.dff", target.Ambients[1].Settings.Single(item => item.Key == "model").Value);
+        Assert.Equal("plane.dff", target.Ambients[2].Settings.Single(item => item.Key == "model").Value);
+        Assert.Equal("Copied plane", target.Ambients[2].Comment);
+    }
+
+    [Fact]
+    public void AddingAnAmbientDoesNotEnableExistingBlocksPastNumAmbs()
+    {
+        string text = Sample + "// Intentionally disabled\r\namb {\r\n\tmodel hidden.dff;\r\n}\r\n";
+        FieldDataDocument document = FieldDataDocument.Parse(text);
+
+        FieldDataDocument changed = document.CloneAmbient(0, "Enabled clone");
+
+        Assert.Equal(2, changed.DeclaredAmbientCount);
+        Assert.Equal(3, changed.Ambients.Count);
+        Assert.Equal("Enabled clone", changed.Ambients[1].Comment);
+        Assert.Equal("hidden.dff", changed.Ambients[2].Settings.Single(setting => setting.Key == "model").Value);
+        changed = changed.RemoveAmbient(2);
+        Assert.Equal(2, changed.DeclaredAmbientCount);
+        Assert.Equal(2, changed.Ambients.Count);
+    }
+
     [Theory]
     [InlineData(FieldDataValueKind.Integer, "12", true)]
     [InlineData(FieldDataValueKind.Integer, "1.2", false)]

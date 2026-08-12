@@ -101,6 +101,36 @@ public sealed class StadiumEnvironment
         return Encoding.ASCII.GetBytes(text);
     }
 
+    public int CloneAmbient(int ambientIndex, string? comment = null)
+    {
+        int inserted = Math.Clamp(Document.DeclaredAmbientCount, 0, Document.Ambients.Count);
+        Document = Document.CloneAmbient(ambientIndex, comment);
+        return inserted;
+    }
+
+    public int CloneAmbientFrom(
+        StadiumEnvironment source,
+        int sourceAmbientIndex,
+        string? comment = null)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        int inserted = Math.Clamp(Document.DeclaredAmbientCount, 0, Document.Ambients.Count);
+        Document = Document.CloneAmbientFrom(source.Document, sourceAmbientIndex, comment);
+        return inserted;
+    }
+
+    public int AddAmbient(string comment, IEnumerable<KeyValuePair<string, string>> settings)
+    {
+        int inserted = Math.Clamp(Document.DeclaredAmbientCount, 0, Document.Ambients.Count);
+        Document = Document.AddAmbient(comment, settings);
+        return inserted;
+    }
+
+    public void RemoveAmbient(int ambientIndex) => Document = Document.RemoveAmbient(ambientIndex);
+
+    public void SetAmbientSetting(int ambientIndex, string key, string value) =>
+        Document = Document.SetAmbientSetting(ambientIndex, key, value);
+
     public void Reset() => Document = FieldDataDocument.Parse(_originalText);
 
     private static string HumanizeFolder(string folder) => folder.ToLowerInvariant() switch
