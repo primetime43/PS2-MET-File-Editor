@@ -229,6 +229,7 @@ public sealed class StadiumEnvironmentArchiveTests : IDisposable
                 Application.DoEvents();
                 Assert.Contains("Live Preview", editor.Text);
                 Assert.True(ContainsControl<RenderWareScenePreviewControl>(editor));
+                Assert.True(ContainsTab(editor, "Home Run Events"));
                 editor.Close();
             }
             catch (Exception exception) { failure = exception; }
@@ -284,6 +285,16 @@ public sealed class StadiumEnvironmentArchiveTests : IDisposable
         foreach (Control child in parent.Controls)
         {
             if (child is T || ContainsControl<T>(child)) return true;
+        }
+        return false;
+    }
+
+    private static bool ContainsTab(Control parent, string text)
+    {
+        foreach (Control child in parent.Controls)
+        {
+            if (child is TabPage tab && tab.Text.Equals(text, StringComparison.Ordinal) ||
+                ContainsTab(child, text)) return true;
         }
         return false;
     }

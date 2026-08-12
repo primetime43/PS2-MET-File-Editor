@@ -38,6 +38,9 @@ To access the .MET files, you need to extract the game files from the ISO using 
   New ambient objects can be built from archive-backed DFF, compatible ANM, and SPL dropdowns; existing
   blocks can be cloned, deleted, or copied between stadiums, and the placement controls update the 3D
   preview immediately. `numAmbs` is adjusted without enabling intentionally disabled retail blocks.
+  A dedicated Home Run Events tab groups each stadium's home-run animations, particles, delays, and
+  sounds, can manually trigger the selected visual effect, and reports the bounds of the RWS material
+  polygons that the game uses as its home-run collision surface.
   Retail `.spl` waypoints can also be selected in 3D, edited numerically, added, duplicated, deleted,
   reordered, reset, and saved back into `DATA.MET` with the fielddata changes.
   Loader details are documented in

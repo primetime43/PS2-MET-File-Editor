@@ -192,6 +192,34 @@ public sealed class RenderWareSceneArchiveTests : IDisposable
         AssertVectorNear(Vector3.UnitX, Vector3.Normalize(Vector3.TransformNormal(Vector3.UnitZ, delta)));
     }
 
+    [Fact]
+    public void HomeRunAnalyzerGroupsEventsAndMeasuresTaggedHelperGeometry()
+    {
+        FieldDataDocument document = FieldDataDocument.Parse(
+            "field {\r\n numAmbs 1;\r\n}\r\ncollision {\r\n homerun HR;\r\n}\r\n" +
+            "amb { // Firework\r\n hrParticleOnceOnly burstA.dff;\r\n hrDelay 2.5;\r\n hrSfx firework1;\r\n pos 1 2 3;\r\n}\r\n");
+        RenderWareSceneVertex[] vertices =
+        [
+            new(new Vector3(-4, 1, -8), Vector3.UnitY, Vector2.Zero, Color.White),
+            new(new Vector3(6, 3, -8), Vector3.UnitY, Vector2.Zero, Color.White),
+            new(new Vector3(6, 9, 12), Vector3.UnitY, Vector2.Zero, Color.White)
+        ];
+        RenderWareScene scene = new("test.rws", RenderWareAssetKind.RwsScene,
+            [new RenderWareSceneMesh("sector", vertices, [new RenderWareTriangle(0, 1, 2, 0)],
+                [new RenderWareMaterial("HR", Color.White)], "World sector")], [], 0, 1, 0, [], []);
+
+        StadiumHomeRunEvent item = Assert.Single(StadiumHomeRunAnalyzer.FindEvents(document));
+        StadiumHomeRunBoundary boundary = StadiumHomeRunAnalyzer.AnalyzeBoundary(scene,
+            StadiumHomeRunAnalyzer.HomeRunMaterialTag(document));
+
+        Assert.Equal(StadiumHomeRunEventKind.Mixed, item.Kind);
+        Assert.Equal(2.5, item.DelaySeconds);
+        Assert.Equal("firework1", item.Sound);
+        Assert.Equal(1, boundary.TriangleCount);
+        Assert.Equal(new Vector3(-4, 1, -8), boundary.Minimum);
+        Assert.Equal(new Vector3(6, 9, 12), boundary.Maximum);
+    }
+
     [Theory]
     [InlineData(3D, 12D, 2F, true, true, 0.5F)]
     [InlineData(3D, 12D, 2F, false, true, 1F)]

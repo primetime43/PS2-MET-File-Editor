@@ -77,11 +77,32 @@ movement. The third HPR component is roll; the lightweight software preview curr
 and pitch but does not simulate roll.
 
 The ambient overlay is still a preview: spline and compatible skeletal ANM motion are implemented,
-but particles, movies, event triggers, animation blending/selection probabilities, and exact game-side
-random timing are not simulated. Home-run animations can be selected manually; the preview does not
-simulate the home-run trigger. Collision responses and those runtime behaviors still require the game.
+but particles, movies, animation blending/selection probabilities, and exact game-side random timing
+are not simulated. The Home Run Events tab can manually trigger one selected visual event and honors
+its `hrDelay`; it identifies `hrSfx` but does not synthesize that sound. Collision responses and the
+remaining runtime behaviors still require the game.
 The RWS contains the static stadium mesh; the editor adds resolved ambient DFFs and movement guides
 for visualization.
+
+## Home-run events and boundary
+
+The **Home Run Events** tab groups ambient blocks containing `hrAnim`, `hrAnimOnce`, `hrAnimOnly`,
+`hrParticleOnceOnly`, or `hrSfx`. Selecting an entry exposes those exact directives in an editable
+grid. **Trigger Selected Event** waits for `hrDelay`, resolves the event's DFF/ANM/path in the normal
+ambient preview, and plays compatible motion. This is a deliberate preview trigger; it does not run
+the game's ball-collision simulation.
+
+The `collision { homerun HR; }` directive does not contain coordinates. Its value is the name of an
+RWS material, and polygons assigned that material form the spatial home-run trigger surface. The tab
+therefore reports the matching triangle/sector count and its XYZ bounds, and **Show collision helpers**
+makes the helper geometry visible over the textured stadium. Changing the material tag can point the
+game at another material already present in that RWS, but it does not move any polygons.
+
+Actually raising, lowering, widening, or reshaping the home-run line requires moving the vertices of
+the `HR` helper mesh and rebuilding the RenderWare world BSP/collision data. The current RWS parser is
+read-only for that geometry, so the editor intentionally does not offer an unsafe coordinate edit yet.
+An external model edit alone is also insufficient unless the rebuilt RWS preserves the material and
+collision partitioning expected by the game.
 
 ## Loader behavior recovered in Ghidra
 

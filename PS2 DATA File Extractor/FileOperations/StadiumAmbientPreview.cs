@@ -68,6 +68,7 @@ public static class StadiumAmbientPreviewBuilder
             if (string.IsNullOrWhiteSpace(modelValue))
             {
                 modelValue = Setting(ambient, "particle");
+                modelValue ??= Setting(ambient, "hrParticleOnceOnly");
                 assetKind = string.IsNullOrWhiteSpace(modelValue) ? string.Empty : "Particle source";
             }
             RenderWareAssetFile? asset = string.IsNullOrWhiteSpace(modelValue)

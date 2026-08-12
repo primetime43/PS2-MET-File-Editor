@@ -16,8 +16,26 @@ public sealed class StadiumEnvironmentEditorForm : Form
     private readonly DataGridView _fieldGrid = CreateGrid();
     private readonly DataGridView _collisionGrid = CreateGrid();
     private readonly DataGridView _ambientGrid = CreateGrid();
+    private readonly DataGridView _homeRunGrid = CreateGrid();
     private readonly DataGridView _splineGrid = CreateSplineGrid();
     private readonly ListBox _ambientList = new() { Dock = DockStyle.Fill, IntegralHeight = false };
+    private readonly ListBox _homeRunList = new() { Dock = DockStyle.Fill, IntegralHeight = false };
+    private readonly ComboBox _homeRunMaterial = new()
+    {
+        DropDownStyle = ComboBoxStyle.DropDown, Width = 115
+    };
+    private readonly Label _homeRunBoundaryInfo = new()
+    {
+        Dock = DockStyle.Fill, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft
+    };
+    private readonly Label _homeRunEventInfo = new()
+    {
+        Dock = DockStyle.Fill, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft
+    };
+    private readonly CheckBox _showHomeRunHelpers = new()
+    {
+        Text = "Show collision helpers", AutoSize = true
+    };
     private readonly TextBox _rawText = new()
     {
         Dock = DockStyle.Fill,
@@ -104,7 +122,9 @@ public sealed class StadiumEnvironmentEditorForm : Form
     private readonly List<AmbientPlaybackMesh> _playbackMeshes = [];
     private readonly List<RenderWareDetachedPreviewForm> _detachedPreviews = [];
     private readonly System.Windows.Forms.Timer _ambientPlaybackTimer = new() { Interval = 80 };
+    private readonly System.Windows.Forms.Timer _homeRunTriggerTimer = new() { Interval = 50 };
     private readonly Stopwatch _ambientPlaybackWatch = new();
+    private readonly Stopwatch _homeRunTriggerWatch = new();
     private Vector4 _previewLight = Vector4.One;
     private BackyardCameraPreset? _activePreviewCamera;
     private double _ambientPlaybackPosition, _ambientPlaybackStart, _ambientPlaybackDuration, _ambientPathDuration;
@@ -112,6 +132,7 @@ public sealed class StadiumEnvironmentEditorForm : Form
     private RenderWareAnimationFile? _activeAmbientAnimation;
     private RenderWareAnimationBinding? _activeAmbientBinding;
     private RenderWareSkinnedModel? _activeAmbientModel;
+    private StadiumHomeRunEvent? _pendingHomeRunEvent;
     private int _selectedSplinePoint = -1;
     private bool _ambientPlaying, _updatingScrubber, _loadingSpline, _loadingAnimation, _loadingPlacement;
     private bool _loading;
@@ -124,6 +145,7 @@ public sealed class StadiumEnvironmentEditorForm : Form
         _ambientPlaybackRate.Items.AddRange(new object[] { "0.25×", "0.5×", "1×", "2×", "4×" });
         _ambientPlaybackRate.SelectedIndex = 2;
         _ambientPlaybackTimer.Tick += AmbientPlaybackTimer_Tick;
+        _homeRunTriggerTimer.Tick += HomeRunTriggerTimer_Tick;
         Text = "Stadium Editor and Live Preview - DATA.MET";
         StartPosition = FormStartPosition.CenterParent;
         ClientSize = new Size(1500, 860);
@@ -192,10 +214,13 @@ public sealed class StadiumEnvironmentEditorForm : Form
         _stadiums.Items.AddRange(_archive.Stadiums.Cast<object>().ToArray());
         _stadiums.SelectedIndexChanged += (_, _) => LoadSelectedStadium();
         _ambientList.SelectedIndexChanged += (_, _) => LoadSelectedAmbient();
+        _homeRunList.SelectedIndexChanged += (_, _) => LoadSelectedHomeRunEvent(selectAmbient: true);
         _preview.GuideClicked += (_, e) => SelectAmbientGuide(e.Key, e.PointIndex);
         _showAmbientModels.CheckedChanged += (_, _) => RefreshAmbientComposition();
         _showDisabledAmbients.CheckedChanged += (_, _) => RefreshAmbientComposition();
         _showAmbientPaths.CheckedChanged += (_, _) => UpdatePreviewGuides();
+        _showHomeRunHelpers.CheckedChanged += (_, _) =>
+            _preview.HideHelperGeometry = !_showHomeRunHelpers.Checked;
         _tabs.SelectedIndexChanged += (_, _) => RefreshRawText();
         _playAmbient.Click += (_, _) => PlayAmbient();
         _pauseAmbient.Click += (_, _) => PauseAmbient();
@@ -214,6 +239,7 @@ public sealed class StadiumEnvironmentEditorForm : Form
         HookGrid(_fieldGrid);
         HookGrid(_collisionGrid);
         HookGrid(_ambientGrid);
+        HookGrid(_homeRunGrid);
         Shown += (_, _) => ApplyDefaultWorkspaceLayout();
         if (_stadiums.Items.Count > 0) _stadiums.SelectedIndex = 0;
         _status.Text = $"Loaded {_archive.Stadiums.Count} stadium variants from {metPath}.";
@@ -225,6 +251,7 @@ public sealed class StadiumEnvironmentEditorForm : Form
         {
             CloseDetachedPreviews();
             _ambientPlaybackTimer.Dispose();
+            _homeRunTriggerTimer.Dispose();
         }
         base.Dispose(disposing);
     }
@@ -397,6 +424,9 @@ public sealed class StadiumEnvironmentEditorForm : Form
         ambientPage.Controls.Add(split);
         ambientPage.Controls.Add(BuildAmbientObjectToolbar());
 
+        TabPage homeRunPage = new("Home Run Events") { Padding = new Padding(6) };
+        homeRunPage.Controls.Add(BuildHomeRunEditor());
+
         TabPage rawPage = new("Raw Preview") { Padding = new Padding(6) };
         rawPage.Controls.Add(_rawText);
         rawPage.Controls.Add(new Label
@@ -406,7 +436,64 @@ public sealed class StadiumEnvironmentEditorForm : Form
             Padding = new Padding(4, 4, 4, 4),
             Text = "Read-only preview of the preserved file. Use the Advanced DATA.MET Browser for unrestricted raw editing."
         });
-        _tabs.TabPages.AddRange(new[] { fieldPage, collisionPage, ambientPage, rawPage });
+        _tabs.TabPages.AddRange(new[] { fieldPage, collisionPage, ambientPage, homeRunPage, rawPage });
+    }
+
+    private Control BuildHomeRunEditor()
+    {
+        TableLayoutPanel layout = new() { Dock = DockStyle.Fill, RowCount = 3, ColumnCount = 1 };
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 82));
+        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
+
+        GroupBox boundary = new() { Text = "Home Run Boundary", Dock = DockStyle.Fill };
+        TableLayoutPanel boundaryLayout = new()
+        {
+            Dock = DockStyle.Fill, ColumnCount = 5, Padding = new Padding(6, 4, 6, 3)
+        };
+        boundaryLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        boundaryLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        boundaryLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        boundaryLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        boundaryLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        boundaryLayout.Controls.Add(PlacementLabel("Collision material:"), 0, 0);
+        boundaryLayout.Controls.Add(_homeRunMaterial, 1, 0);
+        Button applyTag = SplineButton("Apply Tag", (_, _) => ApplyHomeRunMaterialTag());
+        boundaryLayout.Controls.Add(applyTag, 2, 0);
+        _showHomeRunHelpers.Margin = new Padding(10, 7, 8, 0);
+        boundaryLayout.Controls.Add(_showHomeRunHelpers, 3, 0);
+        boundaryLayout.Controls.Add(_homeRunBoundaryInfo, 4, 0);
+        boundary.Controls.Add(boundaryLayout);
+
+        SplitContainer split = new() { Dock = DockStyle.Fill, SplitterDistance = 300, FixedPanel = FixedPanel.Panel1 };
+        split.Panel1.Controls.Add(_homeRunList);
+        TableLayoutPanel details = new() { Dock = DockStyle.Fill, RowCount = 2, ColumnCount = 1 };
+        details.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        details.RowStyles.Add(new RowStyle(SizeType.Absolute, 54));
+        details.Controls.Add(_homeRunGrid, 0, 0);
+        details.Controls.Add(_homeRunEventInfo, 0, 1);
+        split.Panel2.Controls.Add(details);
+
+        FlowLayoutPanel actions = new()
+        {
+            Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false, AutoScroll = true, Padding = new Padding(2, 4, 2, 2)
+        };
+        actions.Controls.AddRange(new Control[]
+        {
+            SplineButton("Trigger Selected Event", (_, _) => TriggerSelectedHomeRunEvent()),
+            SplineButton("Stop Preview", (_, _) => StopHomeRunEventPreview()),
+            SplineButton("Open in Ambient Editor", (_, _) => OpenHomeRunAmbient()),
+            new Label
+            {
+                Text = "The trigger preview honors hrDelay and plays the selected model/path/ANM; sounds are identified but not synthesized.",
+                AutoSize = true, Margin = new Padding(12, 8, 0, 0), ForeColor = SystemColors.GrayText
+            }
+        });
+        layout.Controls.Add(boundary, 0, 0);
+        layout.Controls.Add(split, 0, 1);
+        layout.Controls.Add(actions, 0, 2);
+        return layout;
     }
 
     private static DataGridView CreateGrid()
@@ -562,6 +649,7 @@ public sealed class StadiumEnvironmentEditorForm : Form
         RefreshRawText();
         UpdateSummaryAndStatus();
         LoadStadiumScene();
+        RefreshHomeRunEditor();
     }
 
     private void LoadStadiumScene()
@@ -621,6 +709,7 @@ public sealed class StadiumEnvironmentEditorForm : Form
             _previewSummary.Text = $"{Path.GetFileName(_scene.SourcePath)}  |  {_scene.VertexCount:N0} field vertices  |  " +
                                    $"{_ambientPreview.VisibleModelCount:N0} ambient models  |  {_ambientPreview.PathCount:N0} paths";
             SyncDetachedPreviews();
+            UpdateHomeRunBoundary();
         }
         catch (Exception exception)
         {
@@ -681,6 +770,186 @@ public sealed class StadiumEnvironmentEditorForm : Form
         _ambientList.SelectedIndex = _ambientList.Items.Count == 0 ? -1 : Math.Clamp(selected, 0, _ambientList.Items.Count - 1);
         _loading = false;
     }
+
+    private void RefreshHomeRunEditor(int selectedAmbient = -1)
+    {
+        if (_current == null) return;
+        if (selectedAmbient < 0)
+            selectedAmbient = (_homeRunList.SelectedItem as HomeRunEventListItem)?.Event.Ambient.Index ?? -1;
+        IReadOnlyList<StadiumHomeRunEvent> events = StadiumHomeRunAnalyzer.FindEvents(_current.Document);
+        _loading = true;
+        _homeRunList.BeginUpdate();
+        _homeRunList.Items.Clear();
+        foreach (StadiumHomeRunEvent item in events) _homeRunList.Items.Add(new HomeRunEventListItem(item));
+        _homeRunList.EndUpdate();
+        int index = -1;
+        for (int item = 0; item < _homeRunList.Items.Count; item++)
+            if (((HomeRunEventListItem)_homeRunList.Items[item]).Event.Ambient.Index == selectedAmbient)
+            {
+                index = item;
+                break;
+            }
+        _homeRunList.SelectedIndex = index >= 0 ? index : (_homeRunList.Items.Count > 0 ? 0 : -1);
+        _loading = false;
+        LoadSelectedHomeRunEvent();
+        UpdateHomeRunBoundary();
+    }
+
+    private void LoadSelectedHomeRunEvent(bool selectAmbient = false)
+    {
+        if (_loading) return;
+        StadiumHomeRunEvent? item = (_homeRunList.SelectedItem as HomeRunEventListItem)?.Event;
+        LoadSettings(_homeRunGrid, item?.Settings ?? Array.Empty<FieldDataSetting>());
+        if (item == null)
+        {
+            _homeRunEventInfo.Text = "This stadium has no home-run ambient effects.";
+            return;
+        }
+        if (selectAmbient) SelectAmbientInList(item.Ambient.Index);
+        string delay = item.DelaySeconds > 0 ? $"Delay {item.DelaySeconds:0.###}s" : "No delay";
+        string sound = string.IsNullOrWhiteSpace(item.Sound) ? "No hrSfx" : $"Sound {item.Sound}";
+        _homeRunEventInfo.Text = $"{item.Kind}  |  {delay}  |  {sound}  |  " +
+                                 "Edit values above, then trigger the selected event to preview its placement and motion.";
+    }
+
+    private void UpdateHomeRunBoundary()
+    {
+        if (_current == null) return;
+        string tag = StadiumHomeRunAnalyzer.HomeRunMaterialTag(_current.Document);
+        _loading = true;
+        _homeRunMaterial.Items.Clear();
+        IEnumerable<string> materials = (_scene?.Meshes ?? [])
+            .SelectMany(mesh => mesh.Materials)
+            .Select(material => material.TextureName)
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Select(name => name!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(name => name, StringComparer.OrdinalIgnoreCase);
+        foreach (string material in materials) _homeRunMaterial.Items.Add(material);
+        _homeRunMaterial.Text = tag;
+        _loading = false;
+        if (_scene == null)
+        {
+            _homeRunBoundaryInfo.Text = "No RWS scene is available for boundary analysis.";
+            return;
+        }
+        StadiumHomeRunBoundary boundary = StadiumHomeRunAnalyzer.AnalyzeBoundary(_scene, tag);
+        _homeRunBoundaryInfo.Text = boundary.IsPresent
+            ? $"{boundary.TriangleCount:N0} tagged triangles in {boundary.MeshCount:N0} sectors  |  " +
+              $"bounds {VectorText(boundary.Minimum)} to {VectorText(boundary.Maximum)}  |  size {VectorText(boundary.Size)}"
+            : $"The RWS contains no polygons using material '{tag}'. Home runs will not have a matching trigger surface.";
+    }
+
+    private void ApplyHomeRunMaterialTag()
+    {
+        if (_loading || _current == null) return;
+        string tag = _homeRunMaterial.Text.Trim();
+        if (tag.Length == 0 || tag.IndexOfAny(new[] { '\r', '\n', ';', '{', '}' }) >= 0)
+        {
+            MessageBox.Show(this, "Enter one existing RWS material name without punctuation.",
+                "Home Run Material", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+        FieldDataSetting? setting = _current.Document.CollisionSettings.FirstOrDefault(item =>
+            item.Key.Equals("homerun", StringComparison.OrdinalIgnoreCase));
+        if (setting == null)
+        {
+            MessageBox.Show(this, "This fielddata file has no editable homerun collision directive.",
+                "Home Run Material", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+        setting.Value = tag;
+        LoadSettings(_collisionGrid, _current.Document.CollisionSettings);
+        RefreshRawText();
+        UpdateSummaryAndStatus();
+        UpdateHomeRunBoundary();
+        if (_scene != null && !StadiumHomeRunAnalyzer.AnalyzeBoundary(_scene, tag).IsPresent)
+            MessageBox.Show(this,
+                $"The tag was changed, but this stadium RWS has no polygons using '{tag}'. " +
+                "Choose an existing material unless you are also replacing the RWS geometry.",
+                "No Matching Boundary", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+    }
+
+    private void TriggerSelectedHomeRunEvent()
+    {
+        StadiumHomeRunEvent? item = (_homeRunList.SelectedItem as HomeRunEventListItem)?.Event;
+        if (item == null) return;
+        StopHomeRunEventPreview();
+        SelectAmbientInList(item.Ambient.Index);
+        for (int index = 0; index < _ambientAnimation.Items.Count; index++)
+        {
+            if (_ambientAnimation.Items[index] is AmbientAnimationItem animation &&
+                animation.Assignment.IsHomeRun)
+            {
+                _ambientAnimation.SelectedIndex = index;
+                break;
+            }
+        }
+        _pendingHomeRunEvent = item;
+        _showHomeRunHelpers.Checked = true;
+        if (item.DelaySeconds <= 0)
+        {
+            ActivatePendingHomeRunEvent();
+            return;
+        }
+        _homeRunTriggerWatch.Restart();
+        _homeRunTriggerTimer.Start();
+        _homeRunEventInfo.Text = $"Waiting {item.DelaySeconds:0.###}s for {item.DisplayName}…";
+    }
+
+    private void HomeRunTriggerTimer_Tick(object? sender, EventArgs e)
+    {
+        if (_pendingHomeRunEvent == null) return;
+        double remaining = _pendingHomeRunEvent.DelaySeconds - _homeRunTriggerWatch.Elapsed.TotalSeconds;
+        if (remaining > 0)
+        {
+            _homeRunEventInfo.Text = $"{_pendingHomeRunEvent.DisplayName} triggers in {remaining:0.0}s…";
+            return;
+        }
+        ActivatePendingHomeRunEvent();
+    }
+
+    private void ActivatePendingHomeRunEvent()
+    {
+        StadiumHomeRunEvent? item = _pendingHomeRunEvent;
+        _homeRunTriggerTimer.Stop();
+        _homeRunTriggerWatch.Reset();
+        _pendingHomeRunEvent = null;
+        if (item == null) return;
+        if (_ambientPlaybackDuration > 0) PlayAmbient();
+        string sound = string.IsNullOrWhiteSpace(item.Sound) ? string.Empty : $"  •  would play {item.Sound}";
+        _homeRunEventInfo.Text = $"Triggered {item.DisplayName}{sound}. " +
+                                 (_ambientPlaybackDuration > 0
+                                     ? "The assigned ANM/path is playing in the 3D preview."
+                                     : "The resolved model/particle source is highlighted at its configured position.");
+    }
+
+    private void StopHomeRunEventPreview()
+    {
+        _homeRunTriggerTimer.Stop();
+        _homeRunTriggerWatch.Reset();
+        _pendingHomeRunEvent = null;
+        StopAmbientPlayback(render: true);
+    }
+
+    private void OpenHomeRunAmbient()
+    {
+        StadiumHomeRunEvent? item = (_homeRunList.SelectedItem as HomeRunEventListItem)?.Event;
+        if (item == null) return;
+        SelectAmbient(item.Ambient.Index);
+    }
+
+    private void SelectAmbientInList(int ambientIndex)
+    {
+        for (int index = 0; index < _ambientList.Items.Count; index++)
+            if ((_ambientList.Items[index] as AmbientListItem)?.Ambient.Index == ambientIndex)
+            {
+                _ambientList.SelectedIndex = index;
+                return;
+            }
+    }
+
+    private static string VectorText(Vector3 value) => $"({value.X:0.#}, {value.Y:0.#}, {value.Z:0.#})";
 
     private void UpdateAmbientInfo()
     {
@@ -1467,6 +1736,7 @@ public sealed class StadiumEnvironmentEditorForm : Form
             ? -1 : Math.Clamp(ambientIndex, 0, _ambientList.Items.Count - 1);
         _loading = false;
         LoadSelectedAmbient();
+        RefreshHomeRunEditor(ambientIndex);
         RefreshRawText();
         UpdateSummaryAndStatus();
         _tabs.SelectedIndex = 2;
@@ -1582,17 +1852,26 @@ public sealed class StadiumEnvironmentEditorForm : Form
         {
             ApplyPreviewCamera();
         }
-        if (ReferenceEquals(grid, _ambientGrid))
+        if (ReferenceEquals(grid, _ambientGrid) || ReferenceEquals(grid, _homeRunGrid))
         {
+            int ambientIndex = ReferenceEquals(grid, _homeRunGrid)
+                ? (_homeRunList.SelectedItem as HomeRunEventListItem)?.Event.Ambient.Index ?? -1
+                : SelectedAmbient()?.Index ?? -1;
             StopAmbientPlayback(render: false);
             LoadSplineEditor(SelectedAmbient());
             RebuildAmbientPreview();
             ConfigureAmbientPlayback();
+            RefreshHomeRunEditor(ambientIndex);
         }
         else if (ReferenceEquals(grid, _fieldGrid) &&
-                 setting.Key.Equals("numAmbs", StringComparison.OrdinalIgnoreCase))
+                  setting.Key.Equals("numAmbs", StringComparison.OrdinalIgnoreCase))
         {
             RebuildAmbientPreview();
+        }
+        else if (ReferenceEquals(grid, _collisionGrid) &&
+                 setting.Key.Equals("homerun", StringComparison.OrdinalIgnoreCase))
+        {
+            UpdateHomeRunBoundary();
         }
     }
 
@@ -1726,6 +2005,16 @@ public sealed class StadiumEnvironmentEditorForm : Form
         public override string ToString() => File == null
             ? $"{Assignment.AssetName} ({Assignment.Directive}, missing)"
             : $"{Assignment.AssetName} ({Assignment.Directive})";
+    }
+
+    private sealed record HomeRunEventListItem(StadiumHomeRunEvent Event)
+    {
+        public override string ToString()
+        {
+            string delay = Event.DelaySeconds > 0 ? $", {Event.DelaySeconds:0.###}s delay" : string.Empty;
+            string sound = string.IsNullOrWhiteSpace(Event.Sound) ? string.Empty : $", {Event.Sound}";
+            return $"{Event.DisplayName}  [{Event.Kind}{delay}{sound}]";
+        }
     }
 
     private sealed record AmbientPlaybackMesh(
