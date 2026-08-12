@@ -8,9 +8,9 @@ namespace PS2_DATA_File_Extractor;
 public sealed class RenderWareScenePreviewControl : Control
 {
     private RenderWareScene? _scene;
-    private float _yaw = -0.55F, _pitch = -0.28F, _zoom = 1F;
+    private float _yaw = -0.55F, _pitch = -0.28F, _zoom = 1F, _panX, _panY;
     private Point _lastMouse;
-    private bool _rotating, _wireframe, _perspective = true, _cullBackfaces, _hideSkyRoof = true,
+    private bool _rotating, _panning, _wireframe, _perspective = true, _cullBackfaces, _hideSkyRoof = true,
         _hideHelperGeometry = true;
 
     public RenderWareScenePreviewControl()
@@ -63,35 +63,96 @@ public sealed class RenderWareScenePreviewControl : Control
     {
         _yaw = -0.55F;
         _pitch = _scene?.Kind == RenderWareAssetKind.RwsScene ? 0.36F : -0.28F;
-        _zoom = _scene?.Kind == RenderWareAssetKind.RwsScene ? 2.1F : 1F;
+        float aspect = ClientSize.Height > 0 ? ClientSize.Width / (float)ClientSize.Height : 2F;
+        _zoom = _scene?.Kind == RenderWareAssetKind.RwsScene
+            ? Math.Clamp(2.15F + (aspect - 2F) * 0.75F, 1.9F, 3.4F)
+            : 1F;
+        _panX = 0F;
+        _panY = 0F;
+        Invalidate();
+    }
+
+    public void ZoomIn() => ChangeZoom(1.25F, null);
+    public void ZoomOut() => ChangeZoom(0.8F, null);
+
+    public void ShowFrontView()
+    {
+        _yaw = 0F;
+        _pitch = 0F;
+        _panX = _panY = 0F;
+        Invalidate();
+    }
+
+    public void ShowTopView()
+    {
+        _yaw = 0F;
+        _pitch = 1.45F;
+        _panX = _panY = 0F;
         Invalidate();
     }
 
     protected override void OnMouseDown(MouseEventArgs e)
     {
         base.OnMouseDown(e);
-        if (e.Button != MouseButtons.Left) return;
-        _rotating = true; _lastMouse = e.Location; Capture = true;
+        bool pan = e.Button is MouseButtons.Right or MouseButtons.Middle ||
+                   (e.Button == MouseButtons.Left && ModifierKeys.HasFlag(Keys.Shift));
+        if (e.Button != MouseButtons.Left && !pan) return;
+        _panning = pan;
+        _rotating = !pan;
+        _lastMouse = e.Location;
+        Capture = true;
+        Focus();
     }
 
     protected override void OnMouseMove(MouseEventArgs e)
     {
         base.OnMouseMove(e);
-        if (!_rotating) return;
-        _yaw += (e.X - _lastMouse.X) * 0.012F;
-        _pitch = Math.Clamp(_pitch + (e.Y - _lastMouse.Y) * 0.009F, -1.45F, 1.45F);
+        if (!_rotating && !_panning) return;
+        if (_panning)
+        {
+            _panX = Math.Clamp(_panX + (e.X - _lastMouse.X) / (float)Math.Max(1, Width), -4F, 4F);
+            _panY = Math.Clamp(_panY + (e.Y - _lastMouse.Y) / (float)Math.Max(1, Height), -4F, 4F);
+        }
+        else
+        {
+            _yaw += (e.X - _lastMouse.X) * 0.012F;
+            _pitch = Math.Clamp(_pitch + (e.Y - _lastMouse.Y) * 0.009F, -1.45F, 1.45F);
+        }
         _lastMouse = e.Location; Invalidate();
     }
 
     protected override void OnMouseUp(MouseEventArgs e)
     {
-        base.OnMouseUp(e); _rotating = false; Capture = false;
+        base.OnMouseUp(e); _rotating = false; _panning = false; Capture = false;
     }
 
     protected override void OnMouseWheel(MouseEventArgs e)
     {
         base.OnMouseWheel(e);
-        _zoom = Math.Clamp(_zoom * (e.Delta > 0 ? 1.12F : 0.89F), 0.25F, 8F);
+        float steps = e.Delta / 120F;
+        ChangeZoom(MathF.Pow(1.18F, steps), e.Location);
+    }
+
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        base.OnKeyDown(e);
+        if (e.KeyCode is Keys.Add or Keys.Oemplus) { ZoomIn(); e.Handled = true; }
+        else if (e.KeyCode is Keys.Subtract or Keys.OemMinus) { ZoomOut(); e.Handled = true; }
+        else if (e.KeyCode == Keys.Home) { ResetView(); e.Handled = true; }
+    }
+
+    private void ChangeZoom(float factor, Point? cursor)
+    {
+        float oldZoom = _zoom;
+        _zoom = Math.Clamp(_zoom * factor, 0.08F, 30F);
+        float applied = _zoom / oldZoom;
+        if (cursor is Point point && Width > 0 && Height > 0)
+        {
+            float x = point.X / (float)Width - 0.5F;
+            float y = point.Y / (float)Height - 0.5F;
+            _panX = Math.Clamp(x - (x - _panX) * applied, -4F, 4F);
+            _panY = Math.Clamp(y - (y - _panY) * applied, -4F, 4F);
+        }
         Invalidate();
     }
 
@@ -204,7 +265,7 @@ public sealed class RenderWareScenePreviewControl : Control
         cameraDistance += radius * 0.04F;
         float rangeX = Math.Max(0.001F, maxX - minX), rangeY = Math.Max(0.001F, maxY - minY);
         float orthographicScale = Math.Min(availableWidth / rangeX, availableHeight / rangeY) * 0.92F * _zoom;
-        return new Projection(width / 2F, height / 2F + 9, modelCenter, orthographicScale,
+        return new Projection(width * (0.5F + _panX), height * (0.5F + _panY) + 9, modelCenter, orthographicScale,
             focalLength, cameraDistance, (minX + maxX) / 2F, (minY + maxY) / 2F);
     }
 
@@ -322,7 +383,7 @@ public sealed class RenderWareScenePreviewControl : Control
         using Pen pen = new(Color.FromArgb(42, 255, 255, 255));
         for (int x = 0; x < Width; x += 40) graphics.DrawLine(pen, x, 0, x, Height);
         for (int y = 0; y < Height; y += 40) graphics.DrawLine(pen, 0, y, Width, y);
-        TextRenderer.DrawText(graphics, "Drag to rotate  •  Mouse wheel to zoom  •  Double-click to reset",
+        TextRenderer.DrawText(graphics, "Left-drag rotate  •  Right-drag pan  •  Wheel zoom  •  Double-click fit",
             Font, new Rectangle(8, Height - 23, Width - 16, 18), Color.FromArgb(175, 205, 215, 225), TextFormatFlags.Right);
     }
 

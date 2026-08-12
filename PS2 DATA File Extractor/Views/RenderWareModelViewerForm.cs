@@ -103,12 +103,19 @@ public sealed class RenderWareModelViewerForm : Form
 
         TableLayoutPanel right = new() { Dock = DockStyle.Fill, RowCount = 3, ColumnCount = 1, Padding = new Padding(4) };
         right.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
-        right.RowStyles.Add(new RowStyle(SizeType.Percent, 56));
-        right.RowStyles.Add(new RowStyle(SizeType.Percent, 44));
+        right.RowStyles.Add(new RowStyle(SizeType.Percent, 62));
+        right.RowStyles.Add(new RowStyle(SizeType.Percent, 38));
         _summary.Dock = DockStyle.Fill; _summary.TextAlign = ContentAlignment.MiddleLeft;
         _summary.Font = new Font(Font, FontStyle.Bold); _summary.AutoEllipsis = true;
         _preview.Dock = DockStyle.Fill;
-        right.Controls.Add(_summary, 0, 0); right.Controls.Add(_preview, 0, 1); right.Controls.Add(BuildDetails(), 0, 2);
+        TableLayoutPanel heading = new() { Dock = DockStyle.Fill, ColumnCount = 2, Margin = Padding.Empty };
+        heading.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        heading.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        _detachButton.Text = "Open in New Window...";
+        _detachButton.Margin = new Padding(8, 7, 4, 6);
+        heading.Controls.Add(_summary, 0, 0);
+        heading.Controls.Add(_detachButton, 1, 0);
+        right.Controls.Add(heading, 0, 0); right.Controls.Add(_preview, 0, 1); right.Controls.Add(BuildDetails(), 0, 2);
         _mainSplit.Panel2.Controls.Add(right);
         return _mainSplit;
     }
@@ -147,10 +154,12 @@ public sealed class RenderWareModelViewerForm : Form
         footer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         _status.Dock = DockStyle.Fill; _status.TextAlign = ContentAlignment.MiddleLeft; _status.AutoEllipsis = true;
         FlowLayoutPanel actions = new() { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = false };
-        Button reset = Button("Reset View"); reset.Click += (_, _) => _preview.ResetView();
+        Button zoomOut = Button("Zoom −"); zoomOut.Click += (_, _) => _preview.ZoomOut();
+        Button zoomIn = Button("Zoom +"); zoomIn.Click += (_, _) => _preview.ZoomIn();
+        Button reset = Button("Fit View"); reset.Click += (_, _) => _preview.ResetView();
         Button close = Button("Close"); close.Click += (_, _) => Close();
         actions.Controls.AddRange(new Control[] { _perspective, _hideSkyRoof, _showHelpers, _cullBackfaces,
-            _wireframe, reset, _detachButton, _rawButton, _objButton, _textureButton, _mapButton, close });
+            _wireframe, zoomOut, zoomIn, reset, _rawButton, _objButton, _textureButton, _mapButton, close });
         footer.Controls.Add(_status, 0, 0); footer.Controls.Add(actions, 1, 0);
         return footer;
     }

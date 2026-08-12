@@ -26,6 +26,7 @@ internal sealed class RenderWareDetachedPreviewForm : Form
 
         Controls.Add(_preview);
         Controls.Add(BuildToolbar(perspective, hideBackdrop, showHelpers, cullBackfaces, wireframe));
+        Shown += (_, _) => _preview.ResetView();
     }
 
     private Control BuildToolbar(bool perspective, bool hideBackdrop, bool showHelpers,
@@ -49,8 +50,16 @@ internal sealed class RenderWareDetachedPreviewForm : Form
             value => _preview.CullBackfaces = value);
         CheckBox wireframeBox = Check("Wireframe", wireframe,
             value => _preview.Wireframe = value);
-        Button reset = new() { Text = "Reset View", AutoSize = true };
+        Button zoomOut = new() { Text = "Zoom −", AutoSize = true };
+        zoomOut.Click += (_, _) => _preview.ZoomOut();
+        Button zoomIn = new() { Text = "Zoom +", AutoSize = true };
+        zoomIn.Click += (_, _) => _preview.ZoomIn();
+        Button reset = new() { Text = "Fit View", AutoSize = true };
         reset.Click += (_, _) => _preview.ResetView();
+        Button front = new() { Text = "Front", AutoSize = true };
+        front.Click += (_, _) => _preview.ShowFrontView();
+        Button top = new() { Text = "Top", AutoSize = true };
+        top.Click += (_, _) => _preview.ShowTopView();
         Button maximize = new() { Text = "Maximize", AutoSize = true };
         maximize.Click += (_, _) => WindowState = WindowState == FormWindowState.Maximized
             ? FormWindowState.Normal : FormWindowState.Maximized;
@@ -58,7 +67,8 @@ internal sealed class RenderWareDetachedPreviewForm : Form
         close.Click += (_, _) => Close();
         toolbar.Controls.AddRange(new Control[]
         {
-            perspectiveBox, backdropBox, helpersBox, cullBox, wireframeBox, reset, maximize, close
+            perspectiveBox, backdropBox, helpersBox, cullBox, wireframeBox,
+            zoomOut, zoomIn, reset, front, top, maximize, close
         });
         return toolbar;
     }
