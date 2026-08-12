@@ -66,6 +66,37 @@ public sealed class RenderWareSceneArchiveTests : IDisposable
     }
 
     [Fact]
+    public void RetailFieldCoordinatesExposeGameplayCamerasBasesAndFielderSpawns()
+    {
+        BackyardCameraPreset batting = BackyardFieldCoordinates.CameraPresets[0];
+
+        Assert.Equal("Game batting camera", batting.Name);
+        Assert.Equal(new Vector3(0F, 75.2F, 509.1F), batting.Position);
+        Assert.Equal(180F, batting.HeadingDegrees);
+        Assert.Equal(new Vector3(814.5F, 0F, -848F), BackyardFieldCoordinates.Bases["First base"]);
+        Assert.Equal(new Vector3(0F, 0F, -1696F), BackyardFieldCoordinates.Bases["Second base"]);
+        Assert.Equal(24, BackyardFieldCoordinates.InfieldSpawns.Count);
+        Assert.Equal(27, BackyardFieldCoordinates.OutfieldSpawns.Count);
+    }
+
+    [Fact]
+    public void PreviewCanEnterAndLeaveRecoveredFieldCameraMode()
+    {
+        using RenderWareScenePreviewControl preview = new() { ClientSize = new Size(640, 360) };
+        preview.Scene = RenderWareSceneParser.Parse("data/models/test.dff",
+            RenderWareAssetKind.DffModel, CreateRigidDff());
+
+        preview.SetFieldCamera(BackyardFieldCoordinates.CameraPresets[0]);
+        using Bitmap bitmap = new(640, 360);
+        preview.DrawToBitmap(bitmap, new Rectangle(Point.Empty, bitmap.Size));
+
+        Assert.True(preview.IsFieldCamera);
+        Assert.Equal(new Vector3(0F, 75.2F, 509.1F), preview.FieldCameraPosition);
+        preview.ResetView();
+        Assert.False(preview.IsFieldCamera);
+    }
+
+    [Fact]
     public void ViewerOpensAfterApplyingItsDefaultSplitterLayout()
     {
         Directory.CreateDirectory(_temp);

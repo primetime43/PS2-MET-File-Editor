@@ -9,9 +9,13 @@ public sealed class RenderWareScenePreviewControl : Control
 {
     private RenderWareScene? _scene;
     private float _yaw = -0.55F, _pitch = -0.28F, _zoom = 1F, _panX, _panY;
+    private float _fieldHeading, _fieldPitch;
+    private Vector3 _fieldPosition;
     private Point _lastMouse;
     private bool _rotating, _panning, _wireframe, _perspective = true, _cullBackfaces, _hideSkyRoof = true,
-        _hideHelperGeometry = true;
+        _hideHelperGeometry = true, _fieldCamera;
+    private readonly HashSet<Keys> _movementKeys = [];
+    private readonly System.Windows.Forms.Timer _movementTimer = new() { Interval = 16 };
 
     public RenderWareScenePreviewControl()
     {
@@ -21,6 +25,9 @@ public sealed class RenderWareScenePreviewControl : Control
         MinimumSize = new Size(360, 220);
         SetStyle(ControlStyles.ResizeRedraw, true);
         Cursor = Cursors.SizeAll;
+        TabStop = true;
+        _movementTimer.Tick += (_, _) => MoveFieldCamera();
+        _movementTimer.Start();
     }
 
     public RenderWareScene? Scene
@@ -59,8 +66,28 @@ public sealed class RenderWareScenePreviewControl : Control
         set { _hideHelperGeometry = value; Invalidate(); }
     }
 
+    public bool IsFieldCamera => _fieldCamera;
+    public float MovementSpeed { get; set; } = 900F;
+    public Vector3 FieldCameraPosition => _fieldPosition;
+
+    public void SetFieldCamera(BackyardCameraPreset preset)
+    {
+        ArgumentNullException.ThrowIfNull(preset);
+        _fieldCamera = true;
+        _perspective = true;
+        _fieldPosition = preset.Position;
+        _fieldHeading = preset.HeadingDegrees;
+        _fieldPitch = preset.PitchDegrees;
+        _zoom = 1F;
+        _panX = _panY = 0F;
+        Focus();
+        Invalidate();
+    }
+
     public void ResetView()
     {
+        _fieldCamera = false;
+        _movementKeys.Clear();
         _yaw = -0.55F;
         _pitch = _scene?.Kind == RenderWareAssetKind.RwsScene ? 0.36F : -0.28F;
         _zoom = 1F;
@@ -74,6 +101,7 @@ public sealed class RenderWareScenePreviewControl : Control
 
     public void ShowFrontView()
     {
+        _fieldCamera = false;
         _yaw = 0F;
         _pitch = 0F;
         _panX = _panY = 0F;
@@ -82,6 +110,7 @@ public sealed class RenderWareScenePreviewControl : Control
 
     public void ShowTopView()
     {
+        _fieldCamera = false;
         _yaw = 0F;
         _pitch = 1.45F;
         _panX = _panY = 0F;
@@ -91,8 +120,8 @@ public sealed class RenderWareScenePreviewControl : Control
     protected override void OnMouseDown(MouseEventArgs e)
     {
         base.OnMouseDown(e);
-        bool pan = e.Button is MouseButtons.Right or MouseButtons.Middle ||
-                   (e.Button == MouseButtons.Left && ModifierKeys.HasFlag(Keys.Shift));
+        bool pan = !_fieldCamera && (e.Button is MouseButtons.Right or MouseButtons.Middle ||
+                   (e.Button == MouseButtons.Left && ModifierKeys.HasFlag(Keys.Shift)));
         if (e.Button != MouseButtons.Left && !pan) return;
         _panning = pan;
         _rotating = !pan;
@@ -105,7 +134,12 @@ public sealed class RenderWareScenePreviewControl : Control
     {
         base.OnMouseMove(e);
         if (!_rotating && !_panning) return;
-        if (_panning)
+        if (_fieldCamera)
+        {
+            _fieldHeading += (e.X - _lastMouse.X) * 0.22F;
+            _fieldPitch = Math.Clamp(_fieldPitch + (e.Y - _lastMouse.Y) * 0.18F, -89F, 89F);
+        }
+        else if (_panning)
         {
             _panX = Math.Clamp(_panX + (e.X - _lastMouse.X) / (float)Math.Max(1, Width), -4F, 4F);
             _panY = Math.Clamp(_panY + (e.Y - _lastMouse.Y) / (float)Math.Max(1, Height), -4F, 4F);
@@ -133,9 +167,36 @@ public sealed class RenderWareScenePreviewControl : Control
     protected override void OnKeyDown(KeyEventArgs e)
     {
         base.OnKeyDown(e);
+        if (_fieldCamera && IsMovementKey(e.KeyCode))
+        {
+            _movementKeys.Add(e.KeyCode);
+            e.Handled = true;
+            return;
+        }
         if (e.KeyCode is Keys.Add or Keys.Oemplus) { ZoomIn(); e.Handled = true; }
         else if (e.KeyCode is Keys.Subtract or Keys.OemMinus) { ZoomOut(); e.Handled = true; }
         else if (e.KeyCode == Keys.Home) { ResetView(); e.Handled = true; }
+    }
+
+    protected override void OnKeyUp(KeyEventArgs e)
+    {
+        base.OnKeyUp(e);
+        _movementKeys.Remove(e.KeyCode);
+    }
+
+    protected override bool IsInputKey(Keys keyData) =>
+        IsMovementKey(keyData & Keys.KeyCode) || base.IsInputKey(keyData);
+
+    protected override void OnLostFocus(EventArgs e)
+    {
+        base.OnLostFocus(e);
+        _movementKeys.Clear();
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing) _movementTimer.Dispose();
+        base.Dispose(disposing);
     }
 
     private void ChangeZoom(float factor, Point? cursor)
@@ -143,7 +204,7 @@ public sealed class RenderWareScenePreviewControl : Control
         float oldZoom = _zoom;
         _zoom = Math.Clamp(_zoom * factor, 0.08F, 30F);
         float applied = _zoom / oldZoom;
-        if (cursor is Point point && Width > 0 && Height > 0)
+        if (!_fieldCamera && cursor is Point point && Width > 0 && Height > 0)
         {
             float x = point.X / (float)Width - 0.5F;
             float y = point.Y / (float)Height - 0.5F;
@@ -151,6 +212,34 @@ public sealed class RenderWareScenePreviewControl : Control
             _panY = Math.Clamp(y - (y - _panY) * applied, -4F, 4F);
         }
         Invalidate();
+    }
+
+    private void MoveFieldCamera()
+    {
+        if (!_fieldCamera || _movementKeys.Count == 0 || !Focused) return;
+        Vector3 forward = FieldForward();
+        Vector3 right = Vector3.Normalize(Vector3.Cross(Vector3.UnitY, forward));
+        Vector3 movement = Vector3.Zero;
+        if (_movementKeys.Contains(Keys.W)) movement += forward;
+        if (_movementKeys.Contains(Keys.S)) movement -= forward;
+        if (_movementKeys.Contains(Keys.D)) movement += right;
+        if (_movementKeys.Contains(Keys.A)) movement -= right;
+        if (_movementKeys.Contains(Keys.E)) movement += Vector3.UnitY;
+        if (_movementKeys.Contains(Keys.Q)) movement -= Vector3.UnitY;
+        if (movement.LengthSquared() < 0.0001F) return;
+        float multiplier = ModifierKeys.HasFlag(Keys.Shift) ? 4F : 1F;
+        _fieldPosition += Vector3.Normalize(movement) * MovementSpeed * multiplier * (_movementTimer.Interval / 1000F);
+        Invalidate();
+    }
+
+    private static bool IsMovementKey(Keys key) => key is Keys.W or Keys.A or Keys.S or Keys.D or Keys.Q or Keys.E;
+
+    private Vector3 FieldForward()
+    {
+        float heading = _fieldHeading * MathF.PI / 180F;
+        float pitch = _fieldPitch * MathF.PI / 180F;
+        float cp = MathF.Cos(pitch);
+        return Vector3.Normalize(new Vector3(MathF.Sin(heading) * cp, -MathF.Sin(pitch), MathF.Cos(heading) * cp));
     }
 
     protected override void OnDoubleClick(EventArgs e) { base.OnDoubleClick(e); ResetView(); }
@@ -189,7 +278,7 @@ public sealed class RenderWareScenePreviewControl : Control
                 ProjectedVertex p = Project(vertex.Position, projection);
                 Vector3 normal = RotateVector(vertex.Normal);
                 return new ScreenVertex(p.X, p.Y, p.Depth, vertex.TextureCoordinate.X * p.InverseW,
-                    vertex.TextureCoordinate.Y * p.InverseW, p.InverseW, vertex.Color.ToArgb(), normal);
+                    vertex.TextureCoordinate.Y * p.InverseW, p.InverseW, vertex.Color.ToArgb(), normal, p.Visible);
             }).ToArray();
             foreach (RenderWareTriangle triangle in mesh.Triangles)
             {
@@ -197,6 +286,15 @@ public sealed class RenderWareScenePreviewControl : Control
                 RenderWareMaterial material = triangle.MaterialIndex >= 0 && triangle.MaterialIndex < mesh.Materials.Count
                     ? mesh.Materials[triangle.MaterialIndex] : new RenderWareMaterial(null, Color.LightGray);
                 if (ShouldHide(material))
+                    continue;
+                if (_fieldCamera)
+                {
+                    RasterizeFieldTriangle(mesh.Vertices[triangle.First], mesh.Vertices[triangle.Second],
+                        mesh.Vertices[triangle.Third], material, _scene.ResolveTexture(material), projection,
+                        pixels, depth, width, height);
+                    continue;
+                }
+                if (!screen[triangle.First].Visible || !screen[triangle.Second].Visible || !screen[triangle.Third].Visible)
                     continue;
                 Rasterize(screen[triangle.First], screen[triangle.Second], screen[triangle.Third], material,
                     _scene.ResolveTexture(material), pixels, depth, width, height, _perspective, _cullBackfaces);
@@ -211,6 +309,75 @@ public sealed class RenderWareScenePreviewControl : Control
         graphics.DrawImage(bitmap, new Rectangle(0, 0, Width, Height), 0, 0, width, height, GraphicsUnit.Pixel);
     }
 
+    private void RasterizeFieldTriangle(RenderWareSceneVertex a, RenderWareSceneVertex b,
+        RenderWareSceneVertex c, RenderWareMaterial material, RenderWareTexture? texture,
+        Projection projection, int[] pixels, float[] depth, int width, int height)
+    {
+        Span<FieldVertex> input = stackalloc FieldVertex[3];
+        input[0] = ToFieldVertex(a); input[1] = ToFieldVertex(b); input[2] = ToFieldVertex(c);
+        Span<FieldVertex> polygon = stackalloc FieldVertex[4];
+        int count = ClipNearPlane(input, polygon, 5F);
+        if (count < 3) return;
+        ScreenVertex first = ProjectFieldVertex(polygon[0], projection);
+        for (int index = 1; index < count - 1; index++)
+        {
+            Rasterize(first, ProjectFieldVertex(polygon[index], projection),
+                ProjectFieldVertex(polygon[index + 1], projection), material, texture,
+                pixels, depth, width, height, true, _cullBackfaces);
+        }
+    }
+
+    private FieldVertex ToFieldVertex(RenderWareSceneVertex vertex) => new(
+        RotateVector(vertex.Position - _fieldPosition), vertex.TextureCoordinate,
+        vertex.Color.ToArgb(), RotateVector(vertex.Normal));
+
+    private static int ClipNearPlane(ReadOnlySpan<FieldVertex> input, Span<FieldVertex> output, float near)
+    {
+        int count = 0;
+        FieldVertex previous = input[^1];
+        bool previousInside = previous.View.Z >= near;
+        foreach (FieldVertex current in input)
+        {
+            bool currentInside = current.View.Z >= near;
+            if (currentInside != previousInside)
+            {
+                float t = (near - previous.View.Z) / (current.View.Z - previous.View.Z);
+                output[count++] = Lerp(previous, current, t);
+            }
+            if (currentInside) output[count++] = current;
+            previous = current;
+            previousInside = currentInside;
+        }
+        return count;
+    }
+
+    private static FieldVertex Lerp(FieldVertex a, FieldVertex b, float amount) => new(
+        Vector3.Lerp(a.View, b.View, amount), Vector2.Lerp(a.Uv, b.Uv, amount),
+        LerpArgb(a.Argb, b.Argb, amount),
+        Vector3.Lerp(a.Normal, b.Normal, amount));
+
+    private static int LerpArgb(int a, int b, float amount)
+    {
+        int alpha = LerpChannel(a, b, 24, amount);
+        int red = LerpChannel(a, b, 16, amount);
+        int green = LerpChannel(a, b, 8, amount);
+        int blue = LerpChannel(a, b, 0, amount);
+        return (alpha << 24) | (red << 16) | (green << 8) | blue;
+    }
+
+    private static int LerpChannel(int a, int b, int shift, float amount) =>
+        Math.Clamp((int)MathF.Round(((a >>> shift) & 0xFF) +
+            (((b >>> shift) & 0xFF) - ((a >>> shift) & 0xFF)) * amount), 0, 255);
+
+    private static ScreenVertex ProjectFieldVertex(FieldVertex vertex, Projection projection)
+    {
+        float inverseW = 1F / vertex.View.Z;
+        return new ScreenVertex(projection.CenterX + vertex.View.X * projection.FocalLength * inverseW,
+            projection.CenterY - vertex.View.Y * projection.FocalLength * inverseW, inverseW,
+            vertex.Uv.X * inverseW, vertex.Uv.Y * inverseW, inverseW,
+            vertex.Argb, vertex.Normal, true);
+    }
+
     private void DrawWireframe(Graphics graphics)
     {
         Projection projection = BuildProjection(Width, Height);
@@ -218,24 +385,29 @@ public sealed class RenderWareScenePreviewControl : Control
         int total = Math.Max(1, _scene!.TriangleCount), stride = Math.Max(1, total / 18_000), current = 0;
         foreach (RenderWareSceneMesh mesh in _scene.Meshes)
         {
-            PointF[] points = mesh.Vertices.Select(vertex =>
-            {
-                ProjectedVertex p = Project(vertex.Position, projection);
-                return new PointF(p.X, p.Y);
-            }).ToArray();
+            ProjectedVertex[] points = mesh.Vertices.Select(vertex => Project(vertex.Position, projection)).ToArray();
             foreach (RenderWareTriangle triangle in mesh.Triangles)
             {
                 RenderWareMaterial material = triangle.MaterialIndex >= 0 && triangle.MaterialIndex < mesh.Materials.Count
                     ? mesh.Materials[triangle.MaterialIndex] : new RenderWareMaterial(null, Color.LightGray);
                 if (ShouldHide(material)) continue;
                 if (current++ % stride != 0 || !Valid(triangle, points.Length)) continue;
-                graphics.DrawPolygon(pen, new[] { points[triangle.First], points[triangle.Second], points[triangle.Third] });
+                ProjectedVertex a = points[triangle.First], b = points[triangle.Second], c = points[triangle.Third];
+                if (!a.Visible || !b.Visible || !c.Visible) continue;
+                graphics.DrawPolygon(pen, new[] { new PointF(a.X, a.Y), new PointF(b.X, b.Y), new PointF(c.X, c.Y) });
             }
         }
     }
 
     private Projection BuildProjection(int width, int height)
     {
+        float fieldAvailableHeight = Math.Max(1, height - 64);
+        float fieldHalfFov = 25F * MathF.PI / 180F;
+        float fieldFocalLength = fieldAvailableHeight * 0.5F / MathF.Tan(fieldHalfFov) * _zoom;
+        if (_fieldCamera)
+            return new Projection(width * 0.5F, height * 0.5F + 3F, Vector3.Zero, 1F,
+                fieldFocalLength, 0F, 0F, 0F);
+
         IReadOnlyList<Vector3> all = GetProjectionPoints();
         Vector3 minimum = new(float.MaxValue), maximum = new(float.MinValue);
         foreach (Vector3 point in all) { minimum = Vector3.Min(minimum, point); maximum = Vector3.Max(maximum, point); }
@@ -310,19 +482,35 @@ public sealed class RenderWareScenePreviewControl : Control
 
     private ProjectedVertex Project(Vector3 point, Projection projection)
     {
+        if (_fieldCamera)
+        {
+            Vector3 view = RotateVector(point - _fieldPosition);
+            if (view.Z <= 5F) return new ProjectedVertex(0F, 0F, 0F, 0F, false);
+            float fieldInverseW = 1F / view.Z;
+            return new ProjectedVertex(projection.CenterX + view.X * projection.FocalLength * fieldInverseW,
+                projection.CenterY - view.Y * projection.FocalLength * fieldInverseW,
+                fieldInverseW, fieldInverseW, true);
+        }
         Vector3 rotated = RotateVector(point - projection.ModelCenter);
         if (!_perspective)
             return new ProjectedVertex(projection.CenterX + (rotated.X - projection.OrthographicCenterX) * projection.Scale,
                 projection.CenterY - (rotated.Y - projection.OrthographicCenterY) * projection.Scale,
-                rotated.Z, 1F);
+                rotated.Z, 1F, true);
         float viewDistance = Math.Max(0.001F, projection.CameraDistance - rotated.Z);
         float inverseW = 1F / viewDistance;
         return new ProjectedVertex(projection.CenterX + rotated.X * projection.FocalLength * inverseW,
-            projection.CenterY - rotated.Y * projection.FocalLength * inverseW, inverseW, inverseW);
+            projection.CenterY - rotated.Y * projection.FocalLength * inverseW, inverseW, inverseW, true);
     }
 
     private Vector3 RotateVector(Vector3 point)
     {
+        if (_fieldCamera)
+        {
+            Vector3 forward = FieldForward();
+            Vector3 right = Vector3.Normalize(Vector3.Cross(Vector3.UnitY, forward));
+            Vector3 up = Vector3.Normalize(Vector3.Cross(forward, right));
+            return new Vector3(Vector3.Dot(point, right), Vector3.Dot(point, up), Vector3.Dot(point, forward));
+        }
         float cy = MathF.Cos(_yaw), sy = MathF.Sin(_yaw);
         float x = cy * point.X + sy * point.Z, z = -sy * point.X + cy * point.Z;
         float cp = MathF.Cos(_pitch), sp = MathF.Sin(_pitch);
@@ -422,7 +610,10 @@ public sealed class RenderWareScenePreviewControl : Control
         using Pen pen = new(Color.FromArgb(42, 255, 255, 255));
         for (int x = 0; x < Width; x += 40) graphics.DrawLine(pen, x, 0, x, Height);
         for (int y = 0; y < Height; y += 40) graphics.DrawLine(pen, 0, y, Width, y);
-        TextRenderer.DrawText(graphics, "Left-drag rotate  •  Right-drag pan  •  Wheel zoom  •  Double-click fit",
+        string help = _fieldCamera
+            ? "Field POV  •  Drag to look  •  WASD move  •  Q/E height  •  Shift faster  •  Wheel zoom"
+            : "Left-drag rotate  •  Right-drag pan  •  Wheel zoom  •  Double-click fit";
+        TextRenderer.DrawText(graphics, help,
             Font, new Rectangle(8, Height - 23, Width - 16, 18), Color.FromArgb(175, 205, 215, 225), TextFormatFlags.Right);
     }
 
@@ -430,8 +621,11 @@ public sealed class RenderWareScenePreviewControl : Control
     {
         using Brush brush = new SolidBrush(Color.FromArgb(185, 16, 19, 23));
         graphics.FillRectangle(brush, 0, 0, Width, 29);
+        string camera = _fieldCamera
+            ? $"  |  POV ({_fieldPosition.X:0.0}, {_fieldPosition.Y:0.0}, {_fieldPosition.Z:0.0})"
+            : string.Empty;
         TextRenderer.DrawText(graphics,
-            $"{Path.GetFileName(_scene!.SourcePath)}  |  {_scene.VertexCount:N0} vertices  |  {_scene.TriangleCount:N0} triangles",
+            $"{Path.GetFileName(_scene!.SourcePath)}  |  {_scene.VertexCount:N0} vertices  |  {_scene.TriangleCount:N0} triangles{camera}",
             Font, new Rectangle(9, 5, Width - 18, 19), Color.White, TextFormatFlags.EndEllipsis);
     }
 
@@ -439,9 +633,10 @@ public sealed class RenderWareScenePreviewControl : Control
         new Rectangle(35, 35, Math.Max(1, Width - 70), Math.Max(1, Height - 70)), Color.FromArgb(220, 230, 235, 240),
         TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.WordBreak);
 
-    private readonly record struct ProjectedVertex(float X, float Y, float Depth, float InverseW);
+    private readonly record struct ProjectedVertex(float X, float Y, float Depth, float InverseW, bool Visible);
     private readonly record struct ScreenVertex(float X, float Y, float Depth, float UOverW, float VOverW,
-        float InverseW, int Color, Vector3 Normal);
+        float InverseW, int Color, Vector3 Normal, bool Visible);
+    private readonly record struct FieldVertex(Vector3 View, Vector2 Uv, int Argb, Vector3 Normal);
     private readonly record struct Projection(float CenterX, float CenterY, Vector3 ModelCenter, float Scale,
         float FocalLength, float CameraDistance, float OrthographicCenterX, float OrthographicCenterY);
 }

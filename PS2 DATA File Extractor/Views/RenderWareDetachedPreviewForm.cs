@@ -32,14 +32,58 @@ internal sealed class RenderWareDetachedPreviewForm : Form
     private Control BuildToolbar(bool perspective, bool hideBackdrop, bool showHelpers,
         bool cullBackfaces, bool wireframe)
     {
-        FlowLayoutPanel toolbar = new()
+        TableLayoutPanel toolbar = new()
         {
             Dock = DockStyle.Bottom,
-            Height = 45,
-            Padding = new Padding(8, 7, 8, 5),
+            Height = 82,
+            Padding = new Padding(8, 3, 8, 3),
             BackColor = SystemColors.Control,
-            WrapContents = false
+            RowCount = 2,
+            ColumnCount = 1
         };
+        toolbar.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
+        toolbar.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
+        FlowLayoutPanel navigation = Row();
+        FlowLayoutPanel display = Row();
+
+        ComboBox views = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 205 };
+        views.Items.Add("Fit / orbit view");
+        foreach (BackyardCameraPreset preset in BackyardFieldCoordinates.CameraPresets) views.Items.Add(preset);
+        views.SelectedIndex = 0;
+        Label cameraInfo = new()
+        {
+            AutoSize = true,
+            Text = "Field POV: drag to look • WASD move • Q/E height • Shift faster",
+            Margin = new Padding(12, 7, 4, 0)
+        };
+        views.SelectedIndexChanged += (_, _) =>
+        {
+            if (views.SelectedItem is BackyardCameraPreset preset)
+            {
+                _preview.SetFieldCamera(preset);
+                cameraInfo.Text = preset.Source + "  •  WASD/QE move, drag to look";
+                BeginInvoke(_preview.Focus);
+            }
+            else
+            {
+                _preview.ResetView();
+                cameraInfo.Text = "Orbit: drag rotate • right-drag pan • wheel zoom";
+            }
+        };
+        ComboBox speed = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 85 };
+        speed.Items.AddRange(new object[] { "Slow", "Normal", "Fast" });
+        speed.SelectedIndex = 1;
+        speed.SelectedIndexChanged += (_, _) => _preview.MovementSpeed = speed.SelectedIndex switch
+        {
+            0 => 350F,
+            2 => 2500F,
+            _ => 900F
+        };
+        navigation.Controls.AddRange(new Control[]
+        {
+            ToolbarLabel("View:"), views, ToolbarLabel("Move:"), speed, cameraInfo
+        });
+
         CheckBox perspectiveBox = Check("Perspective", perspective,
             value => _preview.Perspective = value);
         CheckBox backdropBox = Check("Hide backdrop", hideBackdrop,
@@ -65,13 +109,31 @@ internal sealed class RenderWareDetachedPreviewForm : Form
             ? FormWindowState.Normal : FormWindowState.Maximized;
         Button close = new() { Text = "Close", AutoSize = true };
         close.Click += (_, _) => Close();
-        toolbar.Controls.AddRange(new Control[]
+        display.Controls.AddRange(new Control[]
         {
             perspectiveBox, backdropBox, helpersBox, cullBox, wireframeBox,
             zoomOut, zoomIn, reset, front, top, maximize, close
         });
+        toolbar.Controls.Add(navigation, 0, 0);
+        toolbar.Controls.Add(display, 0, 1);
         return toolbar;
     }
+
+    private static FlowLayoutPanel Row() => new()
+    {
+        Dock = DockStyle.Fill,
+        FlowDirection = FlowDirection.LeftToRight,
+        WrapContents = false,
+        AutoScroll = true,
+        Margin = Padding.Empty
+    };
+
+    private static Label ToolbarLabel(string text) => new()
+    {
+        Text = text,
+        AutoSize = true,
+        Margin = new Padding(4, 7, 3, 0)
+    };
 
     private static CheckBox Check(string text, bool value, Action<bool> changed)
     {

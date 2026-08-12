@@ -30,9 +30,9 @@ they remain selectable so their stream metadata and original bytes can still be 
 
 ## Preview controls
 
-- Drag with the left mouse button to orbit.
+- Drag with the left mouse button to orbit; right-drag pans the orbit camera.
 - Use the mouse wheel to zoom.
-- Double-click the preview or select **Reset View** to restore the default camera.
+- Double-click the preview or select **Fit View** to restore and frame the visible geometry.
 - **Perspective** uses a perspective-correct camera and UV interpolation; disable it for an
   orthographic inspection view.
 - **Hide backdrop** removes sky-box and horizon materials so the stadium can be viewed from above.
@@ -41,8 +41,14 @@ they remain selectable so their stream metadata and original bytes can still be 
   helper volume, not missing stadium art.
 - **Cull backfaces** is optional because some retail props intentionally use two-sided polygons.
 - **Wireframe** makes BSP sector density and overlapping geometry easier to inspect.
-- **Open Preview...** opens the selected model or stadium in an independent, resizable window with
-  the same view switches, reset control, and a maximize button.
+- **Open in New Window...** opens the selected model or stadium in an independent, resizable window.
+- The detached window's **View** list includes retail gameplay camera positions, base-level POVs,
+  and the original fit/orbit camera. In a field POV, drag to look, use **W/A/S/D** to fly, **Q/E**
+  to change height, hold **Shift** for faster movement, and select a movement speed from the toolbar.
+
+The gameplay presets and fielder spawn tables were recovered from `SLUS_208.65`; see
+[`FIELD_CAMERAS.md`](FIELD_CAMERAS.md) for addresses, exact coordinates, and the distinction between
+gameplay cameras and each stadium's separate `fielddata.txt` team-photo camera.
 
 The solid renderer uses resolved archive PNG textures for DFF materials and decodes the RWS file's
 embedded platform-independent texture dictionary. All 1,154 retail RWS textures are supported. The
