@@ -12,6 +12,10 @@ public sealed class StadiumHomeRunBoundaryDocument
     private readonly byte[] _originalData;
     private readonly RenderWareScene _originalScene;
     private readonly List<TargetMesh> _targets;
+    private readonly List<EditablePoint> _points;
+    private readonly List<StadiumHomeRunBoundaryTriangle> _triangles;
+    private readonly Dictionary<VertexKey, int> _pointByVertex;
+    private readonly Dictionary<int, Vector3> _pointDeltas = [];
     private byte[] _currentData;
 
     private StadiumHomeRunBoundaryDocument(
@@ -24,6 +28,7 @@ public sealed class StadiumHomeRunBoundaryDocument
         _originalData = rawData.ToArray();
         _currentData = rawData.ToArray();
         _targets = targets;
+        (_points, _triangles, _pointByVertex) = BuildTopology(targets, materialTag);
         SourcePath = scene.SourcePath;
         MaterialTag = materialTag;
         OriginalBoundary = StadiumHomeRunAnalyzer.AnalyzeBoundary(scene, materialTag);
@@ -39,7 +44,13 @@ public sealed class StadiumHomeRunBoundaryDocument
     public Vector3 Offset { get; private set; }
     public Vector3 Scale { get; private set; } = Vector3.One;
     public int ChangedVertexCount => _targets.Sum(target => target.VertexIndices.Count);
-    public bool IsChanged => Offset != Vector3.Zero || Scale != Vector3.One;
+    public int ModifiedPointCount => _pointDeltas.Count;
+    public bool IsChanged => Offset != Vector3.Zero || Scale != Vector3.One || _pointDeltas.Count > 0;
+    public IReadOnlyList<StadiumHomeRunBoundaryTriangle> Triangles => _triangles;
+    public IReadOnlyList<StadiumHomeRunBoundaryVertex> Vertices => _points
+        .Select((point, index) => new StadiumHomeRunBoundaryVertex(index, point.OriginalPosition,
+            CurrentPosition(index), point.References.Count, _pointDeltas.ContainsKey(index)))
+        .ToList();
 
     public static StadiumHomeRunBoundaryDocument Create(
         RenderWareScene scene,
@@ -101,8 +112,57 @@ public sealed class StadiumHomeRunBoundaryDocument
 
         Offset = offset;
         Scale = scale;
+        Rebuild();
+    }
+
+    public void SetVertexPosition(int pointIndex, Vector3 position)
+    {
+        SetVertexPositions(new Dictionary<int, Vector3> { [pointIndex] = position });
+    }
+
+    public void SetVertexPositions(IReadOnlyDictionary<int, Vector3> positions)
+    {
+        ArgumentNullException.ThrowIfNull(positions);
+        foreach ((int pointIndex, Vector3 position) in positions)
+        {
+            if ((uint)pointIndex >= (uint)_points.Count) throw new ArgumentOutOfRangeException(nameof(positions));
+            if (!IsFinite(position)) throw new ArgumentOutOfRangeException(nameof(positions), "Positions must be finite.");
+        }
+        foreach ((int pointIndex, Vector3 position) in positions)
+        {
+            Vector3 baseline = TransformedOriginal(_points[pointIndex].OriginalPosition);
+            Vector3 delta = position - baseline;
+            if (delta.LengthSquared() <= 0.000001F) _pointDeltas.Remove(pointIndex);
+            else _pointDeltas[pointIndex] = delta;
+        }
+        if (positions.Count > 0) Rebuild();
+    }
+
+    public void ResetVertex(int pointIndex)
+    {
+        ResetVertices([pointIndex]);
+    }
+
+    public void ResetVertices(IEnumerable<int> pointIndices)
+    {
+        ArgumentNullException.ThrowIfNull(pointIndices);
+        int[] indices = pointIndices.Distinct().ToArray();
+        if (indices.Any(index => (uint)index >= (uint)_points.Count))
+            throw new ArgumentOutOfRangeException(nameof(pointIndices));
+        bool changed = false;
+        foreach (int index in indices) changed |= _pointDeltas.Remove(index);
+        if (changed) Rebuild();
+    }
+
+    private void Rebuild()
+    {
+        if (Offset == Vector3.Zero && Scale == Vector3.One && _pointDeltas.Count == 0)
+        {
+            _currentData = _originalData.ToArray();
+            PreviewScene = _originalScene;
+            return;
+        }
         _currentData = _originalData.ToArray();
-        Vector3 pivot = OriginalBoundary.Center;
         List<RenderWareSceneMesh> previewMeshes = _originalScene.Meshes.ToList();
 
         foreach (TargetMesh target in _targets)
@@ -112,7 +172,12 @@ public sealed class StadiumHomeRunBoundaryDocument
             {
                 Vector3 world = vertices[index].Position;
                 if (target.VertexIndices.Contains(index))
-                    world = pivot + Vector3.Multiply(world - pivot, scale) + offset;
+                {
+                    world = TransformedOriginal(world);
+                    if (_pointByVertex.TryGetValue(new VertexKey(target.MeshIndex, index), out int pointIndex) &&
+                        _pointDeltas.TryGetValue(pointIndex, out Vector3 delta))
+                        world += delta;
+                }
                 Vector3 local = Vector3.Transform(world, target.WorldToLocal);
                 WriteVector(_currentData, target.Source.PositionDataOffset + index * 12, local);
                 vertices[index] = vertices[index] with { Position = world };
@@ -129,11 +194,61 @@ public sealed class StadiumHomeRunBoundaryDocument
     {
         Offset = Vector3.Zero;
         Scale = Vector3.One;
+        _pointDeltas.Clear();
         _currentData = _originalData.ToArray();
         PreviewScene = _originalScene;
     }
 
     public byte[] Serialize() => _currentData.ToArray();
+
+    private Vector3 CurrentPosition(int pointIndex) =>
+        TransformedOriginal(_points[pointIndex].OriginalPosition) +
+        (_pointDeltas.TryGetValue(pointIndex, out Vector3 delta) ? delta : Vector3.Zero);
+
+    private Vector3 TransformedOriginal(Vector3 position) =>
+        OriginalBoundary.Center + Vector3.Multiply(position - OriginalBoundary.Center, Scale) + Offset;
+
+    private static (List<EditablePoint> Points, List<StadiumHomeRunBoundaryTriangle> Triangles,
+        Dictionary<VertexKey, int> PointByVertex) BuildTopology(
+        IReadOnlyList<TargetMesh> targets,
+        string materialTag)
+    {
+        List<EditablePoint> points = [];
+        Dictionary<VertexKey, int> pointByVertex = [];
+        foreach (TargetMesh target in targets)
+        foreach (int vertexIndex in target.VertexIndices.Order())
+        {
+            Vector3 position = target.Mesh.Vertices[vertexIndex].Position;
+            int pointIndex = points.FindIndex(point =>
+                Vector3.DistanceSquared(point.OriginalPosition, position) <= 0.000001F);
+            if (pointIndex < 0)
+            {
+                pointIndex = points.Count;
+                points.Add(new EditablePoint(position, []));
+            }
+            VertexKey reference = new(target.MeshIndex, vertexIndex);
+            points[pointIndex].References.Add(reference);
+            pointByVertex[reference] = pointIndex;
+        }
+
+        List<StadiumHomeRunBoundaryTriangle> triangles = [];
+        HashSet<(int, int, int)> seen = [];
+        foreach (TargetMesh target in targets)
+        foreach (RenderWareTriangle triangle in target.Mesh.Triangles)
+        {
+            if (triangle.MaterialIndex < 0 || triangle.MaterialIndex >= target.Mesh.Materials.Count ||
+                !string.Equals(target.Mesh.Materials[triangle.MaterialIndex].TextureName, materialTag,
+                    StringComparison.OrdinalIgnoreCase)) continue;
+            if (!pointByVertex.TryGetValue(new VertexKey(target.MeshIndex, triangle.First), out int first) ||
+                !pointByVertex.TryGetValue(new VertexKey(target.MeshIndex, triangle.Second), out int second) ||
+                !pointByVertex.TryGetValue(new VertexKey(target.MeshIndex, triangle.Third), out int third)) continue;
+            int[] ordered = [first, second, third];
+            Array.Sort(ordered);
+            if (seen.Add((ordered[0], ordered[1], ordered[2])))
+                triangles.Add(new StadiumHomeRunBoundaryTriangle(first, second, third));
+        }
+        return (points, triangles, pointByVertex);
+    }
 
     private static void UpdateBoundingSphere(
         byte[] data,
@@ -186,4 +301,16 @@ public sealed class StadiumHomeRunBoundaryDocument
         HashSet<int> VertexIndices,
         RenderWareGeometrySource Source,
         Matrix4x4 WorldToLocal);
+
+    private sealed record EditablePoint(Vector3 OriginalPosition, List<VertexKey> References);
+    private readonly record struct VertexKey(int MeshIndex, int VertexIndex);
 }
+
+public sealed record StadiumHomeRunBoundaryVertex(
+    int Index,
+    Vector3 OriginalPosition,
+    Vector3 Position,
+    int RawVertexCount,
+    bool IsModified);
+
+public sealed record StadiumHomeRunBoundaryTriangle(int First, int Second, int Third);

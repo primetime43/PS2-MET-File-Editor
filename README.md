@@ -41,7 +41,9 @@ To access the .MET files, you need to extract the game files from the ISO using 
   A dedicated Home Run Events tab groups each stadium's home-run animations, particles, delays, and
   sounds, can manually trigger the selected visual effect, and reports the bounds of the RWS material
   polygons that the game uses as its home-run collision surface. Move and scale controls reposition
-  that actual HR-only clump in the live 3D preview and save the fixed-size geometry change into the RWS.
+  that actual HR-only clump, while the top-down Boundary Points editor supports individual or Ctrl-selected
+  point dragging, exact XYZ entry, and point resets. All changes update the live 3D preview and save as
+  fixed-size geometry changes inside the RWS.
   Retail `.spl` waypoints can also be selected in 3D, edited numerically, added, duplicated, deleted,
   reordered, reset, and saved back into `DATA.MET` with the fielddata changes.
   Loader details are documented in

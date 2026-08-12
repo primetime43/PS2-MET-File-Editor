@@ -289,6 +289,47 @@ public sealed class RenderWareSceneArchiveTests : IDisposable
             BitConverter.ToSingle(changed, positionOffset + 4), BitConverter.ToSingle(changed, positionOffset + 8)));
     }
 
+    [Fact]
+    public void HomeRunBoundaryPointEditsKeepCoincidentRawVerticesTogether()
+    {
+        const int positionOffset = 24, sphereOffset = 112;
+        byte[] raw = Enumerable.Repeat((byte)0xA5, 160).ToArray();
+        Vector3[] positions =
+        [
+            new(-10, 2, -5), new(10, 2, -5), new(0, 8, 5), new(-10, 2, -5)
+        ];
+        for (int index = 0; index < positions.Length; index++)
+            WriteVector(raw, positionOffset + index * 12, positions[index]);
+        RenderWareSceneVertex[] vertices = positions.Select(position =>
+            new RenderWareSceneVertex(position, Vector3.UnitY, Vector2.Zero, Color.White)).ToArray();
+        RenderWareSceneMesh mesh = new("Home run clump", vertices,
+            [new RenderWareTriangle(0, 1, 2, 0), new RenderWareTriangle(3, 2, 1, 0)],
+            [new RenderWareMaterial("HR", Color.White)], "Clump")
+        {
+            GeometrySource = new RenderWareGeometrySource(positionOffset, sphereOffset, Matrix4x4.Identity)
+        };
+        RenderWareScene scene = new("field.rws", RenderWareAssetKind.RwsScene,
+            [mesh], [], 0, 0, 1, [], []);
+        StadiumHomeRunBoundaryDocument document = StadiumHomeRunBoundaryDocument.Create(scene, raw, "HR");
+        StadiumHomeRunBoundaryVertex point = Assert.Single(document.Vertices,
+            vertex => vertex.OriginalPosition == positions[0]);
+        Vector3 moved = new(-25, 6, 14);
+
+        document.SetVertexPosition(point.Index, moved);
+
+        Assert.Equal(3, document.Vertices.Count);
+        Assert.Equal(2, point.RawVertexCount);
+        Assert.Equal(1, document.ModifiedPointCount);
+        Assert.Equal(moved, document.PreviewScene.Meshes[0].Vertices[0].Position);
+        Assert.Equal(moved, document.PreviewScene.Meshes[0].Vertices[3].Position);
+        Assert.Equal(moved.X, BitConverter.ToSingle(document.Serialize(), positionOffset));
+        Assert.Equal(moved.X, BitConverter.ToSingle(document.Serialize(), positionOffset + 3 * 12));
+
+        document.ResetVertex(point.Index);
+        Assert.False(document.IsChanged);
+        Assert.Equal(raw, document.Serialize());
+    }
+
     [Theory]
     [InlineData(3D, 12D, 2F, true, true, 0.5F)]
     [InlineData(3D, 12D, 2F, false, true, 1F)]

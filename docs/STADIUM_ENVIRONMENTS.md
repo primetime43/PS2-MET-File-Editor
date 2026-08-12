@@ -106,6 +106,13 @@ the outfield. Scaling uses the original boundary center as its pivot. Changes ap
 collision helpers are visible, persist while switching stadiums, and **Reset Boundary** restores the
 original RWS bytes.
 
+The **Boundary Points** sub-tab shows the tagged surface from above. Click and drag a control point to
+change X/Z, use the exact XYZ boxes to change its height or enter precise coordinates, and Ctrl-click to
+select several points before dragging them together. **Previous** and **Next** step through overlapping
+or closely packed points, **Reset Selected** restores only the selected point edits, and **Fit Points**
+refits the top-down view. Coincident RenderWare vertices are grouped as one logical point so seams stay
+welded. The editor retains the original vertex and triangle counts.
+
 The writer converts edited world coordinates through the clump's original frame, modifies only its
 position floats and morph-target bounding sphere, and keeps the RWS entry exactly the same size. The
 stadium's RenderWare world sectors and BSP remain untouched because the HR clump is outside that world

@@ -38,6 +38,12 @@ public sealed class StadiumEnvironmentEditorForm : Form
     };
     private readonly NumericUpDown[] _homeRunOffset = CreateHomeRunOffsetValues();
     private readonly NumericUpDown[] _homeRunScale = CreateHomeRunScaleValues();
+    private readonly NumericUpDown[] _homeRunPointPosition = CreatePlacementValues();
+    private readonly HomeRunBoundaryPointEditorControl _homeRunPointEditor = new() { Dock = DockStyle.Fill };
+    private readonly Label _homeRunPointStatus = new()
+    {
+        Dock = DockStyle.Fill, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft
+    };
     private readonly Label _homeRunTransformStatus = new()
     {
         Dock = DockStyle.Fill, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft,
@@ -142,10 +148,11 @@ public sealed class StadiumEnvironmentEditorForm : Form
     private RenderWareAnimationBinding? _activeAmbientBinding;
     private RenderWareSkinnedModel? _activeAmbientModel;
     private StadiumHomeRunEvent? _pendingHomeRunEvent;
+    private StadiumHomeRunBoundaryDocument? _homeRunPointDocument;
     private string? _homeRunTransformUnavailableReason;
     private int _selectedSplinePoint = -1;
     private bool _ambientPlaying, _updatingScrubber, _loadingSpline, _loadingAnimation, _loadingPlacement,
-        _loadingHomeRunTransform;
+        _loadingHomeRunTransform, _loadingHomeRunPoint;
     private bool _loading;
 
     public StadiumEnvironmentEditorForm(StadiumEnvironmentArchive archive, string metPath)
@@ -253,6 +260,10 @@ public sealed class StadiumEnvironmentEditorForm : Form
             value.ValueChanged += (_, _) => PlacementValueChanged();
         foreach (NumericUpDown value in _homeRunOffset.Concat(_homeRunScale))
             value.ValueChanged += (_, _) => HomeRunTransformValueChanged();
+        foreach (NumericUpDown value in _homeRunPointPosition)
+            value.ValueChanged += (_, _) => HomeRunPointPositionChanged();
+        _homeRunPointEditor.SelectionChanged += (_, _) => LoadSelectedHomeRunPoint();
+        _homeRunPointEditor.PointsMoved += (_, e) => MoveHomeRunPoints(e.Positions);
         HookGrid(_fieldGrid);
         HookGrid(_collisionGrid);
         HookGrid(_ambientGrid);
@@ -524,7 +535,13 @@ public sealed class StadiumEnvironmentEditorForm : Form
         details.RowStyles.Add(new RowStyle(SizeType.Absolute, 54));
         details.Controls.Add(_homeRunGrid, 0, 0);
         details.Controls.Add(_homeRunEventInfo, 0, 1);
-        split.Panel2.Controls.Add(details);
+        TabControl detailTabs = new() { Dock = DockStyle.Fill };
+        TabPage eventSettings = new("Event Settings") { Padding = new Padding(4) };
+        eventSettings.Controls.Add(details);
+        TabPage boundaryPoints = new("Boundary Points") { Padding = new Padding(4) };
+        boundaryPoints.Controls.Add(BuildHomeRunPointEditor());
+        detailTabs.TabPages.AddRange([eventSettings, boundaryPoints]);
+        split.Panel2.Controls.Add(detailTabs);
 
         TableLayoutPanel footer = new()
         {
@@ -554,6 +571,29 @@ public sealed class StadiumEnvironmentEditorForm : Form
         layout.Controls.Add(boundary, 0, 0);
         layout.Controls.Add(split, 0, 1);
         layout.Controls.Add(footer, 0, 2);
+        return layout;
+    }
+
+    private Control BuildHomeRunPointEditor()
+    {
+        TableLayoutPanel layout = new() { Dock = DockStyle.Fill, RowCount = 3, ColumnCount = 1 };
+        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 72));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
+        FlowLayoutPanel controls = new()
+        {
+            Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = true, AutoScroll = true, Padding = new Padding(2, 3, 2, 1)
+        };
+        controls.Controls.Add(SplineButton("Previous", (_, _) => SelectAdjacentHomeRunPoint(-1)));
+        controls.Controls.Add(SplineButton("Next", (_, _) => SelectAdjacentHomeRunPoint(1)));
+        controls.Controls.Add(PlacementLabel("Point X / Y / Z:"));
+        foreach (NumericUpDown value in _homeRunPointPosition) controls.Controls.Add(value);
+        controls.Controls.Add(SplineButton("Reset Selected", (_, _) => ResetSelectedHomeRunPoints()));
+        controls.Controls.Add(SplineButton("Fit Points", (_, _) => _homeRunPointEditor.FitView()));
+        layout.Controls.Add(_homeRunPointEditor, 0, 0);
+        layout.Controls.Add(controls, 0, 1);
+        layout.Controls.Add(_homeRunPointStatus, 0, 2);
         return layout;
     }
 
@@ -935,17 +975,20 @@ public sealed class StadiumEnvironmentEditorForm : Form
         if (_scene == null)
         {
             _homeRunBoundaryInfo.Text = "No RWS scene is available for boundary analysis.";
+            LoadHomeRunPointEditor(resetView: true);
             return;
         }
         StadiumHomeRunBoundary boundary = StadiumHomeRunAnalyzer.AnalyzeBoundary(_scene, tag);
         StadiumHomeRunBoundaryDocument? document = CurrentHomeRunBoundaryDocument();
         string edited = document?.IsChanged == true
-            ? $"  |  moved {VectorText(document.Offset)}, scale {VectorText(document.Scale)}"
+            ? $"  |  moved {VectorText(document.Offset)}, scale {VectorText(document.Scale)}, " +
+              $"{document.ModifiedPointCount:N0} point edits"
             : string.Empty;
         _homeRunBoundaryInfo.Text = boundary.IsPresent
             ? $"{boundary.TriangleCount:N0} tagged triangles in {boundary.MeshCount:N0} mesh{(boundary.MeshCount == 1 ? string.Empty : "es")}  |  " +
               $"bounds {VectorText(boundary.Minimum)} to {VectorText(boundary.Maximum)}  |  size {VectorText(boundary.Size)}{edited}"
             : $"The RWS contains no polygons using material '{tag}'. Home runs will not have a matching trigger surface.";
+        LoadHomeRunPointEditor(resetView: !ReferenceEquals(_homeRunPointDocument, document));
     }
 
     private StadiumHomeRunBoundaryDocument? CurrentHomeRunBoundaryDocument()
@@ -969,8 +1012,106 @@ public sealed class StadiumEnvironmentEditorForm : Form
         }
         _homeRunTransformStatus.Text = document == null
             ? _homeRunTransformUnavailableReason ?? "This RWS has no isolated editable home-run clump."
-            : $"Moves {document.ChangedVertexCount:N0} HR-only vertices; saved inside the RWS.";
+            : $"{document.Vertices.Count:N0} control points map to {document.ChangedVertexCount:N0} HR-only vertices; saved inside the RWS.";
         _loadingHomeRunTransform = false;
+    }
+
+    private void LoadHomeRunPointEditor(bool resetView)
+    {
+        StadiumHomeRunBoundaryDocument? document = CurrentHomeRunBoundaryDocument();
+        bool changedDocument = !ReferenceEquals(_homeRunPointDocument, document);
+        _homeRunPointDocument = document;
+        if (changedDocument) _homeRunPointEditor.SelectPoint(-1);
+        _homeRunPointEditor.SetBoundary(document?.Vertices, document?.Triangles, resetView || changedDocument);
+        if (changedDocument && document?.Vertices.Count > 0) _homeRunPointEditor.SelectPoint(0);
+        else LoadSelectedHomeRunPoint();
+    }
+
+    private void LoadSelectedHomeRunPoint()
+    {
+        StadiumHomeRunBoundaryDocument? document = _homeRunPointDocument;
+        int pointIndex = _homeRunPointEditor.PrimarySelectedIndex;
+        StadiumHomeRunBoundaryVertex? point = document != null && pointIndex >= 0 && pointIndex < document.Vertices.Count
+            ? document.Vertices[pointIndex] : null;
+        _loadingHomeRunPoint = true;
+        foreach (NumericUpDown value in _homeRunPointPosition) value.Enabled = point != null;
+        if (point != null)
+        {
+            _homeRunPointPosition[0].Value = ClampDecimal(point.Position.X, _homeRunPointPosition[0]);
+            _homeRunPointPosition[1].Value = ClampDecimal(point.Position.Y, _homeRunPointPosition[1]);
+            _homeRunPointPosition[2].Value = ClampDecimal(point.Position.Z, _homeRunPointPosition[2]);
+        }
+        _loadingHomeRunPoint = false;
+        if (document == null)
+            _homeRunPointStatus.Text = _homeRunTransformUnavailableReason ?? "No editable boundary points.";
+        else if (point == null)
+            _homeRunPointStatus.Text = $"{document.Vertices.Count:N0} points. Click one, or Ctrl-click to select several.";
+        else
+        {
+            int selected = _homeRunPointEditor.SelectedIndices.Count;
+            string modified = point.IsModified ? "modified" : "original";
+            _homeRunPointStatus.Text = $"Point {point.Index + 1:N0} of {document.Vertices.Count:N0} ({modified}, " +
+                                       $"{point.RawVertexCount:N0} linked raw vertices); {selected:N0} selected.";
+        }
+    }
+
+    private static decimal ClampDecimal(float value, NumericUpDown control) =>
+        Math.Clamp((decimal)value, control.Minimum, control.Maximum);
+
+    private void HomeRunPointPositionChanged()
+    {
+        if (_loadingHomeRunPoint) return;
+        StadiumHomeRunBoundaryDocument? document = _homeRunPointDocument;
+        int pointIndex = _homeRunPointEditor.PrimarySelectedIndex;
+        if (document == null || pointIndex < 0) return;
+        try
+        {
+            document.SetVertexPosition(pointIndex, Values(_homeRunPointPosition));
+            ApplyHomeRunPointChange(document, refreshCanvas: true);
+        }
+        catch (Exception exception)
+        {
+            MessageBox.Show(this, exception.Message, "Unable to Move Home Run Point",
+                MessageBoxButtons.OK, MessageBoxIcon.Error);
+            LoadHomeRunPointEditor(resetView: false);
+        }
+    }
+
+    private void MoveHomeRunPoints(IReadOnlyDictionary<int, Vector3> positions)
+    {
+        StadiumHomeRunBoundaryDocument? document = _homeRunPointDocument;
+        if (document == null || positions.Count == 0) return;
+        document.SetVertexPositions(positions);
+        ApplyHomeRunPointChange(document, refreshCanvas: false);
+    }
+
+    private void ApplyHomeRunPointChange(StadiumHomeRunBoundaryDocument document, bool refreshCanvas)
+    {
+        _scene = document.PreviewScene;
+        _showHomeRunHelpers.Checked = true;
+        if (refreshCanvas)
+            _homeRunPointEditor.SetBoundary(document.Vertices, document.Triangles, resetView: false);
+        RebuildAmbientPreview();
+        LoadSelectedHomeRunPoint();
+        UpdateSummaryAndStatus();
+    }
+
+    private void SelectAdjacentHomeRunPoint(int direction)
+    {
+        StadiumHomeRunBoundaryDocument? document = _homeRunPointDocument;
+        if (document == null || document.Vertices.Count == 0) return;
+        int current = _homeRunPointEditor.PrimarySelectedIndex;
+        int next = current < 0 ? 0 : (current + direction + document.Vertices.Count) % document.Vertices.Count;
+        _homeRunPointEditor.SelectPoint(next);
+    }
+
+    private void ResetSelectedHomeRunPoints()
+    {
+        StadiumHomeRunBoundaryDocument? document = _homeRunPointDocument;
+        int[] selected = _homeRunPointEditor.SelectedIndices.ToArray();
+        if (document == null || selected.Length == 0) return;
+        document.ResetVertices(selected);
+        ApplyHomeRunPointChange(document, refreshCanvas: true);
     }
 
     private void HomeRunTransformValueChanged()
@@ -986,6 +1127,7 @@ public sealed class StadiumEnvironmentEditorForm : Form
             _scene = document.PreviewScene;
             _showHomeRunHelpers.Checked = true;
             RebuildAmbientPreview();
+            LoadHomeRunPointEditor(resetView: false);
             UpdateSummaryAndStatus();
         }
         catch (Exception exception)
@@ -1004,6 +1146,7 @@ public sealed class StadiumEnvironmentEditorForm : Form
         _scene = document.PreviewScene;
         LoadHomeRunTransformEditor();
         RebuildAmbientPreview();
+        LoadHomeRunPointEditor(resetView: true);
         UpdateSummaryAndStatus();
     }
 
