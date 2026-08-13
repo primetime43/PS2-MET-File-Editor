@@ -4,9 +4,6 @@ A focused Windows modding workspace for Backyard Baseball on PlayStation 2. It p
 player, gameplay, unlock, and ISO-building tools while retaining an advanced DATA.MET browser for
 raw archive work.
 
-v1.0 — first stable release. See the [v1.0.0 release notes](docs/releases/v1.0.0.md).
-<img width="1920" height="1032" alt="image" src="https://github.com/user-attachments/assets/4ebd29d0-fe77-4be8-ac36-88f9123f96cc" />
-
 # Features
 - Open .MET Files: Easily open .MET files to explore their contents.
 - View Files: Browse and view files within the .MET archive.
