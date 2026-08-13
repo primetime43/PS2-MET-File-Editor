@@ -22,32 +22,55 @@ public sealed class StadiumEnvironmentEditorForm : Form
     private readonly ListBox _homeRunList = new() { Dock = DockStyle.Fill, IntegralHeight = false };
     private readonly ComboBox _homeRunMaterial = new()
     {
-        DropDownStyle = ComboBoxStyle.DropDown, Width = 115
+        DropDownStyle = ComboBoxStyle.DropDown,
+        Width = 115
     };
     private readonly Label _homeRunBoundaryInfo = new()
     {
-        Dock = DockStyle.Fill, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft
+        Dock = DockStyle.Fill,
+        AutoEllipsis = true,
+        TextAlign = ContentAlignment.MiddleLeft
     };
     private readonly Label _homeRunEventInfo = new()
     {
-        Dock = DockStyle.Fill, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft
+        Dock = DockStyle.Fill,
+        AutoEllipsis = true,
+        TextAlign = ContentAlignment.MiddleLeft
     };
     private readonly CheckBox _showHomeRunHelpers = new()
     {
-        Text = "Show collision helpers", AutoSize = true
+        Text = "Show collision helpers",
+        AutoSize = true
     };
     private readonly NumericUpDown[] _homeRunOffset = CreateHomeRunOffsetValues();
     private readonly NumericUpDown[] _homeRunScale = CreateHomeRunScaleValues();
+    private readonly NumericUpDown _homeRunDistance = new()
+    {
+        Minimum = 10,
+        Maximum = 300,
+        DecimalPlaces = 0,
+        Increment = 5,
+        Value = 100,
+        Width = 66,
+        Margin = new Padding(2, 2, 2, 0)
+    };
+    private readonly List<Button> _homeRunDistancePresets = [];
+    private readonly ToolTip _homeRunToolTip = new();
     private readonly NumericUpDown[] _homeRunPointPosition = CreatePlacementValues();
     private readonly HomeRunBoundaryPointEditorControl _homeRunPointEditor = new() { Dock = DockStyle.Fill };
     private readonly Label _homeRunPointStatus = new()
     {
-        Dock = DockStyle.Fill, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft
+        Dock = DockStyle.Fill,
+        AutoEllipsis = true,
+        TextAlign = ContentAlignment.MiddleLeft
     };
     private readonly Label _homeRunTransformStatus = new()
     {
-        Dock = DockStyle.Fill, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft,
-        Margin = new Padding(5, 1, 0, 0), ForeColor = SystemColors.GrayText
+        Dock = DockStyle.Fill,
+        AutoEllipsis = true,
+        TextAlign = ContentAlignment.MiddleLeft,
+        Margin = new Padding(5, 1, 0, 0),
+        ForeColor = SystemColors.GrayText
     };
     private readonly TextBox _rawText = new()
     {
@@ -76,54 +99,79 @@ public sealed class StadiumEnvironmentEditorForm : Form
     private readonly Button _stopAmbient = new() { Text = "Stop", Width = 54, Height = 27 };
     private readonly TrackBar _ambientScrubber = new()
     {
-        Minimum = 0, Maximum = 1000, TickStyle = TickStyle.None, Width = 125, Height = 27, AutoSize = false
+        Minimum = 0,
+        Maximum = 1000,
+        TickStyle = TickStyle.None,
+        Width = 125,
+        Height = 27,
+        AutoSize = false
     };
     private readonly ComboBox _ambientPlaybackRate = new()
     {
-        DropDownStyle = ComboBoxStyle.DropDownList, Width = 58
+        DropDownStyle = ComboBoxStyle.DropDownList,
+        Width = 58
     };
     private readonly CheckBox _loopAmbient = new() { Text = "Loop", AutoSize = true, Checked = true };
     private readonly CheckBox _faceAmbientPath = new() { Text = "Face path", AutoSize = true, Checked = true };
     private readonly ComboBox _ambientAnimation = new()
     {
-        DropDownStyle = ComboBoxStyle.DropDownList, Width = 210
+        DropDownStyle = ComboBoxStyle.DropDownList,
+        Width = 210
     };
     private readonly CheckBox _syncAmbientAnimation = new()
     {
-        Text = "Sync ANM to path", AutoSize = true, Checked = true
+        Text = "Sync ANM to path",
+        AutoSize = true,
+        Checked = true
     };
     private readonly CheckBox _loopAmbientAnimation = new()
     {
-        Text = "Loop ANM", AutoSize = true, Checked = true
+        Text = "Loop ANM",
+        AutoSize = true,
+        Checked = true
     };
     private readonly Label _ambientAnimationStatus = new()
     {
-        AutoSize = true, AutoEllipsis = true, MaximumSize = new Size(440, 32), Margin = new Padding(8, 8, 2, 0)
+        AutoSize = true,
+        AutoEllipsis = true,
+        MaximumSize = new Size(440, 32),
+        Margin = new Padding(8, 8, 2, 0)
     };
     private readonly Label _ambientPlaybackTime = new() { AutoSize = true, Margin = new Padding(6, 8, 4, 0) };
     private readonly Label _previewSummary = new()
     {
-        Dock = DockStyle.Fill, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft
+        Dock = DockStyle.Fill,
+        AutoEllipsis = true,
+        TextAlign = ContentAlignment.MiddleLeft
     };
     private readonly Label _previewStatus = new()
     {
-        Dock = DockStyle.Fill, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft
+        Dock = DockStyle.Fill,
+        AutoEllipsis = true,
+        TextAlign = ContentAlignment.MiddleLeft
     };
     private readonly Label _ambientInfo = new()
     {
-        Dock = DockStyle.Bottom, Height = 58, Padding = new Padding(5, 4, 5, 2),
-        AutoEllipsis = true, BorderStyle = BorderStyle.FixedSingle
+        Dock = DockStyle.Bottom,
+        Height = 58,
+        Padding = new Padding(5, 4, 5, 2),
+        AutoEllipsis = true,
+        BorderStyle = BorderStyle.FixedSingle
     };
     private readonly NumericUpDown[] _ambientPosition = CreatePlacementValues();
     private readonly NumericUpDown[] _ambientRotation = CreatePlacementValues();
     private readonly Label _placementStatus = new()
     {
-        AutoSize = true, Margin = new Padding(8, 7, 0, 0), ForeColor = SystemColors.GrayText
+        AutoSize = true,
+        Margin = new Padding(8, 7, 0, 0),
+        ForeColor = SystemColors.GrayText
     };
     private readonly GroupBox _splineEditor = new() { Text = "Movement Path Waypoints (.spl)", Dock = DockStyle.Fill };
     private readonly Label _splineStatus = new()
     {
-        Dock = DockStyle.Fill, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft,
+        Dock = DockStyle.Fill,
+        AutoEllipsis = true,
+        TextAlign = ContentAlignment.MiddleLeft,
         Padding = new Padding(4, 0, 4, 0)
     };
     private StadiumEnvironment? _current;
@@ -190,13 +238,18 @@ public sealed class StadiumEnvironmentEditorForm : Form
         selector.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         selector.Controls.Add(new Label
         {
-            Text = "Stadium:", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 8, 8, 0)
+            Text = "Stadium:",
+            AutoSize = true,
+            Anchor = AnchorStyles.Left,
+            Margin = new Padding(0, 8, 8, 0)
         }, 0, 0);
         selector.Controls.Add(_stadiums, 1, 0);
         selector.Controls.Add(_summary, 2, 0);
         Button useAllAmbients = new()
         {
-            Text = "Set Count to All Ambient Blocks", AutoSize = true, Anchor = AnchorStyles.Right
+            Text = "Set Count to All Ambient Blocks",
+            AutoSize = true,
+            Anchor = AnchorStyles.Right
         };
         useAllAmbients.Click += (_, _) => UseAllAmbientBlocks();
         selector.Controls.Add(useAllAmbients, 3, 0);
@@ -260,6 +313,7 @@ public sealed class StadiumEnvironmentEditorForm : Form
             value.ValueChanged += (_, _) => PlacementValueChanged();
         foreach (NumericUpDown value in _homeRunOffset.Concat(_homeRunScale))
             value.ValueChanged += (_, _) => HomeRunTransformValueChanged();
+        _homeRunDistance.ValueChanged += (_, _) => HomeRunDistanceValueChanged();
         foreach (NumericUpDown value in _homeRunPointPosition)
             value.ValueChanged += (_, _) => HomeRunPointPositionChanged();
         _homeRunPointEditor.SelectionChanged += (_, _) => LoadSelectedHomeRunPoint();
@@ -280,6 +334,7 @@ public sealed class StadiumEnvironmentEditorForm : Form
             CloseDetachedPreviews();
             _ambientPlaybackTimer.Dispose();
             _homeRunTriggerTimer.Dispose();
+            _homeRunToolTip.Dispose();
         }
         base.Dispose(disposing);
     }
@@ -321,8 +376,11 @@ public sealed class StadiumEnvironmentEditorForm : Form
         toolbar.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         FlowLayoutPanel actions = new()
         {
-            Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight,
-            WrapContents = false, AutoScroll = true, Margin = Padding.Empty
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            AutoScroll = true,
+            Margin = Padding.Empty
         };
         _previewView.Items.AddRange(new object[]
         {
@@ -346,8 +404,11 @@ public sealed class StadiumEnvironmentEditorForm : Form
         });
         FlowLayoutPanel ambientActions = new()
         {
-            Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight,
-            WrapContents = false, AutoScroll = true, Margin = Padding.Empty
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            AutoScroll = true,
+            Margin = Padding.Empty
         };
         foreach (CheckBox check in new[] { _showAmbientModels, _showDisabledAmbients, _showAmbientPaths })
             check.Margin = new Padding(4, 7, 8, 0);
@@ -358,8 +419,11 @@ public sealed class StadiumEnvironmentEditorForm : Form
         });
         FlowLayoutPanel playback = new()
         {
-            Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight,
-            WrapContents = false, AutoScroll = true, Margin = Padding.Empty
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            AutoScroll = true,
+            Margin = Padding.Empty
         };
         _ambientScrubber.Margin = new Padding(5, 5, 5, 0);
         foreach (CheckBox check in new[] { _loopAmbient, _faceAmbientPath })
@@ -372,8 +436,11 @@ public sealed class StadiumEnvironmentEditorForm : Form
         });
         FlowLayoutPanel animation = new()
         {
-            Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight,
-            WrapContents = false, AutoScroll = true, Margin = Padding.Empty
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            AutoScroll = true,
+            Margin = Padding.Empty
         };
         _ambientAnimation.Margin = new Padding(4, 4, 4, 0);
         foreach (CheckBox check in new[] { _syncAmbientAnimation, _loopAmbientAnimation })
@@ -412,7 +479,9 @@ public sealed class StadiumEnvironmentEditorForm : Form
 
     private static Label PreviewLabel(string text) => new()
     {
-        Text = text, AutoSize = true, Margin = new Padding(2, 8, 4, 0)
+        Text = text,
+        AutoSize = true,
+        Margin = new Padding(2, 8, 4, 0)
     };
 
     private static CheckBox PreviewCheck(string text, bool value, Action<bool> changed)
@@ -470,14 +539,17 @@ public sealed class StadiumEnvironmentEditorForm : Form
     private Control BuildHomeRunEditor()
     {
         TableLayoutPanel layout = new() { Dock = DockStyle.Fill, RowCount = 3, ColumnCount = 1 };
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 154));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 190));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 44));
 
         GroupBox boundary = new() { Text = "Home Run Boundary", Dock = DockStyle.Fill };
         TableLayoutPanel boundaryLayout = new()
         {
-            Dock = DockStyle.Fill, ColumnCount = 5, RowCount = 4, Padding = new Padding(6, 4, 6, 3)
+            Dock = DockStyle.Fill,
+            ColumnCount = 5,
+            RowCount = 5,
+            Padding = new Padding(6, 4, 6, 3)
         };
         boundaryLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         boundaryLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
@@ -491,27 +563,64 @@ public sealed class StadiumEnvironmentEditorForm : Form
         _showHomeRunHelpers.Margin = new Padding(10, 7, 8, 0);
         boundaryLayout.Controls.Add(_showHomeRunHelpers, 3, 0);
         boundaryLayout.Controls.Add(_homeRunBoundaryInfo, 4, 0);
+        FlowLayoutPanel quickDistance = new()
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            Margin = new Padding(0, 2, 0, 0)
+        };
+        Label distanceLabel = PlacementLabel("Home-run distance:");
+        distanceLabel.Font = new Font(distanceLabel.Font, FontStyle.Bold);
+        quickDistance.Controls.Add(distanceLabel);
+        quickDistance.Controls.Add(_homeRunDistance);
+        quickDistance.Controls.Add(PlacementLabel("%"));
+        quickDistance.Controls.Add(PlacementLabel("Presets:"));
+        foreach ((int value, string text, string description) in new[]
+                 {
+                     (50, "50%", "Very short fences and half the original trigger height."),
+                     (75, "75%", "Shorter fences and 75% of the original trigger height."),
+                     (100, "100%", "Restore the retail distance and trigger height."),
+                     (125, "125%", "Farther fences and 125% of the original trigger height.")
+                 })
+        {
+            Button preset = SplineButton(text, (_, _) => SetHomeRunDistancePreset(value));
+            preset.Tag = value;
+            preset.Width = 48;
+            _homeRunDistancePresets.Add(preset);
+            quickDistance.Controls.Add(preset);
+            _homeRunToolTip.SetToolTip(preset, description);
+        }
+        boundaryLayout.Controls.Add(quickDistance, 0, 1);
+        boundaryLayout.SetColumnSpan(quickDistance, 5);
+        _homeRunToolTip.SetToolTip(_homeRunDistance,
+            "Scales the complete 3D home-run trigger from home plate. Distance and required height change together.");
+
         FlowLayoutPanel move = new()
         {
-            Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight,
-            WrapContents = false, Margin = new Padding(0, 2, 0, 0)
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            Margin = Padding.Empty
         };
-        move.Controls.Add(PlacementLabel("Move X / Y / Z:"));
+        move.Controls.Add(PlacementLabel("Advanced move X / Y / Z:"));
         foreach (NumericUpDown value in _homeRunOffset) move.Controls.Add(value);
-        boundaryLayout.Controls.Add(move, 0, 1);
+        boundaryLayout.Controls.Add(move, 0, 2);
         boundaryLayout.SetColumnSpan(move, 5);
 
         FlowLayoutPanel scale = new()
         {
-            Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight,
-            WrapContents = false, Margin = Padding.Empty
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            Margin = Padding.Empty
         };
-        scale.Controls.Add(PlacementLabel("Scale X / Y / Z:"));
+        scale.Controls.Add(PlacementLabel("Advanced scale X / Y / Z:"));
         foreach (NumericUpDown value in _homeRunScale) scale.Controls.Add(value);
         scale.Controls.Add(SplineButton("Reset Boundary", (_, _) => ResetHomeRunBoundary()));
-        boundaryLayout.Controls.Add(scale, 0, 2);
+        boundaryLayout.Controls.Add(scale, 0, 3);
         boundaryLayout.SetColumnSpan(scale, 5);
-        boundaryLayout.Controls.Add(_homeRunTransformStatus, 0, 3);
+        boundaryLayout.Controls.Add(_homeRunTransformStatus, 0, 4);
         boundaryLayout.SetColumnSpan(_homeRunTransformStatus, 5);
         boundary.Controls.Add(boundaryLayout);
 
@@ -545,13 +654,18 @@ public sealed class StadiumEnvironmentEditorForm : Form
 
         TableLayoutPanel footer = new()
         {
-            Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Padding = new Padding(2, 4, 2, 2)
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 1,
+            Padding = new Padding(2, 4, 2, 2)
         };
         footer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         footer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         FlowLayoutPanel actions = new()
         {
-            AutoSize = true, WrapContents = false, FlowDirection = FlowDirection.LeftToRight,
+            AutoSize = true,
+            WrapContents = false,
+            FlowDirection = FlowDirection.LeftToRight,
             Margin = Padding.Empty
         };
         actions.Controls.AddRange(new Control[]
@@ -563,8 +677,11 @@ public sealed class StadiumEnvironmentEditorForm : Form
         Label help = new()
         {
             Text = "The trigger preview honors hrDelay and plays the selected model/path/ANM; sounds are identified but not synthesized.",
-            Dock = DockStyle.Fill, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft,
-            Margin = new Padding(12, 0, 0, 0), ForeColor = SystemColors.GrayText
+            Dock = DockStyle.Fill,
+            AutoEllipsis = true,
+            TextAlign = ContentAlignment.MiddleLeft,
+            Margin = new Padding(12, 0, 0, 0),
+            ForeColor = SystemColors.GrayText
         };
         footer.Controls.Add(actions, 0, 0);
         footer.Controls.Add(help, 1, 0);
@@ -582,8 +699,11 @@ public sealed class StadiumEnvironmentEditorForm : Form
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
         FlowLayoutPanel controls = new()
         {
-            Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight,
-            WrapContents = true, AutoScroll = true, Padding = new Padding(2, 3, 2, 1)
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = true,
+            AutoScroll = true,
+            Padding = new Padding(2, 3, 2, 1)
         };
         controls.Controls.Add(SplineButton("Previous", (_, _) => SelectAdjacentHomeRunPoint(-1)));
         controls.Controls.Add(SplineButton("Next", (_, _) => SelectAdjacentHomeRunPoint(1)));
@@ -613,19 +733,27 @@ public sealed class StadiumEnvironmentEditorForm : Form
         };
         grid.Columns.Add(new DataGridViewTextBoxColumn
         {
-            HeaderText = "Setting", ReadOnly = true, Width = 170
+            HeaderText = "Setting",
+            ReadOnly = true,
+            Width = 170
         });
         grid.Columns.Add(new DataGridViewTextBoxColumn
         {
-            HeaderText = "Directive", ReadOnly = true, Width = 115
+            HeaderText = "Directive",
+            ReadOnly = true,
+            Width = 115
         });
         grid.Columns.Add(new DataGridViewTextBoxColumn
         {
-            HeaderText = "Value", AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill, MinimumWidth = 170
+            HeaderText = "Value",
+            AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill,
+            MinimumWidth = 170
         });
         grid.Columns.Add(new DataGridViewTextBoxColumn
         {
-            HeaderText = "Format", ReadOnly = true, Width = 90
+            HeaderText = "Format",
+            ReadOnly = true,
+            Width = 90
         });
         return grid;
     }
@@ -634,9 +762,14 @@ public sealed class StadiumEnvironmentEditorForm : Form
     {
         DataGridView grid = new()
         {
-            Dock = DockStyle.Fill, AllowUserToAddRows = false, AllowUserToDeleteRows = false,
-            AllowUserToResizeRows = false, RowHeadersVisible = false, MultiSelect = false,
-            SelectionMode = DataGridViewSelectionMode.FullRowSelect, AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
+            Dock = DockStyle.Fill,
+            AllowUserToAddRows = false,
+            AllowUserToDeleteRows = false,
+            AllowUserToResizeRows = false,
+            RowHeadersVisible = false,
+            MultiSelect = false,
+            SelectionMode = DataGridViewSelectionMode.FullRowSelect,
+            AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
             EditMode = DataGridViewEditMode.EditOnEnter
         };
         grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "#", ReadOnly = true, Width = 45, FillWeight = 30 });
@@ -650,8 +783,12 @@ public sealed class StadiumEnvironmentEditorForm : Form
     {
         FlowLayoutPanel toolbar = new()
         {
-            Dock = DockStyle.Top, Height = 42, FlowDirection = FlowDirection.LeftToRight,
-            WrapContents = false, AutoScroll = true, Padding = new Padding(2, 4, 2, 3)
+            Dock = DockStyle.Top,
+            Height = 42,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            AutoScroll = true,
+            Padding = new Padding(2, 4, 2, 3)
         };
         toolbar.Controls.AddRange(new Control[]
         {
@@ -673,8 +810,11 @@ public sealed class StadiumEnvironmentEditorForm : Form
         GroupBox box = new() { Text = "Placement", Dock = DockStyle.Fill, Padding = new Padding(6, 4, 6, 4) };
         FlowLayoutPanel row = new()
         {
-            Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight,
-            WrapContents = true, AutoScroll = true, Padding = new Padding(2, 2, 2, 0)
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = true,
+            AutoScroll = true,
+            Padding = new Padding(2, 2, 2, 0)
         };
         row.Controls.Add(PlacementLabel("Position:"));
         foreach (NumericUpDown value in _ambientPosition) row.Controls.Add(value);
@@ -687,28 +827,45 @@ public sealed class StadiumEnvironmentEditorForm : Form
 
     private static Label PlacementLabel(string text) => new()
     {
-        Text = text, AutoSize = true, Margin = new Padding(5, 7, 3, 0)
+        Text = text,
+        AutoSize = true,
+        Margin = new Padding(5, 7, 3, 0)
     };
 
     private static NumericUpDown[] CreatePlacementValues() => Enumerable.Range(0, 3)
         .Select(_ => new NumericUpDown
         {
-            Minimum = -1000000, Maximum = 1000000, DecimalPlaces = 3,
-            Increment = 1, Width = 92, ThousandsSeparator = true, Margin = new Padding(2, 2, 2, 0)
+            Minimum = -1000000,
+            Maximum = 1000000,
+            DecimalPlaces = 3,
+            Increment = 1,
+            Width = 92,
+            ThousandsSeparator = true,
+            Margin = new Padding(2, 2, 2, 0)
         }).ToArray();
 
     private static NumericUpDown[] CreateHomeRunOffsetValues() => Enumerable.Range(0, 3)
         .Select(_ => new NumericUpDown
         {
-            Minimum = -50000, Maximum = 50000, DecimalPlaces = 1, Increment = 25,
-            Width = 88, ThousandsSeparator = true, Margin = new Padding(2, 2, 2, 0)
+            Minimum = -50000,
+            Maximum = 50000,
+            DecimalPlaces = 1,
+            Increment = 25,
+            Width = 88,
+            ThousandsSeparator = true,
+            Margin = new Padding(2, 2, 2, 0)
         }).ToArray();
 
     private static NumericUpDown[] CreateHomeRunScaleValues() => Enumerable.Range(0, 3)
         .Select(_ => new NumericUpDown
         {
-            Minimum = 0.05M, Maximum = 10, DecimalPlaces = 2, Increment = 0.05M,
-            Value = 1, Width = 72, Margin = new Padding(2, 2, 2, 0)
+            Minimum = 0.05M,
+            Maximum = 10,
+            DecimalPlaces = 2,
+            Increment = 0.05M,
+            Value = 1,
+            Width = 72,
+            Margin = new Padding(2, 2, 2, 0)
         }).ToArray();
 
     private Control BuildSplineEditor()
@@ -719,8 +876,11 @@ public sealed class StadiumEnvironmentEditorForm : Form
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
         FlowLayoutPanel buttons = new()
         {
-            Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight,
-            WrapContents = false, AutoScroll = true, Margin = Padding.Empty
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            AutoScroll = true,
+            Margin = Padding.Empty
         };
         Button add = SplineButton("Add After", (_, _) => AddSplinePoint());
         Button duplicate = SplineButton("Duplicate", (_, _) => DuplicateSplinePoint());
@@ -982,6 +1142,7 @@ public sealed class StadiumEnvironmentEditorForm : Form
         StadiumHomeRunBoundaryDocument? document = CurrentHomeRunBoundaryDocument();
         string edited = document?.IsChanged == true
             ? $"  |  moved {VectorText(document.Offset)}, scale {VectorText(document.Scale)}, " +
+               $"home distance/height {document.DistanceFromHomeScale * 100F:0}%, " +
               $"{document.ModifiedPointCount:N0} point edits"
             : string.Empty;
         _homeRunBoundaryInfo.Text = boundary.IsPresent
@@ -1003,6 +1164,8 @@ public sealed class StadiumEnvironmentEditorForm : Form
         StadiumHomeRunBoundaryDocument? document = CurrentHomeRunBoundaryDocument();
         _loadingHomeRunTransform = true;
         foreach (NumericUpDown value in _homeRunOffset.Concat(_homeRunScale)) value.Enabled = document != null;
+        _homeRunDistance.Enabled = document != null;
+        foreach (Button preset in _homeRunDistancePresets) preset.Enabled = document != null;
         for (int index = 0; index < 3; index++)
         {
             Vector3 offset = document?.Offset ?? Vector3.Zero;
@@ -1010,10 +1173,22 @@ public sealed class StadiumEnvironmentEditorForm : Form
             _homeRunOffset[index].Value = (decimal)(index == 0 ? offset.X : index == 1 ? offset.Y : offset.Z);
             _homeRunScale[index].Value = (decimal)(index == 0 ? scale.X : index == 1 ? scale.Y : scale.Z);
         }
+        _homeRunDistance.Value = document == null ? 100 :
+            Math.Clamp((decimal)(document.DistanceFromHomeScale * 100F),
+                _homeRunDistance.Minimum, _homeRunDistance.Maximum);
         _homeRunTransformStatus.Text = document == null
             ? _homeRunTransformUnavailableReason ?? "This RWS has no isolated editable home-run clump."
-            : $"{document.Vertices.Count:N0} control points map to {document.ChangedVertexCount:N0} HR-only vertices; saved inside the RWS.";
+            : $"3D trigger: {document.DistanceFromHomeScale * 100F:0}% distance + height; " +
+              $"height {document.CurrentBoundary.Minimum.Y:0.#} to {document.CurrentBoundary.Maximum.Y:0.#} " +
+              $"(original {document.OriginalBoundary.Minimum.Y:0.#} to {document.OriginalBoundary.Maximum.Y:0.#}).";
         _loadingHomeRunTransform = false;
+    }
+
+    private void SetHomeRunDistancePreset(int percent)
+    {
+        if (!_homeRunDistance.Enabled) return;
+        _homeRunDistance.Value = Math.Clamp(percent, (int)_homeRunDistance.Minimum,
+            (int)_homeRunDistance.Maximum);
     }
 
     private void LoadHomeRunPointEditor(bool resetView)
@@ -1092,6 +1267,7 @@ public sealed class StadiumEnvironmentEditorForm : Form
         if (refreshCanvas)
             _homeRunPointEditor.SetBoundary(document.Vertices, document.Triangles, resetView: false);
         RebuildAmbientPreview();
+        LoadHomeRunTransformEditor();
         LoadSelectedHomeRunPoint();
         UpdateSummaryAndStatus();
     }
@@ -1127,12 +1303,36 @@ public sealed class StadiumEnvironmentEditorForm : Form
             _scene = document.PreviewScene;
             _showHomeRunHelpers.Checked = true;
             RebuildAmbientPreview();
+            LoadHomeRunTransformEditor();
             LoadHomeRunPointEditor(resetView: false);
             UpdateSummaryAndStatus();
         }
         catch (Exception exception)
         {
             MessageBox.Show(this, exception.Message, "Unable to Move Home Run Boundary",
+                MessageBoxButtons.OK, MessageBoxIcon.Error);
+            LoadHomeRunTransformEditor();
+        }
+    }
+
+    private void HomeRunDistanceValueChanged()
+    {
+        if (_loadingHomeRunTransform) return;
+        StadiumHomeRunBoundaryDocument? document = CurrentHomeRunBoundaryDocument();
+        if (document == null) return;
+        try
+        {
+            document.ApplyDistanceFromHomeScale((float)_homeRunDistance.Value / 100F);
+            _scene = document.PreviewScene;
+            _showHomeRunHelpers.Checked = true;
+            RebuildAmbientPreview();
+            LoadHomeRunTransformEditor();
+            LoadHomeRunPointEditor(resetView: false);
+            UpdateSummaryAndStatus();
+        }
+        catch (Exception exception)
+        {
+            MessageBox.Show(this, exception.Message, "Unable to Resize Home Run Boundary",
                 MessageBoxButtons.OK, MessageBoxIcon.Error);
             LoadHomeRunTransformEditor();
         }
@@ -2019,23 +2219,35 @@ public sealed class StadiumEnvironmentEditorForm : Form
     {
         using Form dialog = new()
         {
-            Text = "Copy Ambient Object to Stadium", StartPosition = FormStartPosition.CenterParent,
-            ClientSize = new Size(470, 145), MinimizeBox = false, MaximizeBox = false,
-            FormBorderStyle = FormBorderStyle.FixedDialog, AutoScaleMode = AutoScaleMode.Dpi
+            Text = "Copy Ambient Object to Stadium",
+            StartPosition = FormStartPosition.CenterParent,
+            ClientSize = new Size(470, 145),
+            MinimizeBox = false,
+            MaximizeBox = false,
+            FormBorderStyle = FormBorderStyle.FixedDialog,
+            AutoScaleMode = AutoScaleMode.Dpi
         };
         ComboBox choices = new()
         {
-            Dock = DockStyle.Top, DropDownStyle = ComboBoxStyle.DropDownList, Margin = new Padding(12), Height = 28
+            Dock = DockStyle.Top,
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            Margin = new Padding(12),
+            Height = 28
         };
         choices.Items.AddRange(_archive.Stadiums.Where(item => !ReferenceEquals(item, source)).Cast<object>().ToArray());
         if (choices.Items.Count > 0) choices.SelectedIndex = 0;
         Label label = new()
         {
-            Text = "Destination stadium:", Dock = DockStyle.Top, Height = 35, Padding = new Padding(12, 10, 12, 2)
+            Text = "Destination stadium:",
+            Dock = DockStyle.Top,
+            Height = 35,
+            Padding = new Padding(12, 10, 12, 2)
         };
         FlowLayoutPanel buttons = new()
         {
-            Dock = DockStyle.Bottom, Height = 52, FlowDirection = FlowDirection.RightToLeft,
+            Dock = DockStyle.Bottom,
+            Height = 52,
+            FlowDirection = FlowDirection.RightToLeft,
             Padding = new Padding(8)
         };
         Button cancel = new() { Text = "Cancel", AutoSize = true, DialogResult = DialogResult.Cancel };

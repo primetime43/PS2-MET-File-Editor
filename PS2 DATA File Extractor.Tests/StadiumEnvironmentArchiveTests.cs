@@ -268,7 +268,16 @@ public sealed class StadiumEnvironmentArchiveTests : IDisposable
                         new Rectangle(button.PointToScreen(Point.Empty), button.Size));
                     Assert.True(homeRunPage.ClientRectangle.Contains(bounds), $"{caption} is clipped by the Home Run Events tab.");
                 }
-                Assert.Equal(9, FindControls<NumericUpDown>(homeRunPage).Count);
+                Assert.Equal(10, FindControls<NumericUpDown>(homeRunPage).Count);
+                Assert.NotNull(FindControl<Label>(homeRunPage, control => control.Text == "Home-run distance:"));
+                foreach (string preset in new[] { "50%", "75%", "100%", "125%" })
+                {
+                    Button button = FindControl<Button>(homeRunPage, control => control.Text == preset)!;
+                    Assert.NotNull(button);
+                    Rectangle bounds = homeRunPage.RectangleToClient(
+                        new Rectangle(button.PointToScreen(Point.Empty), button.Size));
+                    Assert.True(homeRunPage.ClientRectangle.Contains(bounds), $"{preset} preset is clipped.");
+                }
                 Assert.NotNull(FindControl<HomeRunBoundaryPointEditorControl>(homeRunPage, _ => true));
                 editor.Close();
             }

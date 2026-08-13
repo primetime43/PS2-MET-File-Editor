@@ -277,7 +277,17 @@ public sealed record RenderWareSceneMesh(string Name, IReadOnlyList<RenderWareSc
 }
 public sealed record RenderWareWorldSectorSource(int PositionDataOffset, int BoundsOffset);
 public sealed record RenderWareGeometrySource(
-    int PositionDataOffset, int BoundingSphereOffset, Matrix4x4 LocalToWorld);
+    int PositionDataOffset, int BoundingSphereOffset, Matrix4x4 LocalToWorld)
+{
+    public RenderWareCollisionTreeSource? CollisionTreeSource { get; init; }
+}
+public sealed record RenderWareCollisionTreeSource(
+    int BoundsOffset,
+    int SplitDataOffset,
+    int EntryMapOffset,
+    uint Flags,
+    int NumEntries,
+    int NumSplits);
 public readonly record struct RenderWareSceneVertex(Vector3 Position, Vector3 Normal,
     Vector2 TextureCoordinate, Color Color);
 public sealed record RenderWareChunkInfo(uint Id, string Name, int Offset, int Length, uint Version);
@@ -289,6 +299,7 @@ internal static class RenderWareSceneParser
     private const uint PlaneSector = 0x0A, World = 0x0B, FrameList = 0x0E, Geometry = 0x0F;
     private const uint Clump = 0x10, Atomic = 0x14, TextureNative = 0x15;
     private const uint TextureDictionary = 0x16, GeometryList = 0x1A, PiTextureDictionary = 0x23;
+    private const uint CollisionTree = 0x2C, CollisionPlugin = 0x11D;
     private const uint NativeFlag = 0x01000000;
 
     public static RenderWareScene Parse(string sourcePath, RenderWareAssetKind kind, byte[] data)
@@ -383,6 +394,9 @@ internal static class RenderWareSceneParser
             {
                 GeometrySource = geometry.Source == null ? null : new RenderWareGeometrySource(
                     geometry.Source.PositionDataOffset, geometry.Source.BoundingSphereOffset, transform)
+                {
+                    CollisionTreeSource = geometry.Source.CollisionTreeSource
+                }
             });
         }
         return result;
@@ -475,7 +489,46 @@ internal static class RenderWareSceneParser
         for (int vertex = 0; vertex < vertexCount; vertex++)
             vertices.Add(new RenderWareSceneVertex(positions[vertex], normals?[vertex] ?? Vector3.UnitY,
                 uv[vertex], colors[vertex]));
+        if (source != null)
+            source = source with { CollisionTreeSource = ParseCollisionTreeSource(data, structureEnd, end) };
         return new GeometryData(vertices, triangles, materials, source);
+    }
+
+    private static RenderWareCollisionTreeSource? ParseCollisionTreeSource(
+        ReadOnlySpan<byte> data,
+        int geometryStructureEnd,
+        int geometryEnd)
+    {
+        int extension = FindChild(data, geometryStructureEnd, geometryEnd, Extension);
+        if (extension < 0) return null;
+        int plugin = FindChild(data, extension + 12, ChunkEnd(data, extension), CollisionPlugin);
+        if (plugin < 0 || I32(data, plugin + 4) < 4) return null;
+
+        int payload = plugin + 12;
+        uint collisionVersion = U32(data, payload);
+        if (collisionVersion < 0x00036001) return null;
+        int tree = payload + 4;
+        if (tree + 12 > ChunkEnd(data, plugin) || U32(data, tree) != CollisionTree) return null;
+        int treeEnd = ChunkEnd(data, tree);
+        int treeStructure = tree + 12;
+        if (treeStructure + 12 > treeEnd || U32(data, treeStructure) != Struct) return null;
+        int structureEnd = ChunkEnd(data, treeStructure);
+        int values = treeStructure + 12;
+        if (values + 36 > structureEnd) return null;
+
+        uint flags = U32(data, values);
+        int numEntries = I32(data, values + 28);
+        int numSplits = I32(data, values + 32);
+        if (numEntries <= 0 || numEntries > ushort.MaxValue ||
+            numSplits < 0 || numSplits > ushort.MaxValue)
+            return null;
+
+        int splitDataOffset = values + 36;
+        long entryMapOffset = (long)splitDataOffset + numSplits * 16L;
+        long expectedEnd = entryMapOffset + ((flags & 1) != 0 ? numEntries * 2L : 0L);
+        if (expectedEnd > structureEnd) return null;
+        return new RenderWareCollisionTreeSource(
+            values + 4, splitDataOffset, (int)entryMapOffset, flags, numEntries, numSplits);
     }
 
     private static WorldResult ParseWorld(string sourcePath, byte[] data, int world)
@@ -670,20 +723,20 @@ internal static class RenderWareSceneParser
         int paletteOffset = pixelsOffset + pixelBytes;
         int[] pixels = new int[checked(width * height)];
         for (int y = 0; y < height; y++)
-        for (int x = 0; x < width; x++)
-        {
-            int source = pixelsOffset + y * stride;
-            if (depth == 4)
+            for (int x = 0; x < width; x++)
             {
-                byte packed = data[source + x / 2];
-                int index = (x & 1) == 0 ? packed & 0x0F : packed >> 4;
-                pixels[y * width + x] = ReadRgba(data, paletteOffset + index * 4);
+                int source = pixelsOffset + y * stride;
+                if (depth == 4)
+                {
+                    byte packed = data[source + x / 2];
+                    int index = (x & 1) == 0 ? packed & 0x0F : packed >> 4;
+                    pixels[y * width + x] = ReadRgba(data, paletteOffset + index * 4);
+                }
+                else if (depth == 8)
+                    pixels[y * width + x] = ReadRgba(data, paletteOffset + data[source + x] * 4);
+                else
+                    pixels[y * width + x] = ReadRgba(data, source + x * (depth / 8), depth == 32);
             }
-            else if (depth == 8)
-                pixels[y * width + x] = ReadRgba(data, paletteOffset + data[source + x] * 4);
-            else
-                pixels[y * width + x] = ReadRgba(data, source + x * (depth / 8), depth == 32);
-        }
         return new DecodedRwImage(width, height, pixels);
     }
 
@@ -760,13 +813,25 @@ internal static class RenderWareSceneParser
 
     private static string ChunkName(uint id) => id switch
     {
-        Struct => "Struct", Extension => "Extension", MaterialList => "Material list",
-        AtomicSector => "World sector", PlaneSector => "BSP plane", World => "World",
-        FrameList => "Frame list", Geometry => "Geometry", Clump => "Clump", Atomic => "Atomic",
-        GeometryList => "Geometry list", TextureDictionary => "Texture dictionary",
-        PiTextureDictionary => "Platform texture dictionary", 0x1B => "Animation",
-        0x24 => "Table of contents", 0x29 => "Chunk group start", 0x2A => "Chunk group end",
-        0x2B => "UV animation dictionary", _ => $"Chunk 0x{id:X}"
+        Struct => "Struct",
+        Extension => "Extension",
+        MaterialList => "Material list",
+        AtomicSector => "World sector",
+        PlaneSector => "BSP plane",
+        World => "World",
+        FrameList => "Frame list",
+        Geometry => "Geometry",
+        Clump => "Clump",
+        Atomic => "Atomic",
+        GeometryList => "Geometry list",
+        TextureDictionary => "Texture dictionary",
+        PiTextureDictionary => "Platform texture dictionary",
+        0x1B => "Animation",
+        0x24 => "Table of contents",
+        0x29 => "Chunk group start",
+        0x2A => "Chunk group end",
+        0x2B => "UV animation dictionary",
+        _ => $"Chunk 0x{id:X}"
     };
 
     private static string ReadString(ReadOnlySpan<byte> data)
@@ -786,7 +851,10 @@ internal static class RenderWareSceneParser
     private sealed record GeometryData(IReadOnlyList<RenderWareSceneVertex> Vertices,
         IReadOnlyList<RenderWareTriangle> Triangles, IReadOnlyList<RenderWareMaterial> Materials,
         GeometrySourceData? Source);
-    private sealed record GeometrySourceData(int PositionDataOffset, int BoundingSphereOffset);
+    private sealed record GeometrySourceData(int PositionDataOffset, int BoundingSphereOffset)
+    {
+        public RenderWareCollisionTreeSource? CollisionTreeSource { get; init; }
+    }
     private sealed record WorldResult(IReadOnlyList<RenderWareSceneMesh> Meshes, int PlaneSectors, int WorldSectors);
     private sealed record DecodedEmbeddedTexture(string Name, RenderWareTexture Texture);
     private sealed record DecodedRwImage(int Width, int Height, int[] Pixels);

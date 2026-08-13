@@ -101,8 +101,14 @@ game at another material already present in that RWS, but it does not move any p
 Retail analysis confirmed that every stadium stores its `HR` polygons in a separate embedded clump:
 none of those vertices are shared with the visible stadium or another collision material. The editor
 therefore exposes **Move X / Y / Z** and **Scale X / Y / Z** controls for that actual surface. X moves
-or widens the line left/right, Y raises/lowers or changes its height, and Z moves or deepens it toward
-the outfield. Scaling uses the original boundary center as its pivot. Changes appear immediately when
+or widens the line left/right, Y raises/lowers or changes its height, and Z moves it along the field.
+For the common "make every home run shorter/longer" case, **Home-run distance** scales X/Y/Z
+around home plate at the field origin. The editor provides 50%, 75%, 100%, and 125% presets, and the
+status line displays both the resulting height range and the original one. `50%` puts every section
+at half its original distance and height. This is necessary because the game's trigger is a sloped
+three-dimensional surface rather than a vertical fence: changing only X/Z leaves the original
+launch-height requirement in place. The free
+XYZ scaling controls continue to use the original boundary center as their pivot. Changes appear immediately when
 collision helpers are visible, persist while switching stadiums, and **Reset Boundary** restores the
 original RWS bytes.
 
@@ -113,11 +119,18 @@ or closely packed points, **Reset Selected** restores only the selected point ed
 refits the top-down view. Coincident RenderWare vertices are grouped as one logical point so seams stay
 welded. The editor retains the original vertex and triangle counts.
 
-The writer converts edited world coordinates through the clump's original frame, modifies only its
-position floats and morph-target bounding sphere, and keeps the RWS entry exactly the same size. The
-stadium's RenderWare world sectors and BSP remain untouched because the HR clump is outside that world
-geometry. Fielddata, spline, and changed RWS entries are committed together under one timestamped
-`DATA.MET` backup.
+The writer converts edited world coordinates through the clump's original frame and updates its
+position floats, morph-target bounding sphere, and Geometry Collision PLG (`0x011D`). The collision
+tree's bounds and every split plane are recalculated while its topology and triangle map stay fixed,
+so the RWS entry remains exactly the same size. Fielddata, spline, and changed RWS entries are
+committed together under one timestamped `DATA.MET` backup.
+
+The retail executable confirms the runtime path: `BallCollidable::GetEnvironmentCandidates` asks the
+RenderWare collision manager for the nearest RWS triangle, then `BaseballField::CheckHomeRun` at
+`0x0013DF50` matches that triangle's texture name against the `homerun` tags and creates the dedicated
+`HomerunCollidable`. The airborne-ball handler then calls `BaseballBall::CheckForHomerun` at
+`0x0012F270`. That final function also rejects hits outside the game's ±45-degree fair cone, so moving
+the surface cannot turn a clearly foul ball into a home run.
 
 ## Loader behavior recovered in Ghidra
 

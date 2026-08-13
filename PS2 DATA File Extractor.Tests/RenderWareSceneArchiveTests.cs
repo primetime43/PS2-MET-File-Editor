@@ -21,6 +21,10 @@ public sealed class RenderWareSceneArchiveTests : IDisposable
         Assert.Equal(1, scene.TriangleCount);
         Assert.Equal(new Vector3(10, 20, 30), mesh.Vertices[0].Position);
         Assert.Equal(new RenderWareTriangle(0, 1, 2, 0), Assert.Single(mesh.Triangles));
+        RenderWareCollisionTreeSource collision = Assert.IsType<RenderWareCollisionTreeSource>(
+            mesh.GeometrySource?.CollisionTreeSource);
+        Assert.Equal(1, collision.NumEntries);
+        Assert.Equal(0, collision.NumSplits);
     }
 
     [Fact]
@@ -290,6 +294,35 @@ public sealed class RenderWareSceneArchiveTests : IDisposable
     }
 
     [Fact]
+    public void HomeRunBoundaryDistanceScaleMovesEveryPointTowardFieldOrigin()
+    {
+        const int positionOffset = 16, sphereOffset = 80;
+        byte[] raw = new byte[128];
+        Vector3[] positions = [new(-10, 2, -20), new(10, 2, -20), new(0, 8, 30)];
+        for (int index = 0; index < positions.Length; index++)
+            WriteVector(raw, positionOffset + index * 12, positions[index]);
+        RenderWareSceneMesh mesh = new("HR", positions.Select(position => new RenderWareSceneVertex(
+                position, Vector3.UnitY, Vector2.Zero, Color.White)).ToArray(),
+            [new RenderWareTriangle(0, 1, 2, 0)], [new RenderWareMaterial("HR", Color.White)], "Clump")
+        {
+            GeometrySource = new RenderWareGeometrySource(positionOffset, sphereOffset, Matrix4x4.Identity)
+        };
+        RenderWareScene scene = new("field.rws", RenderWareAssetKind.RwsScene,
+            [mesh], [], 0, 0, 1, [], []);
+        StadiumHomeRunBoundaryDocument document = StadiumHomeRunBoundaryDocument.Create(scene, raw, "HR");
+
+        document.ApplyDistanceFromHomeScale(0.5F);
+
+        Assert.Equal(new Vector3(-5, 1, -10), document.PreviewScene.Meshes[0].Vertices[0].Position);
+        Assert.Equal(new Vector3(5, 1, -10), document.PreviewScene.Meshes[0].Vertices[1].Position);
+        Assert.Equal(new Vector3(0, 4, 15), document.PreviewScene.Meshes[0].Vertices[2].Position);
+        Assert.Equal(0.5F, document.DistanceFromHomeScale);
+        Assert.True(document.IsChanged);
+        document.Reset();
+        Assert.Equal(1F, document.DistanceFromHomeScale);
+    }
+
+    [Fact]
     public void HomeRunBoundaryPointEditsKeepCoincidentRawVerticesTogether()
     {
         const int positionOffset = 24, sphereOffset = 112;
@@ -328,6 +361,57 @@ public sealed class RenderWareSceneArchiveTests : IDisposable
         document.ResetVertex(point.Index);
         Assert.False(document.IsChanged);
         Assert.Equal(raw, document.Serialize());
+    }
+
+    [Fact]
+    public void HomeRunBoundaryDocumentUpdatesCollisionTreeBoundsAndSplitPlanes()
+    {
+        const int positionOffset = 16, sphereOffset = 96, boundsOffset = 128;
+        const int splitsOffset = 152, mapOffset = 168;
+        byte[] raw = new byte[192];
+        Vector3[] positions =
+        [
+            new(-10, 0, -2), new(-5, 0, -2), new(-5, 4, 2),
+            new(5, 0, -2), new(10, 0, -2), new(5, 4, 2)
+        ];
+        for (int index = 0; index < positions.Length; index++)
+            WriteVector(raw, positionOffset + index * 12, positions[index]);
+        WriteVector(raw, boundsOffset, new Vector3(-10, 0, -2));
+        WriteVector(raw, boundsOffset + 12, new Vector3(10, 4, 2));
+        raw[splitsOffset] = 1; // X-axis negative sector.
+        raw[splitsOffset + 1] = 1;
+        BitConverter.GetBytes((ushort)0).CopyTo(raw, splitsOffset + 2);
+        BitConverter.GetBytes(-5F).CopyTo(raw, splitsOffset + 4);
+        raw[splitsOffset + 8] = 0; // X-axis positive sector.
+        raw[splitsOffset + 9] = 1;
+        BitConverter.GetBytes((ushort)1).CopyTo(raw, splitsOffset + 10);
+        BitConverter.GetBytes(5F).CopyTo(raw, splitsOffset + 12);
+        BitConverter.GetBytes((ushort)0).CopyTo(raw, mapOffset);
+        BitConverter.GetBytes((ushort)1).CopyTo(raw, mapOffset + 2);
+
+        RenderWareSceneMesh mesh = new("HR", positions.Select(position => new RenderWareSceneVertex(
+                position, Vector3.UnitY, Vector2.Zero, Color.White)).ToArray(),
+            [new RenderWareTriangle(0, 1, 2, 0), new RenderWareTriangle(3, 4, 5, 0)],
+            [new RenderWareMaterial("HR", Color.White)], "Clump")
+        {
+            GeometrySource = new RenderWareGeometrySource(positionOffset, sphereOffset, Matrix4x4.Identity)
+            {
+                CollisionTreeSource = new RenderWareCollisionTreeSource(
+                    boundsOffset, splitsOffset, mapOffset, 1, 2, 1)
+            }
+        };
+        RenderWareScene scene = new("field.rws", RenderWareAssetKind.RwsScene,
+            [mesh], [], 0, 0, 1, [], []);
+        StadiumHomeRunBoundaryDocument document = StadiumHomeRunBoundaryDocument.Create(scene, raw, "HR");
+
+        document.ApplyDistanceFromHomeScale(0.5F);
+        byte[] changed = document.Serialize();
+
+        Assert.Equal(-5F, BitConverter.ToSingle(changed, boundsOffset));
+        Assert.Equal(5F, BitConverter.ToSingle(changed, boundsOffset + 12));
+        Assert.Equal(-2.5F, BitConverter.ToSingle(changed, splitsOffset + 4));
+        Assert.Equal(2.5F, BitConverter.ToSingle(changed, splitsOffset + 12));
+        Assert.Equal(raw.AsSpan(mapOffset, 4).ToArray(), changed.AsSpan(mapOffset, 4).ToArray());
     }
 
     [Theory]
@@ -483,6 +567,19 @@ public sealed class RenderWareSceneArchiveTests : IDisposable
             }));
             writer.Write(Chunk(0x03, _ => { }));
         });
+        byte[] collisionPlugin = Chunk(0x11D, writer =>
+        {
+            writer.Write(0x00036003);
+            writer.Write(Chunk(0x2C, tree => tree.Write(Chunk(0x01, structure =>
+            {
+                structure.Write(1);
+                WriteVector(structure, Vector3.Zero);
+                WriteVector(structure, Vector3.One);
+                structure.Write(1);
+                structure.Write(0);
+                structure.Write((ushort)0);
+            }))));
+        });
         byte[] geometry = Chunk(0x0F, writer =>
         {
             writer.Write(Chunk(0x01, structure =>
@@ -496,7 +593,7 @@ public sealed class RenderWareSceneArchiveTests : IDisposable
                 WriteVector(structure, Vector3.UnitX);
                 WriteVector(structure, Vector3.UnitY);
             }));
-            writer.Write(Chunk(0x03, _ => { }));
+            writer.Write(Chunk(0x03, extension => extension.Write(collisionPlugin)));
         });
         byte[] geometryList = Chunk(0x1A, writer =>
         {

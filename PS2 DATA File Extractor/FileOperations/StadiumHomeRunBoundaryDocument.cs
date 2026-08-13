@@ -43,9 +43,11 @@ public sealed class StadiumHomeRunBoundaryDocument
     public RenderWareScene PreviewScene { get; private set; }
     public Vector3 Offset { get; private set; }
     public Vector3 Scale { get; private set; } = Vector3.One;
+    public float DistanceFromHomeScale { get; private set; } = 1F;
     public int ChangedVertexCount => _targets.Sum(target => target.VertexIndices.Count);
     public int ModifiedPointCount => _pointDeltas.Count;
-    public bool IsChanged => Offset != Vector3.Zero || Scale != Vector3.One || _pointDeltas.Count > 0;
+    public bool IsChanged => Offset != Vector3.Zero || Scale != Vector3.One ||
+                             DistanceFromHomeScale != 1F || _pointDeltas.Count > 0;
     public IReadOnlyList<StadiumHomeRunBoundaryTriangle> Triangles => _triangles;
     public IReadOnlyList<StadiumHomeRunBoundaryVertex> Vertices => _points
         .Select((point, index) => new StadiumHomeRunBoundaryVertex(index, point.OriginalPosition,
@@ -115,6 +117,19 @@ public sealed class StadiumHomeRunBoundaryDocument
         Rebuild();
     }
 
+    /// <summary>
+    /// Moves every part of the sloped boundary toward or away from home plate (the field origin) by
+    /// the same ratio on all three axes. Scaling height with distance preserves the launch-angle
+    /// threshold represented by the game's three-dimensional home-run surface.
+    /// </summary>
+    public void ApplyDistanceFromHomeScale(float scale)
+    {
+        if (!float.IsFinite(scale) || scale <= 0)
+            throw new ArgumentOutOfRangeException(nameof(scale), "Distance scale must be positive and finite.");
+        DistanceFromHomeScale = scale;
+        Rebuild();
+    }
+
     public void SetVertexPosition(int pointIndex, Vector3 position)
     {
         SetVertexPositions(new Dictionary<int, Vector3> { [pointIndex] = position });
@@ -156,7 +171,8 @@ public sealed class StadiumHomeRunBoundaryDocument
 
     private void Rebuild()
     {
-        if (Offset == Vector3.Zero && Scale == Vector3.One && _pointDeltas.Count == 0)
+        if (Offset == Vector3.Zero && Scale == Vector3.One &&
+            DistanceFromHomeScale == 1F && _pointDeltas.Count == 0)
         {
             _currentData = _originalData.ToArray();
             PreviewScene = _originalScene;
@@ -168,6 +184,7 @@ public sealed class StadiumHomeRunBoundaryDocument
         foreach (TargetMesh target in _targets)
         {
             RenderWareSceneVertex[] vertices = target.Mesh.Vertices.ToArray();
+            Vector3[] localVertices = new Vector3[vertices.Length];
             for (int index = 0; index < vertices.Length; index++)
             {
                 Vector3 world = vertices[index].Position;
@@ -179,11 +196,13 @@ public sealed class StadiumHomeRunBoundaryDocument
                         world += delta;
                 }
                 Vector3 local = Vector3.Transform(world, target.WorldToLocal);
+                localVertices[index] = local;
                 WriteVector(_currentData, target.Source.PositionDataOffset + index * 12, local);
                 vertices[index] = vertices[index] with { Position = world };
             }
             UpdateBoundingSphere(_currentData, target.Source.BoundingSphereOffset, vertices,
                 target.WorldToLocal);
+            UpdateCollisionTree(_currentData, target, localVertices);
             previewMeshes[target.MeshIndex] = target.Mesh with { Vertices = vertices };
         }
 
@@ -194,6 +213,7 @@ public sealed class StadiumHomeRunBoundaryDocument
     {
         Offset = Vector3.Zero;
         Scale = Vector3.One;
+        DistanceFromHomeScale = 1F;
         _pointDeltas.Clear();
         _currentData = _originalData.ToArray();
         PreviewScene = _originalScene;
@@ -205,8 +225,15 @@ public sealed class StadiumHomeRunBoundaryDocument
         TransformedOriginal(_points[pointIndex].OriginalPosition) +
         (_pointDeltas.TryGetValue(pointIndex, out Vector3 delta) ? delta : Vector3.Zero);
 
-    private Vector3 TransformedOriginal(Vector3 position) =>
-        OriginalBoundary.Center + Vector3.Multiply(position - OriginalBoundary.Center, Scale) + Offset;
+    private Vector3 TransformedOriginal(Vector3 position)
+    {
+        // The HR geometry is a sloped scoring surface, not a vertical outfield fence. Scaling only
+        // X/Z moves its footprint but leaves the original height requirement in place. Scale all
+        // axes from home plate so a shorter boundary also has the proportionally lower trigger.
+        Vector3 distanceAdjusted = position * DistanceFromHomeScale;
+        Vector3 adjustedCenter = OriginalBoundary.Center * DistanceFromHomeScale;
+        return adjustedCenter + Vector3.Multiply(distanceAdjusted - adjustedCenter, Scale) + Offset;
+    }
 
     private static (List<EditablePoint> Points, List<StadiumHomeRunBoundaryTriangle> Triangles,
         Dictionary<VertexKey, int> PointByVertex) BuildTopology(
@@ -216,37 +243,37 @@ public sealed class StadiumHomeRunBoundaryDocument
         List<EditablePoint> points = [];
         Dictionary<VertexKey, int> pointByVertex = [];
         foreach (TargetMesh target in targets)
-        foreach (int vertexIndex in target.VertexIndices.Order())
-        {
-            Vector3 position = target.Mesh.Vertices[vertexIndex].Position;
-            int pointIndex = points.FindIndex(point =>
-                Vector3.DistanceSquared(point.OriginalPosition, position) <= 0.000001F);
-            if (pointIndex < 0)
+            foreach (int vertexIndex in target.VertexIndices.Order())
             {
-                pointIndex = points.Count;
-                points.Add(new EditablePoint(position, []));
+                Vector3 position = target.Mesh.Vertices[vertexIndex].Position;
+                int pointIndex = points.FindIndex(point =>
+                    Vector3.DistanceSquared(point.OriginalPosition, position) <= 0.000001F);
+                if (pointIndex < 0)
+                {
+                    pointIndex = points.Count;
+                    points.Add(new EditablePoint(position, []));
+                }
+                VertexKey reference = new(target.MeshIndex, vertexIndex);
+                points[pointIndex].References.Add(reference);
+                pointByVertex[reference] = pointIndex;
             }
-            VertexKey reference = new(target.MeshIndex, vertexIndex);
-            points[pointIndex].References.Add(reference);
-            pointByVertex[reference] = pointIndex;
-        }
 
         List<StadiumHomeRunBoundaryTriangle> triangles = [];
         HashSet<(int, int, int)> seen = [];
         foreach (TargetMesh target in targets)
-        foreach (RenderWareTriangle triangle in target.Mesh.Triangles)
-        {
-            if (triangle.MaterialIndex < 0 || triangle.MaterialIndex >= target.Mesh.Materials.Count ||
-                !string.Equals(target.Mesh.Materials[triangle.MaterialIndex].TextureName, materialTag,
-                    StringComparison.OrdinalIgnoreCase)) continue;
-            if (!pointByVertex.TryGetValue(new VertexKey(target.MeshIndex, triangle.First), out int first) ||
-                !pointByVertex.TryGetValue(new VertexKey(target.MeshIndex, triangle.Second), out int second) ||
-                !pointByVertex.TryGetValue(new VertexKey(target.MeshIndex, triangle.Third), out int third)) continue;
-            int[] ordered = [first, second, third];
-            Array.Sort(ordered);
-            if (seen.Add((ordered[0], ordered[1], ordered[2])))
-                triangles.Add(new StadiumHomeRunBoundaryTriangle(first, second, third));
-        }
+            foreach (RenderWareTriangle triangle in target.Mesh.Triangles)
+            {
+                if (triangle.MaterialIndex < 0 || triangle.MaterialIndex >= target.Mesh.Materials.Count ||
+                    !string.Equals(target.Mesh.Materials[triangle.MaterialIndex].TextureName, materialTag,
+                        StringComparison.OrdinalIgnoreCase)) continue;
+                if (!pointByVertex.TryGetValue(new VertexKey(target.MeshIndex, triangle.First), out int first) ||
+                    !pointByVertex.TryGetValue(new VertexKey(target.MeshIndex, triangle.Second), out int second) ||
+                    !pointByVertex.TryGetValue(new VertexKey(target.MeshIndex, triangle.Third), out int third)) continue;
+                int[] ordered = [first, second, third];
+                Array.Sort(ordered);
+                if (seen.Add((ordered[0], ordered[1], ordered[2])))
+                    triangles.Add(new StadiumHomeRunBoundaryTriangle(first, second, third));
+            }
         return (points, triangles, pointByVertex);
     }
 
@@ -268,6 +295,108 @@ public sealed class StadiumHomeRunBoundaryDocument
         float radius = local.Max(position => Vector3.Distance(center, position));
         WriteVector(data, offset, center);
         WriteFloat(data, offset + 12, radius);
+    }
+
+    private static void UpdateCollisionTree(
+        byte[] data,
+        TargetMesh target,
+        IReadOnlyList<Vector3> localVertices)
+    {
+        RenderWareCollisionTreeSource? source = target.Source.CollisionTreeSource;
+        if (source == null) return;
+        if (source.NumEntries != target.Mesh.Triangles.Count)
+            throw new InvalidDataException("The home-run collision tree entry count does not match its geometry.");
+        if (source.BoundsOffset < 0 || source.BoundsOffset + 24 > data.Length ||
+            source.SplitDataOffset < 0 || source.SplitDataOffset + source.NumSplits * 16 > data.Length ||
+            source.EntryMapOffset < 0 || source.EntryMapOffset > data.Length)
+            throw new InvalidDataException("The home-run collision tree points outside the RWS payload.");
+
+        Vector3 minimum = new(float.MaxValue), maximum = new(float.MinValue);
+        foreach (Vector3 vertex in localVertices)
+        {
+            minimum = Vector3.Min(minimum, vertex);
+            maximum = Vector3.Max(maximum, vertex);
+        }
+        WriteVector(data, source.BoundsOffset, minimum);
+        WriteVector(data, source.BoundsOffset + 12, maximum);
+        if (source.NumSplits == 0) return;
+
+        int[] entryMap = new int[source.NumEntries];
+        if ((source.Flags & 1) != 0)
+        {
+            if (source.EntryMapOffset + source.NumEntries * 2 > data.Length)
+                throw new InvalidDataException("The home-run collision entry map is truncated.");
+            for (int index = 0; index < entryMap.Length; index++)
+                entryMap[index] = BinaryPrimitives.ReadUInt16LittleEndian(
+                    data.AsSpan(source.EntryMapOffset + index * 2, 2));
+        }
+        else
+        {
+            for (int index = 0; index < entryMap.Length; index++) entryMap[index] = index;
+        }
+
+        Dictionary<int, int[]> splitEntries = [];
+        HashSet<int> visiting = [];
+        for (int splitIndex = 0; splitIndex < source.NumSplits; splitIndex++)
+        {
+            int splitOffset = source.SplitDataOffset + splitIndex * 16;
+            int axis = (data[splitOffset] & 0x0C) >> 2;
+            if (axis > 2) throw new InvalidDataException("The home-run collision tree uses an invalid split axis.");
+            int[] left = SectorEntries(splitIndex, left: true);
+            int[] right = SectorEntries(splitIndex, left: false);
+            if (left.Length == 0 || right.Length == 0)
+                throw new InvalidDataException("The home-run collision tree contains an empty split sector.");
+            WriteFloat(data, splitOffset + 4, TriangleExtent(left, axis, maximumExtent: true));
+            WriteFloat(data, splitOffset + 12, TriangleExtent(right, axis, maximumExtent: false));
+        }
+
+        int[] SplitEntries(int splitIndex)
+        {
+            if (splitEntries.TryGetValue(splitIndex, out int[]? cached)) return cached;
+            if ((uint)splitIndex >= (uint)source.NumSplits || !visiting.Add(splitIndex))
+                throw new InvalidDataException("The home-run collision tree contains an invalid split reference.");
+            int[] result = SectorEntries(splitIndex, true).Concat(SectorEntries(splitIndex, false)).ToArray();
+            visiting.Remove(splitIndex);
+            splitEntries[splitIndex] = result;
+            return result;
+        }
+
+        int[] SectorEntries(int splitIndex, bool left)
+        {
+            int sectorOffset = source.SplitDataOffset + splitIndex * 16 + (left ? 0 : 8);
+            byte contents = data[sectorOffset + 1];
+            int index = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(sectorOffset + 2, 2));
+            if (contents == 0xFF) return SplitEntries(index);
+            if (index + contents > entryMap.Length)
+                throw new InvalidDataException("The home-run collision leaf points outside its entry map.");
+            int[] result = new int[contents];
+            for (int item = 0; item < contents; item++)
+            {
+                int triangleIndex = entryMap[index + item];
+                if ((uint)triangleIndex >= (uint)target.Mesh.Triangles.Count)
+                    throw new InvalidDataException("The home-run collision map references an invalid triangle.");
+                result[item] = triangleIndex;
+            }
+            return result;
+        }
+
+        float TriangleExtent(IReadOnlyList<int> triangleIndices, int axis, bool maximumExtent)
+        {
+            float result = maximumExtent ? float.MinValue : float.MaxValue;
+            foreach (int triangleIndex in triangleIndices)
+            {
+                RenderWareTriangle triangle = target.Mesh.Triangles[triangleIndex];
+                foreach (int vertexIndex in new[] { triangle.First, triangle.Second, triangle.Third })
+                {
+                    if ((uint)vertexIndex >= (uint)localVertices.Count)
+                        throw new InvalidDataException("The home-run collision triangle references an invalid vertex.");
+                    Vector3 vertex = localVertices[vertexIndex];
+                    float value = axis == 0 ? vertex.X : axis == 1 ? vertex.Y : vertex.Z;
+                    result = maximumExtent ? MathF.Max(result, value) : MathF.Min(result, value);
+                }
+            }
+            return result;
+        }
     }
 
     private static RenderWareScene CloneScene(
