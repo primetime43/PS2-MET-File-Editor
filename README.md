@@ -56,6 +56,12 @@ To access the .MET files, you need to extract the game files from the ISO using 
   ball size, bounce, rolling distance, bunt and normal-hit power, special hits, catches, and complete
   arcade/defense game styles. A preset previews its affected values and only stages edits until the
   normal Save action is used. See [gameplay tweaks and physics presets](docs/GAMEPLAY_TWEAKS.md).
+- **Developer Tools...** exposes all 26 shipped `debugoptions.ini` switches that the retail executable
+  still reads, including perfect/missed catches, AI swing and batting locks, pitching error, play-timer,
+  controller, audio, ambient, and diagnostic logging controls. A separate executable tab enables the
+  dormant one-inning, CPU-season, forced win/loss, and exact-hit modes in the verified USA
+  `SLUS_208.65`. Every DATA.MET and executable save has its own timestamped backup, and executable
+  patches can be restored independently. See [developer tools and hidden settings](docs/DEVELOPER_TOOLS.md).
 - **Season Schedule Editor...** edits all 40 retail 18-game and 32-game season templates. Pick a
   template and round, then change either team slot in any of the 12 matchups. Reusing a slot
   automatically swaps the teams so every round remains valid; the overview reports side balance,
@@ -120,13 +126,15 @@ patch makes selected content available to every save in the rebuilt ISO. See
    **Game batting POV** above the preview to inspect the field from those coordinates.
 4. For structured game tuning, select **Gameplay Tweaks...**, edit values in the category
    tabs, and select **Save to DATA.MET**. Comments and unsupported INI keys are preserved.
-5. Select **Team and League Setup...** to change division membership, active clubs, or division order.
-6. Select **Season Schedule Editor...** to rearrange matchup slots used by newly created seasons.
-7. Save any other MET changes; resizing and backups are handled automatically.
-8. Select **Unlock Game Content...** in the main window.
-9. Select the extracted USA executable `SLUS_208.65`.
-10. Select individual content or **Unlock All**, then apply the patch.
-11. Keep the patched executable beside the other extracted game files.
+5. Select **Developer Tools...** to change the retail debug switches. Its executable tab automatically
+   loads a sibling `SLUS_208.65` for one-inning, forced-result, CPU-season, or exact-hit modes.
+6. Select **Team and League Setup...** to change division membership, active clubs, or division order.
+7. Select **Season Schedule Editor...** to rearrange matchup slots used by newly created seasons.
+8. Save any other MET changes; resizing and backups are handled automatically.
+9. Select **Unlock Game Content...** in the main window.
+10. Select the extracted USA executable `SLUS_208.65`.
+11. Select individual content or **Unlock All**, then apply the patch.
+12. Keep the patched executable beside the other extracted game files.
 
 ### Step 3: Rebuild the ISO in the editor
 

@@ -11,6 +11,7 @@ public partial class Form1
     private Button _workspaceAppearanceButton = null!;
     private Button _workspaceStadiumButton = null!;
     private Button _workspaceGameplayButton = null!;
+    private Button _workspaceDeveloperButton = null!;
     private Button _workspaceTeamLeagueButton = null!;
     private Button _workspaceScheduleButton = null!;
     private Button _workspaceAnimationButton = null!;
@@ -223,18 +224,21 @@ public partial class Form1
         {
             Text = "Game and Save Tools",
             Dock = DockStyle.Fill,
-            Height = 194,
+            Height = 246,
             Margin = new Padding(3, 3, 3, 3),
             Padding = new Padding(10, 8, 10, 9)
         };
-        TableLayoutPanel table = CreateToolTable(3);
-        Button unlocks = AddToolRow(table, 0, "Unlock Game Content...",
+        TableLayoutPanel table = CreateToolTable(4);
+        _workspaceDeveloperButton = AddToolRow(table, 0, "Developer Tools...",
+            "Enable retail debug switches, status logging, dormant game modes, forced season results, and exact hit trajectories.");
+        _workspaceDeveloperButton.Click += developerToolsButton_Click;
+        Button unlocks = AddToolRow(table, 1, "Unlock Game Content...",
             "Patch the USA game executable to unlock players, fields, Darts, and Aquadome for every save.");
         unlocks.Click += (_, _) => patchGameMenuItem_Click(this, EventArgs.Empty);
-        Button iso = AddToolRow(table, 1, "Build Game ISO...",
+        Button iso = AddToolRow(table, 2, "Build Game ISO...",
             "Rebuild a playable ISO from the extracted game folder after applying your changes.");
         iso.Click += (_, _) => rebuildIsoMenuItem_Click(this, EventArgs.Empty);
-        Button save = AddToolRow(table, 2, "Edit Exported Save...",
+        Button save = AddToolRow(table, 3, "Edit Exported Save...",
             "Edit an exported Backyard Baseball Settings save, including its content unlock flags.");
         save.Click += (_, _) => editSaveMenuItem_Click(this, EventArgs.Empty);
         group.Controls.Add(table);
@@ -345,6 +349,7 @@ public partial class Form1
         _workspaceAppearanceButton.Enabled = structuredEditorsAvailable;
         _workspaceStadiumButton.Enabled = structuredEditorsAvailable;
         _workspaceGameplayButton.Enabled = structuredEditorsAvailable;
+        _workspaceDeveloperButton.Enabled = structuredEditorsAvailable;
         _workspaceTeamLeagueButton.Enabled = structuredEditorsAvailable;
         _workspaceScheduleButton.Enabled = structuredEditorsAvailable;
         _workspaceAnimationButton.Enabled = structuredEditorsAvailable;
