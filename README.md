@@ -18,97 +18,26 @@ To access the .MET files, you need to extract the game files from the ISO using 
 
 ## Modding and unlock editing
 
-- **Player Editor...** on the **Game Tools** tab shows the stored player polaroids and edits all 230 retail and clone `*_stats.dat` records, including names,
-  batting/running/fielding components, all 12 pitch ratings, identity data, clone appearance slots,
-  and the 49 stored retail player-card biographies. The Biography tab includes an in-game line-wrap
-  preview and automatically maintains the biography file's line-count header.
-  The image dropdown and arrow buttons cycle through the selected player's own assets: their static polaroid plus the Breathe, Breathe + Blink, and Pick Me selection animations when present. Polaroids accept PNG, BMP, or JPEG replacements and update the packed menu textures; animations can be exported or replaced as compatible 256-by-256 PS2 PSS files.
-  The reversed layout and executable addresses are in [`docs/PLAYER_STATS.md`](docs/PLAYER_STATS.md).
-- **3D Player Appearance Editor...** groups the retail batting, fielding, baserunning, player-card,
-  and interview models by player. It previews the real animated skinned DFF, lists every resolved
-  clothing, skin, hair, face, hat, shoe, and equipment PNG, and can export, replace, preview, reset,
-  and batch-save textures. PNG, BMP, and JPEG imports are converted and resized to the original game
-  texture dimensions. See [3D player appearances](docs/PLAYER_APPEARANCE.md).
-- **Stadium Editor...** edits lighting, cameras, collision tags, and ambient models, particles,
-  positions, animations, and speeds across all 15 `fielddata.txt` stadium variants. Its joined textured
-  RWS viewer loads the matching stadium automatically and previews ambient-light, fielddata cameras,
-  placed ambient DFF models, disabled objects, and retail spline movement paths live. Ambient objects
-  can be selected from either the list or the 3D preview; path-driven objects can be played, looped,
-  scrubbed, speed-adjusted, and turned along their path in both the embedded and detachable preview.
-  The selected object's assigned `anim`, `animOnce`, and home-run ANM slots can be switched and played
-  on its real skinned DFF while it moves, with independent path synchronization and ANM looping.
-  New ambient objects can be built from archive-backed DFF, compatible ANM, and SPL dropdowns; existing
-  blocks can be cloned, deleted, or copied between stadiums, and the placement controls update the 3D
-  preview immediately. `numAmbs` is adjusted without enabling intentionally disabled retail blocks.
-  A dedicated Home Run Events tab groups each stadium's home-run animations, particles, delays, and
-  sounds, can manually trigger the selected visual effect, and reports the bounds of the RWS material
-  polygons that the game uses as its home-run collision surface. A distance percentage moves the full
-  line uniformly toward/away from home, while free move/scale controls reposition the HR-only clump and
-  the top-down Boundary Points editor supports individual or Ctrl-selected
-  point dragging, exact XYZ entry, and point resets. All changes update the live 3D preview and save as
-  fixed-size geometry changes inside the RWS.
-  Retail `.spl` waypoints can also be selected in 3D, edited numerically, added, duplicated, deleted,
-  reordered, reset, and saved back into `DATA.MET` with the fielddata changes.
-  Loader details are documented in
-  [`docs/STADIUM_ENVIRONMENTS.md`](docs/STADIUM_ENVIRONMENTS.md).
-- **Gameplay Tweaks...** on the **Game Tools** tab provides validated tabs for 285 ball, bat/power-up, field physics,
-  simulation, practice/cheat, and game-default values stored in `DATA.MET`. Its 27 quick presets cover
-  ball size, bounce, rolling distance, bunt and normal-hit power, special hits, catches, and complete
-  arcade/defense game styles. A preset previews its affected values and only stages edits until the
-  normal Save action is used. See [gameplay tweaks and physics presets](docs/GAMEPLAY_TWEAKS.md).
-- **Developer Tools...** exposes all 26 shipped `debugoptions.ini` switches that the retail executable
-  still reads, including perfect/missed catches, AI swing and batting locks, pitching error, play-timer,
-  controller, audio, ambient, and diagnostic logging controls. A separate executable tab enables the
-  dormant one-inning, CPU-season, forced win/loss, and exact-hit modes in the verified USA
-  `SLUS_208.65`. Every DATA.MET and executable save has its own timestamped backup, and executable
-  patches can be restored independently. See [developer tools and hidden settings](docs/DEVELOPER_TOOLS.md).
-- **Season Schedule Editor...** edits all 40 retail 18-game and 32-game season templates. Pick a
-  template and round, then change either team slot in any of the 12 matchups. Reusing a slot
-  automatically swaps the teams so every round remains valid; the overview reports side balance,
-  unique opponents, and repeat matchups. Saving preserves the fixed binary layout and its retail
-  padding. The templates affect newly created seasons; see [season schedules](docs/SEASON_SCHEDULES.md).
-- **Team and League Setup...** edits the six AL/NL divisions stored in `menuoptions.ini`. Clubs can be
-  moved between divisions, activated or deactivated, and reordered; unknown custom IDs already in a
-  modded archive are preserved. These stable club IDs are deliberately kept separate from the 24
-  generated team slots in schedule templates. See [team and league setup](docs/TEAM_LEAGUE_SETUP.md).
-- **Animation Viewer / Editor...** parses all 2,884 RenderWare ANM files, reconstructs their unnamed
-  linked tracks and keyframes, resolves the matching DFF/HAnim hierarchy and skinned geometry for an
-  interactive textured player preview, and shows matching EVT eye/mouth expressions on the same playhead,
-  and safely edits duration, playback speed, or individual keyframe times. Its replacement dialog previews
-  two models side by side and can copy motion into another verified-compatible animation slot, optionally
-  fitting the target duration and copying its synchronized EVT expressions. Both standard and compressed
-  retail schemes are supported. See [ANM animations](docs/ANM_ANIMATIONS.md).
-- **Facial Event Editor...** edits all 2,169 EVT timelines. Talkie lip sync plays its paired VAG
-  dialogue while the matching commentator or roster player's textured 3D model follows the retail
-  mouth-shape mapping; batting eye/mouth events animate the matching player's model and actual
-  numbered PNG textures from `DATA.MET`. See
-  [EVT facial events](docs/EVT_FACIAL_EVENTS.md).
-- **3D Model and Stadium Viewer...** catalogs all 1,170 RenderWare DFF assets and 26 RWS scenes.
-  It renders rigid and skinned-model base geometry, reconstructs RWS stadium BSP world sectors and
-  embedded clumps, decodes all 1,154 embedded RWS textures with material/vertex lighting and sampling
-  modes, lists material assignments and stream chunks, and exports raw assets, Wavefront OBJ/MTL
-  geometry, decoded PNGs, or a CSV texture map. Double-click a `.dff` or
-  `.rws` in the archive browser to open it directly. See [RenderWare models and stadiums](docs/RENDERWARE_MODELS.md).
-- **Unlock Game Content...** patches selected players, fields, Darts, and Aquadome unlocked in the game itself.
-- The **DATA.MET Browser** tab contains the file tree, raw preview/editor, and visible Save, Import, and Export actions.
-- EVT files are recognized as their original XML/pseudo-XML text. Double-click a selected EVT in the
-  archive tree to open it directly in the Facial Event Editor.
-- Double-click an `.anm` entry to open it directly in the Animation Viewer / Editor.
-- Double-click a `.dff` or `.rws` entry to open it directly in the 3D Model and Stadium Viewer.
-- Selecting a `.mih`, `.mib`, or `.vag` audio entry shows its decoded stream metadata instead of a
-  generic binary-file message. **Export Selected** can write a playable PCM WAV; streamed music can
-  also be exported as its original matching MIH/MIB pair. See [PS2 audio parsing and export](docs/PS2_AUDIO.md).
-- **View > Hex Editor** edits any selected archive payload as validated byte pairs.
-- **Import File** preserves replacement files byte-for-byte, including binary data and trailing zeros.
-  PNG/BMP textures are checked for valid headers and matching dimensions; VAG audio is checked for
-  valid ADPCM headers, frame layout, and sample metadata; PSS video is checked for MPEG program,
-  video, picture, resolution, frame-rate, and audio-stream compatibility before `DATA.MET` is changed.
-  See [asset replacement validation](docs/ASSET_REPLACEMENT.md) for the exact blocking and warning rules.
-- MET, executable, and optional save-file edits create timestamped backups.
+Open `DATA.MET`, then choose an editor from the **Game Tools** tab:
 
-Persistent unlock progress normally lives on the memory card, not in `DATA.MET`. The executable
-patch makes selected content available to every save in the rebuilt ISO. See
-[Backyard Baseball unlock and save format](docs/UNLOCKS.md) for patch details and the recovered bit map.
+- **Player Editor** — edit names, stats, biographies, portraits, and player selection videos.
+- **3D Player Appearance Editor** — preview player models and replace their textures.
+- **Stadium Editor** — edit field settings, cameras, collisions, objects, paths, animations, and home-run boundaries with a live 3D preview.
+- **Gameplay Tweaks** — change ball, bat, hitting, catching, field, and power-up behavior or apply a preset.
+- **Team and League Setup** and **Season Schedule Editor** — reorganize teams, divisions, and season matchups.
+- **Animation Viewer / Editor** and **Facial Event Editor** — preview or edit player animations, facial events, and lip sync.
+- **3D Model and Stadium Viewer** — inspect and export DFF/RWS models, textures, and OBJ geometry.
+- **Developer Tools** — edit the game's shipped debug options and supported executable-only modes.
+- **Unlock Game Content** — make locked players, fields, Darts, and Aquadome available to every save.
+
+The **DATA.MET Browser** is available for direct file import, export, text editing, and hex editing.
+It also previews supported models, animations, events, textures, and PS2 audio. Replacement assets are
+checked before saving, and archive or executable changes create timestamped backups.
+
+Unlock progress normally belongs to a memory-card save. The unlock tool instead patches the verified
+USA `SLUS_208.65`, so the selected content stays available in a rebuilt ISO. Other executable versions
+are rejected. See [unlock details](docs/UNLOCKS.md), [gameplay tweaks](docs/GAMEPLAY_TWEAKS.md),
+[stadium editing](docs/STADIUM_ENVIRONMENTS.md), and the other guides in [`docs`](docs).
 
 ## Workflow: Extracting, Modifying, and Rebuilding the ISO
 
