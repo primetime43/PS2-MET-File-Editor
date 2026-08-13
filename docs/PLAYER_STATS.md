@@ -62,6 +62,28 @@ exposed as raw appearance slots until their exact cosmetic enums are confirmed.
 The retail records use 0-100 for ordinary skills. The editor deliberately accepts the entire
 signed 16-bit range for experimentation. Extreme or negative values can produce odd game logic;
 the timestamped archive backup is the recovery point.
+
+## Player biographies
+
+The retail player-card text is stored separately under
+`data/kids/<player-code>/<player-code>_bio.dat`. Each entry begins with a signed little-endian
+32-bit source-line count, followed by ASCII lines terminated by LF. The editor exposes those files
+on the **Biography** tab, automatically recalculates the count when saving, and previews the text
+the way the game wraps it. Long unbroken words are rejected because the retail wrapper cannot
+safely split them.
+
+`PlayerCard::LoadBioLines` at `0x00207A90` reads the count and joins the source lines with spaces.
+`PlayerCard::ParseBioLines` at `0x00209A70` wraps that result at roughly 31 characters, preferring
+the last space, and the player card shows three wrapped lines at a time. The original archive has
+49 usable retail biography entries. Barry Bonds and Eric Estrada have no stored biography, while
+Soriano's stats code `sorr` maps to biography code `sori`. Clone bios are assembled by
+`PlayerCard::LoadCustomBioLines` at `0x00209BE0`, so individual clone records have no editable
+`_bio.dat` entry.
+
+Stats and biography edits are committed together with one timestamped `DATA.MET` backup. If a
+biography grows beyond its original entry size, the archive rebuilder realigns subsequent data on
+2048-byte sectors.
+
 ## Player portraits
 
 Finished roster portraits have editable source PNG entries under `data/polaroids/<player-code>.png`

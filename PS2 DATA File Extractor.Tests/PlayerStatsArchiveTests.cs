@@ -1,6 +1,7 @@
 using PS2_DATA_File_Extractor.FileOperations;
 using PS2_DATA_File_Extractor.Models;
 using System.Text;
+using System.Windows.Forms;
 
 namespace PS2_DATA_File_Extractor.Tests;
 
@@ -12,6 +13,7 @@ public sealed class PlayerStatsArchiveTests : IDisposable
     private const int BreatheOffset = 8192;
     private const int BreatheBlinkOffset = 10240;
     private const int PickMeOffset = 12288;
+    private const int BioOffset = 14336;
     private static readonly byte[] FakePortrait = Convert.FromBase64String(
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=");
     private static readonly byte[] FakePss = CreateFakePss();
@@ -80,6 +82,81 @@ public sealed class PlayerStatsArchiveTests : IDisposable
         Assert.Equal(100, player.RunningRating);
         Assert.Equal(100, player.PitchingRating);
         Assert.Equal(0, player.BaseValues[12]);
+    }
+
+    [Fact]
+    public void BiographyParserUpdatesHiddenLineCountAndBuildsGameWrapPreview()
+    {
+        byte[] original = CreateBiography(3,
+            "Along with Nomar Garciaparra and Alex Rodriguez, Derek Jeter is one of the top young shortstops in the game.\n" +
+            "Clutch defense and timely hitting have helped him win.\n" +
+            "His well-rounded skills make him a crowd favorite.\n\n");
+        PlayerBiography biography = PlayerBiography.Parse("data/kids/jete/jete_bio.dat", original);
+
+        Assert.Equal(3, biography.StoredSourceLineCount);
+        Assert.Equal(3, biography.SourceLineCount);
+        Assert.True(biography.GameDisplayLines.Count > 3);
+        Assert.False(biography.IsChanged);
+
+        biography.Text = "A brand new player biography.\r\nIt is saved without editing the binary header.";
+        byte[] serialized = biography.Serialize();
+
+        Assert.Equal(2, BitConverter.ToInt32(serialized, 0));
+        Assert.EndsWith("header.\n", Encoding.ASCII.GetString(serialized, 4, serialized.Length - 4));
+        Assert.True(biography.IsChanged);
+    }
+
+    [Fact]
+    public void BiographySaveSharesPlayerBackupAndReloadsText()
+    {
+        Directory.CreateDirectory(_tempDirectory);
+        string metPath = Path.Combine(_tempDirectory, "DATA.MET");
+        CreateArchive(metPath);
+        PlayerStatsArchive archive = PlayerStatsArchive.Load(metPath);
+        PlayerBiography biography = Assert.IsType<PlayerBiography>(
+            archive.GetBiography(archive.Players.Single(player => !player.IsClone)));
+        biography.Text = "Abner now has a custom biography that is deliberately longer than the tiny test original.";
+
+        PlayerStatsSaveResult result = archive.SaveWithBackup();
+
+        Assert.Equal(0, result.ChangedPlayerCount);
+        Assert.Equal(1, result.ChangedBiographyCount);
+        Assert.Equal(1, result.ChangedEntryCount);
+        Assert.NotNull(result.BackupPath);
+        Assert.True(File.Exists(result.BackupPath));
+        PlayerStatsArchive saved = PlayerStatsArchive.Load(metPath);
+        PlayerBiography reloaded = Assert.IsType<PlayerBiography>(
+            saved.GetBiography(saved.Players.Single(player => !player.IsClone)));
+        Assert.Equal(biography.Text, reloaded.Text);
+        Assert.True(METFileReader.ReadMETFile(metPath).ValidateStructure().IsValid);
+    }
+
+    [Fact]
+    public void PlayerEditorShowsEditableBiographyTab()
+    {
+        Directory.CreateDirectory(_tempDirectory);
+        string metPath = Path.Combine(_tempDirectory, "DATA.MET");
+        CreateArchive(metPath);
+        PlayerStatsArchive archive = PlayerStatsArchive.Load(metPath);
+        Exception? failure = null;
+        Thread thread = new(() =>
+        {
+            try
+            {
+                using PlayerEditorForm editor = new(archive, metPath);
+                editor.Show();
+                Application.DoEvents();
+                TabPage bio = FindControls<TabPage>(editor).Single(page => page.Text == "Biography");
+                Assert.Contains(FindControls<TextBox>(bio), box => box.Multiline && !box.ReadOnly && box.Enabled);
+                Assert.Contains(FindControls<TextBox>(bio), box => box.Multiline && box.ReadOnly);
+                editor.Close();
+            }
+            catch (Exception exception) { failure = exception; }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        Assert.True(thread.Join(TimeSpan.FromSeconds(10)), "Player editor biography test did not finish.");
+        Assert.Null(failure);
     }
 
     [Fact]
@@ -211,13 +288,24 @@ public sealed class PlayerStatsArchiveTests : IDisposable
         return stream.ToArray();
     }
 
+    private static byte[] CreateBiography(int lineCount, string text)
+    {
+        using MemoryStream stream = new();
+        using BinaryWriter writer = new(stream, Encoding.ASCII, leaveOpen: true);
+        writer.Write(lineCount);
+        writer.Write(Encoding.ASCII.GetBytes(text));
+        writer.Flush();
+        return stream.ToArray();
+    }
+
     private static void CreateArchive(string path)
     {
         short[] normalValues = Enumerable.Repeat((short)50, PlayerStatsRecord.BaseFieldCount).ToArray();
         short[] cloneValues = Enumerable.Repeat((short)40, PlayerStatsRecord.BaseFieldCount).ToArray();
         byte[] normal = CreateRecord(normalValues, Array.Empty<short>(), "Abner", "Ace", "Dubbleplay");
         byte[] clone = CreateRecord(cloneValues, new short[8], "Zena", "", "Fromme");
-        int totalLength = PickMeOffset + FakePss.Length;
+        byte[] biography = CreateBiography(1, "Abner loves baseball.\n");
+        int totalLength = BioOffset + biography.Length;
         using FileStream stream = new(path, FileMode.Create, FileAccess.ReadWrite);
         using BinaryWriter writer = new(stream);
         writer.Write(FirstOffset);
@@ -228,6 +316,7 @@ public sealed class PlayerStatsArchiveTests : IDisposable
         WriteEntry(writer, BreatheOffset, FakePss.Length, "data/video/pickplayer/abner_breathe.pss");
         WriteEntry(writer, BreatheBlinkOffset, FakePss.Length, "data/video/pickplayer/abner_breatheblink.pss");
         WriteEntry(writer, PickMeOffset, FakePss.Length, "data/video/pickplayer/abner_pickme.pss");
+        WriteEntry(writer, BioOffset, biography.Length, "data/kids/abner/abner_bio.dat");
         writer.Write(new byte[12]);
         stream.Position = FirstOffset;
         writer.Write(normal);
@@ -241,6 +330,16 @@ public sealed class PlayerStatsArchiveTests : IDisposable
         writer.Write(FakePss);
         stream.Position = PickMeOffset;
         writer.Write(FakePss);
+        stream.Position = BioOffset;
+        writer.Write(biography);
+    }
+
+    private static List<T> FindControls<T>(Control root) where T : Control
+    {
+        List<T> result = new();
+        if (root is T match) result.Add(match);
+        foreach (Control child in root.Controls) result.AddRange(FindControls<T>(child));
+        return result;
     }
 
     private static byte[] CreateFakePss()

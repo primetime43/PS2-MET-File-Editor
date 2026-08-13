@@ -109,7 +109,28 @@ public sealed class PlayerEditorForm : Form
     private readonly DataGridView _pitchGrid;
     private readonly DataGridView _cloneGrid;
     private readonly TabPage _clonePage = new("Clone Appearance");
+    private readonly TabPage _bioPage = new("Biography");
+    private readonly TextBox _bioText = new()
+    {
+        Dock = DockStyle.Fill,
+        Multiline = true,
+        AcceptsReturn = true,
+        AcceptsTab = false,
+        ScrollBars = ScrollBars.Vertical,
+        MaxLength = PlayerBiography.MaximumTextBytes
+    };
+    private readonly TextBox _bioPreview = new()
+    {
+        Dock = DockStyle.Fill,
+        Multiline = true,
+        ReadOnly = true,
+        ScrollBars = ScrollBars.Vertical,
+        BackColor = SystemColors.Window
+    };
+    private readonly Label _bioInfo = new() { Dock = DockStyle.Fill, AutoEllipsis = true };
+    private readonly Button _resetBio = new() { Text = "Reset This Biography", AutoSize = true };
     private PlayerStatsRecord? _current;
+    private PlayerBiography? _currentBiography;
     private PlayerImage? _currentPlayerImage;
     private readonly Dictionary<string, Bitmap> _animationPreviewCache =
         new(StringComparer.OrdinalIgnoreCase);
@@ -133,8 +154,8 @@ public sealed class PlayerEditorForm : Form
             Dock = DockStyle.Top,
             Height = 58,
             Padding = new Padding(12, 8, 12, 4),
-            Text = "Edit the player records stored in data/kids/stats/*_stats.dat. Retail skill values are 0-100, " +
-                   "but signed 16-bit modded values are accepted. Saving creates one timestamped DATA.MET backup."
+            Text = "Edit player names, identity, skills, pitching, clone appearance, and stored player-card biographies. " +
+                   "Retail skills are 0-100, but signed 16-bit modded values are accepted. Saving creates one DATA.MET backup."
         };
         Label path = new()
         {
@@ -180,10 +201,12 @@ public sealed class PlayerEditorForm : Form
         TabPage corePage = new("Core & Movement") { Padding = new Padding(5) };
         TabPage pitchPage = new("Pitch Ratings") { Padding = new Padding(5) };
         _clonePage.Padding = new Padding(5);
+        _bioPage.Padding = new Padding(5);
         corePage.Controls.Add(_coreGrid);
         pitchPage.Controls.Add(_pitchGrid);
         _clonePage.Controls.Add(_cloneGrid);
-        _tabs.TabPages.AddRange(new[] { corePage, pitchPage, _clonePage });
+        _bioPage.Controls.Add(BuildBiographyPage());
+        _tabs.TabPages.AddRange(new[] { corePage, pitchPage, _clonePage, _bioPage });
 
         details.Controls.Add(_tabs);
         details.Controls.Add(summary);
@@ -216,6 +239,8 @@ public sealed class PlayerEditorForm : Form
         _search.TextChanged += (_, _) => PopulatePlayerList();
         _playerList.SelectedIndexChanged += (_, _) => LoadSelectedPlayer();
         HookIdentityEvents();
+        _bioText.TextChanged += (_, _) => BiographyTextChanged();
+        _resetBio.Click += (_, _) => ResetCurrentBiography();
         _exportPortraitButton.Click += ExportPortrait_Click;
         _replacePortraitButton.Click += ReplacePortrait_Click;
         _portraitSelector.SelectedIndexChanged += (_, _) =>
@@ -232,7 +257,9 @@ public sealed class PlayerEditorForm : Form
             foreach (Bitmap preview in _animationPreviewCache.Values) preview.Dispose();
             _portraitToolTip.Dispose();
         };
-        _status.Text = $"Loaded {_archive.Players.Count} players ({_archive.Players.Count(player => player.IsClone)} clones) and {_portraits.PortraitCount} portraits ({_portraits.PackedPortraitCount} game-texture mappings).";
+        _status.Text = $"Loaded {_archive.Players.Count} players ({_archive.Players.Count(player => player.IsClone)} clones), " +
+                       $"{_archive.BiographyCount} biographies, and {_portraits.PortraitCount} portraits " +
+                       $"({_portraits.PackedPortraitCount} game-texture mappings).";
     }
 
     private Control BuildIdentityArea()
@@ -319,6 +346,52 @@ public sealed class PlayerEditorForm : Form
         return panel;
     }
 
+    private Control BuildBiographyPage()
+    {
+        TableLayoutPanel layout = new()
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 3,
+            Padding = new Padding(4)
+        };
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 55F));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 45F));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        layout.Controls.Add(new Label
+        {
+            Text = "Biography text",
+            Dock = DockStyle.Fill,
+            Font = new Font(Font, FontStyle.Bold),
+            Margin = new Padding(3, 2, 8, 5)
+        }, 0, 0);
+        layout.Controls.Add(new Label
+        {
+            Text = "In-game word-wrap preview",
+            Dock = DockStyle.Fill,
+            Font = new Font(Font, FontStyle.Bold),
+            Margin = new Padding(8, 2, 3, 5)
+        }, 1, 0);
+
+        Panel editorHost = new() { Dock = DockStyle.Fill, Padding = new Padding(0, 0, 7, 0) };
+        editorHost.Controls.Add(_bioText);
+        Panel previewHost = new() { Dock = DockStyle.Fill, Padding = new Padding(7, 0, 0, 0) };
+        previewHost.Controls.Add(_bioPreview);
+        layout.Controls.Add(editorHost, 0, 1);
+        layout.Controls.Add(previewHost, 1, 1);
+
+        TableLayoutPanel footer = new() { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2 };
+        footer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        footer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        footer.Controls.Add(_bioInfo, 0, 0);
+        footer.Controls.Add(_resetBio, 1, 0);
+        layout.Controls.Add(footer, 0, 2);
+        layout.SetColumnSpan(footer, 2);
+        return layout;
+    }
+
     private void SetInitialPlayerListWidth(SplitContainer split)
     {
         int widestItem = _playerList.Items.Cast<object>()
@@ -384,12 +457,72 @@ public sealed class PlayerEditorForm : Form
         SelectChoice(_batHand, _current.BaseValues[29]);
         SelectChoice(_throwHand, _current.BaseValues[30]);
         _source.Text = _current.SourcePath;
+        LoadBiography();
         PopulatePlayerImages();
         LoadGridValues(_coreGrid);
         LoadGridValues(_pitchGrid);
         LoadGridValues(_cloneGrid);
         _clonePage.Enabled = _current.IsClone;
         _loading = false;
+        UpdateSummaryAndStatus();
+    }
+
+    private void LoadBiography()
+    {
+        _currentBiography = _current == null ? null : _archive.GetBiography(_current);
+        _bioText.Enabled = _currentBiography != null;
+        _resetBio.Enabled = _currentBiography != null;
+        if (_currentBiography == null)
+        {
+            _bioText.Text = string.Empty;
+            _bioPreview.Text = string.Empty;
+            _bioInfo.Text = _current?.IsClone == true
+                ? "Clone players are assembled at runtime and do not have individual stored biography files."
+                : "This retail player has no stored *_bio.dat entry in DATA.MET.";
+            return;
+        }
+
+        _bioText.Text = _currentBiography.Text.Replace("\n", Environment.NewLine, StringComparison.Ordinal);
+        UpdateBiographyPreview();
+    }
+
+    private void BiographyTextChanged()
+    {
+        if (_loading || _currentBiography == null) return;
+        _currentBiography.Text = _bioText.Text;
+        UpdateBiographyPreview();
+        UpdateSummaryAndStatus();
+    }
+
+    private void UpdateBiographyPreview()
+    {
+        if (_currentBiography == null) return;
+        IReadOnlyList<string> lines = _currentBiography.GameDisplayLines;
+        _bioPreview.Lines = lines.Select((line, index) => $"{index + 1,2}: {line}").ToArray();
+        try
+        {
+            _currentBiography.Serialize();
+            _bioInfo.ForeColor = SystemColors.ControlText;
+            _bioInfo.Text = $"{_currentBiography.SourcePath}  •  " +
+                            $"stored header: {_currentBiography.StoredSourceLineCount} source line(s)  •  " +
+                            $"saving: {_currentBiography.SourceLineCount} source line(s)  •  " +
+                            $"game display: {lines.Count} wrapped line(s), three visible at once";
+        }
+        catch (Exception exception)
+        {
+            _bioInfo.ForeColor = Color.Firebrick;
+            _bioInfo.Text = $"Cannot save this biography: {exception.Message}";
+        }
+    }
+
+    private void ResetCurrentBiography()
+    {
+        if (_currentBiography == null) return;
+        _currentBiography.Reset();
+        _loading = true;
+        _bioText.Text = _currentBiography.Text.Replace("\n", Environment.NewLine, StringComparison.Ordinal);
+        _loading = false;
+        UpdateBiographyPreview();
         UpdateSummaryAndStatus();
     }
 
@@ -787,9 +920,12 @@ public sealed class PlayerEditorForm : Form
         if (_current == null) return;
         _ratings.Text = $"Derived game ratings — Power: {_current.PowerRating}   Contact: {_current.ContactRating}   " +
                         $"Fielding: {_current.FieldingRating}   Running: {_current.RunningRating}   Pitching: {_current.PitchingRating}";
-        int changed = _archive.ChangedPlayerCount;
-        _status.Text = changed == 0 ? "No unsaved player changes."
-            : $"{changed} player record{(changed == 1 ? string.Empty : "s")} changed.";
+        int changedPlayers = _archive.ChangedPlayerCount;
+        int changedBiographies = _archive.ChangedBiographyCount;
+        _status.Text = changedPlayers == 0 && changedBiographies == 0
+            ? "No unsaved player changes."
+            : $"{changedPlayers} player record{(changedPlayers == 1 ? string.Empty : "s")} and " +
+              $"{changedBiographies} {(changedBiographies == 1 ? "biography" : "biographies")} changed.";
     }
 
     private void MaxCurrentSkills()
@@ -815,8 +951,9 @@ public sealed class PlayerEditorForm : Form
         _coreGrid.EndEdit();
         _pitchGrid.EndEdit();
         _cloneGrid.EndEdit();
-        int changed = _archive.ChangedPlayerCount;
-        if (changed == 0)
+        int changedPlayers = _archive.ChangedPlayerCount;
+        int changedBiographies = _archive.ChangedBiographyCount;
+        if (changedPlayers == 0 && changedBiographies == 0)
         {
             MessageBox.Show(this, "No player records were changed.", "Nothing to Save",
                 MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -826,6 +963,8 @@ public sealed class PlayerEditorForm : Form
         try
         {
             foreach (PlayerStatsRecord player in _archive.Players.Where(player => player.IsChanged)) player.Serialize();
+            foreach (PlayerBiography biography in _archive.Biographies.Where(biography => biography.IsChanged))
+                biography.Serialize();
         }
         catch (Exception exception)
         {
@@ -835,7 +974,8 @@ public sealed class PlayerEditorForm : Form
         }
 
         if (MessageBox.Show(this,
-                $"Write changes to {changed} player record{(changed == 1 ? string.Empty : "s")} in DATA.MET?\n\n" +
+                $"Write {changedPlayers} changed stats record{(changedPlayers == 1 ? string.Empty : "s")} and " +
+                $"{changedBiographies} changed {(changedBiographies == 1 ? "biography" : "biographies")} to DATA.MET?\n\n" +
                 "A timestamped backup will be created first.",
                 "Save Player Changes", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
             return;
@@ -847,7 +987,9 @@ public sealed class PlayerEditorForm : Form
             PlayerStatsSaveResult result = _archive.SaveWithBackup();
             string rebuild = result.RebuiltArchive ? "\nThe archive was resized with sector alignment preserved." : string.Empty;
             MessageBox.Show(this,
-                $"Saved {result.ChangedPlayerCount} player record{(result.ChangedPlayerCount == 1 ? string.Empty : "s")}.\n\n" +
+                $"Saved {result.ChangedPlayerCount} stats record{(result.ChangedPlayerCount == 1 ? string.Empty : "s")} and " +
+                $"{result.ChangedBiographyCount} {(result.ChangedBiographyCount == 1 ? "biography" : "biographies")} " +
+                $"({result.ChangedEntryCount} DATA.MET entries).\n\n" +
                 $"Backup: {result.BackupPath}{rebuild}",
                 "Player Changes Saved", MessageBoxButtons.OK, MessageBoxIcon.Information);
             DialogResult = DialogResult.OK;

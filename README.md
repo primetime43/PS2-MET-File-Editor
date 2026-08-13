@@ -19,7 +19,9 @@ To access the .MET files, you need to extract the game files from the ISO using 
 ## Modding and unlock editing
 
 - **Player Editor...** on the **Game Tools** tab shows the stored player polaroids and edits all 230 retail and clone `*_stats.dat` records, including names,
-  batting/running/fielding components, all 12 pitch ratings, identity data, and clone appearance slots.
+  batting/running/fielding components, all 12 pitch ratings, identity data, clone appearance slots,
+  and the 49 stored retail player-card biographies. The Biography tab includes an in-game line-wrap
+  preview and automatically maintains the biography file's line-count header.
   The image dropdown and arrow buttons cycle through the selected player's own assets: their static polaroid plus the Breathe, Breathe + Blink, and Pick Me selection animations when present. Polaroids accept PNG, BMP, or JPEG replacements and update the packed menu textures; animations can be exported or replaced as compatible 256-by-256 PS2 PSS files.
   The reversed layout and executable addresses are in [`docs/PLAYER_STATS.md`](docs/PLAYER_STATS.md).
 - **3D Player Appearance Editor...** groups the retail batting, fielding, baserunning, player-card,
@@ -111,8 +113,8 @@ patch makes selected content available to every save in the rebuilt ISO. See
 
 ### Step 2: Modify the game files
 1. Open `DATA.MET` in the MET File Editor and make any archive changes.
-2. Select **Player Editor...** in the main window to modify player names, skills, pitch ratings, identity, or
-   clone appearance values directly in the game's `*_stats.dat` records.
+2. Select **Player Editor...** in the main window to modify player names, skills, pitch ratings, identity,
+   clone appearance values, or stored player-card biographies directly in `DATA.MET`.
 3. Select **Stadium Editor...** to edit field lighting, cameras, collisions, and ambient objects while
    viewing the matching textured stadium. Choose **Fielddata camera**, **Commentator camera**, or
    **Game batting POV** above the preview to inspect the field from those coordinates.
