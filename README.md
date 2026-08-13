@@ -13,6 +13,20 @@ raw archive work.
 
 To access the .MET files, you need to extract the game files from the ISO using WinRAR or 7-Zip.
 
+## Feature screenshots
+
+### Game Tools workspace
+
+![Game Tools workspace with DATA.MET loaded](docs/images/game-tools.png)
+
+| Player Editor | Gameplay Tweaks |
+| --- | --- |
+| ![Player stats, identity, biography, and portrait editor](docs/images/player-editor.png) | ![Gameplay tuning categories and quick presets](docs/images/gameplay-tweaks.png) |
+
+| 3D Player Appearance Editor | Stadium Editor and live preview |
+| --- | --- |
+| ![Animated player model and texture replacement workspace](docs/images/player-appearance-editor.png) | ![Stadium settings and textured live 3D preview](docs/images/stadium-editor.png) |
+
 ## Modding and unlock editing
 
 Open `DATA.MET`, then choose an editor from the **Game Tools** tab:
