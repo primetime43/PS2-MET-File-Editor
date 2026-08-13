@@ -51,6 +51,11 @@ To access the .MET files, you need to extract the game files from the ISO using 
   [`docs/STADIUM_ENVIRONMENTS.md`](docs/STADIUM_ENVIRONMENTS.md).
 - **Gameplay Tweaks...** on the **Game Tools** tab provides validated tabs for 285 ball, bat/power-up, field physics,
   simulation, practice/cheat, and game-default values stored in `DATA.MET`.
+- **Season Schedule Editor...** edits all 40 retail 18-game and 32-game season templates. Pick a
+  template and round, then change either team slot in any of the 12 matchups. Reusing a slot
+  automatically swaps the teams so every round remains valid; the overview reports side balance,
+  unique opponents, and repeat matchups. Saving preserves the fixed binary layout and its retail
+  padding. The templates affect newly created seasons; see [season schedules](docs/SEASON_SCHEDULES.md).
 - **Animation Viewer / Editor...** parses all 2,884 RenderWare ANM files, reconstructs their unnamed
   linked tracks and keyframes, resolves the matching DFF/HAnim hierarchy and skinned geometry for an
   interactive textured player preview, and shows matching EVT eye/mouth expressions on the same playhead,
@@ -106,11 +111,12 @@ patch makes selected content available to every save in the rebuilt ISO. See
    **Game batting POV** above the preview to inspect the field from those coordinates.
 4. For structured game tuning, select **Gameplay Tweaks...**, edit values in the category
    tabs, and select **Save to DATA.MET**. Comments and unsupported INI keys are preserved.
-5. Save any other MET changes; resizing and backups are handled automatically.
-6. Select **Unlock Game Content...** in the main window.
-7. Select the extracted USA executable `SLUS_208.65`.
-8. Select individual content or **Unlock All**, then apply the patch.
-9. Keep the patched executable beside the other extracted game files.
+5. Select **Season Schedule Editor...** to rearrange matchups used by newly created seasons.
+6. Save any other MET changes; resizing and backups are handled automatically.
+7. Select **Unlock Game Content...** in the main window.
+8. Select the extracted USA executable `SLUS_208.65`.
+9. Select individual content or **Unlock All**, then apply the patch.
+10. Keep the patched executable beside the other extracted game files.
 
 ### Step 3: Rebuild the ISO in the editor
 
