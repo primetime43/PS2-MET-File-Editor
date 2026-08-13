@@ -4,14 +4,20 @@ A focused Windows modding workspace for Backyard Baseball on PlayStation 2. It p
 player, gameplay, unlock, and ISO-building tools while retaining an advanced DATA.MET browser for
 raw archive work.
 
-# Features
-- Open .MET Files: Easily open .MET files to explore their contents.
-- View Files: Browse and view files within the .MET archive.
-- Modify Files: Edit the contents of files within the .MET archive.
-- Import/Export Files (right click): Import new files into the .MET archive or export existing files to your computer.
-- Save Changes: Save modifications to the .MET file, ensuring your changes are applied.
+## Features
 
-To access the .MET files, you need to extract the game files from the ISO using WinRAR or 7-Zip.
+- Edit player identities, ratings, pitches, biographies, portraits, selection videos, and 3D textures.
+- Modify stadium lighting, cameras, collisions, ambient objects, paths, animations, and home-run boundaries with a live 3D preview.
+- Tune 285 gameplay and physics values directly or apply reversible presets.
+- Reorganize teams and divisions and edit all 40 retail season schedule templates.
+- Preview and edit RenderWare animations and EVT facial/lip-sync timelines on textured player models.
+- Browse and export DFF/RWS models, stadium geometry, textures, PS2 audio, and raw archive files.
+- Enable recovered developer options and unlock game content through guarded USA executable patches.
+- Rebuild and validate a playable modded ISO from the extracted game folder.
+
+The advanced **DATA.MET Browser** also supports direct text and hex editing plus individual or bulk
+import/export. Recognized replacement assets are validated before writing, and modifications create
+timestamped backups where applicable.
 
 ## Feature screenshots
 
@@ -27,117 +33,32 @@ To access the .MET files, you need to extract the game files from the ISO using 
 | --- | --- |
 | ![Animated player model and texture replacement workspace](docs/images/player-appearance-editor.png) | ![Stadium settings and textured live 3D preview](docs/images/stadium-editor.png) |
 
-## Modding and unlock editing
+## Quick start
 
-Open `DATA.MET`, then choose an editor from the **Game Tools** tab:
+1. Extract your own Backyard Baseball PS2 ISO with 7-Zip or WinRAR. The folder should contain
+   `SYSTEM.CNF`, `DATA.MET`, and the game executable.
+2. Open `DATA.MET`, then choose a structured editor from the **Game Tools** tab or use the advanced
+   browser for raw archive work.
+3. If desired, use **Unlock Game Content** or **Developer Tools** with the verified USA
+   `SLUS_208.65`. Executable changes are separate from archive changes.
+4. Install ImgBurn, choose **File > Rebuild Game ISO...**, select the extracted folder, and write the
+   output ISO outside that folder. The editor uses `ISO9660 + UDF 1.02` and validates the result.
 
-- **Player Editor** — edit names, stats, biographies, portraits, and player selection videos.
-- **3D Player Appearance Editor** — preview player models and replace their textures.
-- **Stadium Editor** — edit field settings, cameras, collisions, objects, paths, animations, and home-run boundaries with a live 3D preview.
-- **Gameplay Tweaks** — change ball, bat, hitting, catching, field, and power-up behavior or apply a preset.
-- **Team and League Setup** and **Season Schedule Editor** — reorganize teams, divisions, and season matchups.
-- **Animation Viewer / Editor** and **Facial Event Editor** — preview or edit player animations, facial events, and lip sync.
-- **3D Model and Stadium Viewer** — inspect and export DFF/RWS models, textures, and OBJ geometry.
-- **Developer Tools** — edit the game's shipped debug options and supported executable-only modes.
-- **Unlock Game Content** — make locked players, fields, Darts, and Aquadome available to every save.
+See [ISO rebuilding](docs/ISO_REBUILD.md) for backend and recovery details. Unlock progress normally
+belongs to the memory-card `Settings` file; the executable patch instead forces selected content for
+every save in the rebuilt ISO. Other executable versions are rejected.
 
-The **DATA.MET Browser** is available for direct file import, export, text editing, and hex editing.
-It also previews supported models, animations, events, textures, and PS2 audio. Replacement assets are
-checked before saving, and archive or executable changes create timestamped backups.
+## Research and documentation
 
-Unlock progress normally belongs to a memory-card save. The unlock tool instead patches the verified
-USA `SLUS_208.65`, so the selected content stays available in a rebuilt ISO. Other executable versions
-are rejected. See [unlock details](docs/UNLOCKS.md), [gameplay tweaks](docs/GAMEPLAY_TWEAKS.md),
-[stadium editing](docs/STADIUM_ENVIRONMENTS.md), and the other guides in [`docs`](docs).
+Start with the **[game research and technical reference](docs/GAME_RESEARCH.md)** for the verified
+retail inventory, game-data architecture, reverse-engineering methodology, major discoveries, known
+limits, and a complete documentation index.
 
-## Workflow: Extracting, Modifying, and Rebuilding the ISO
+Frequently used guides:
 
-### Step 1: Extract the ISO
-1. Use **WinRAR** or **7-Zip** to extract your PS2 game ISO
-2. Extract all files to a folder
-3. You should see files like `SYSTEM.CNF`, `DATA.MET`, and the game executable
-
-### Step 2: Modify the game files
-1. Open `DATA.MET` in the MET File Editor and make any archive changes.
-2. Select **Player Editor...** in the main window to modify player names, skills, pitch ratings, identity,
-   clone appearance values, or stored player-card biographies directly in `DATA.MET`.
-3. Select **Stadium Editor...** to edit field lighting, cameras, collisions, and ambient objects while
-   viewing the matching textured stadium. Choose **Fielddata camera**, **Commentator camera**, or
-   **Game batting POV** above the preview to inspect the field from those coordinates.
-4. For structured game tuning, select **Gameplay Tweaks...**, edit values in the category
-   tabs, and select **Save to DATA.MET**. Comments and unsupported INI keys are preserved.
-5. Select **Developer Tools...** to change the retail debug switches. Its executable tab automatically
-   loads a sibling `SLUS_208.65` for one-inning, forced-result, CPU-season, or exact-hit modes.
-6. Select **Team and League Setup...** to change division membership, active clubs, or division order.
-7. Select **Season Schedule Editor...** to rearrange matchup slots used by newly created seasons.
-8. Save any other MET changes; resizing and backups are handled automatically.
-9. Select **Unlock Game Content...** in the main window.
-10. Select the extracted USA executable `SLUS_208.65`.
-11. Select individual content or **Unlock All**, then apply the patch.
-12. Keep the patched executable beside the other extracted game files.
-
-### Step 3: Rebuild the ISO in the editor
-
-1. Install ImgBurn if it is not already installed; the editor detects the standard install location.
-2. Choose **File > Rebuild Game ISO...**.
-3. Select the extracted game folder and an output path outside that folder.
-4. Confirm the volume label and click **Build ISO**.
-5. The editor starts ImgBurn with `ISO9660 + UDF` and UDF revision `1.02`, then validates the generated image.
-
-The source folder is checked for `SYSTEM.CNF`, `DATA.MET`, and the executable referenced by
-`SYSTEM.CNF`. Existing output images are moved to timestamped backups. See
-[ISO rebuilding](docs/ISO_REBUILD.md) for validation, recovery, and backend details.
-
-# .MET File Structure
-The .MET file in Backyard Baseball 2004 (PS2) contains various data and resources used by the game, such as textures, models, and other game assets. Understanding the structure of the .MET file is crucial for reading and writing its contents. Here's an overview of the .MET file structure:
-
-# Header
-The .MET file starts with a header that contains metadata about the file. This typically includes information such as the number of file entries, offsets, and sizes.
-
-# File Entries
-Following the header, the .MET file contains a list of file entries. Each file entry represents an individual file within the archive and contains the following information:
-
-- Offset: The starting position of the file data within the .MET file.
-- Size of Data: The size of the file data.
-- Size of String: The length of the string representing the file path.
-- File Path: The relative path of the file within the archive.
-
-# Example Breakdown
-For each file entry, the structure is as follows:
-
-- Offset (4 bytes): The address where the data starts (e.g., 00 C0 37 2C).
-- Size of Data (4 bytes): The size of the data (e.g., offset data start address + 27 0D 00 00).
-- Size of String (4 bytes): The length of the string name (e.g., 16 00 00 00).
-- Path String: The file path string (e.g., 64 61 74 61 2F 6D 65 6E 75 73 2F 63 72 65 64 69 74 73 2E 74 78 74).
-
-For example with these bytes
-```
-00 C0 37 2C 27 0D 00 00 16 00 00 00 64 61 74 61 2F 6D 65 6E 75 73 2F 63 72 65 64 69 74 73 2E 74 78 74
-```
-
-```
-Header starts at address: 1171683 (0x11E0E3)
-Header ends at address: 1171717 (0x11E105)
-Length of the header: 34 (0x22)
-Length of the string: 22 (0x16)
-Path: data/menus/credits.txt
-Offset: 741851136 (0x2C37C000)
-OriginalSize: 3367 (0xD27)
-Data spans from 0x2C37C000 to 0x2C37CD27
-```
-
-![image](https://github.com/primetime43/Backyard-Baseball-PS2-Editor/assets/12754111/5ada88d4-6ab9-448b-ad12-665afef58d7f)
-
-![image](https://github.com/primetime43/PS2-DATA-File-Extractor/assets/12754111/c5129d59-4717-4597-8813-c75f153bbe80)
-
-![image](https://github.com/primetime43/PS2-DATA-File-Extractor/assets/12754111/72400390-955e-49ac-a906-50a67b3bb657)
-
-![image](https://github.com/primetime43/PS2-DATA-File-Extractor/assets/12754111/ba08e6b8-5240-4f45-beff-b43f046b1842)
-
-![image](https://github.com/primetime43/PS2-DATA-File-Extractor/assets/12754111/5573ac78-c8de-4b5e-8d85-621f2279bc8d)
-
-![image](https://github.com/primetime43/PS2-DATA-File-Extractor/assets/12754111/20a5ce20-61c0-4f00-9efc-dff3e9e55357)
-
-![image](https://github.com/primetime43/PS2-DATA-File-Extractor/assets/12754111/ef1bb3f2-fe3e-4b43-9600-8c4270e83d2a)
-
-![image](https://github.com/primetime43/Backyard-Baseball-PS2-Editor/assets/12754111/00792048-b0a0-462f-972e-70bb9771dd8d)
+- [DATA.MET format and safe resizing](docs/MET_FORMAT.md)
+- [Player stats, biographies, portraits, and selection videos](docs/PLAYER_STATS.md)
+- [Gameplay tweaks and presets](docs/GAMEPLAY_TWEAKS.md)
+- [Stadium environments and home-run boundaries](docs/STADIUM_ENVIRONMENTS.md)
+- [Unlocks and memory-card save format](docs/UNLOCKS.md)
+- [All focused documentation](docs)
