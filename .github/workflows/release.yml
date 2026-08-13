@@ -29,6 +29,24 @@ jobs:
       - name: Restore dependencies
         run: dotnet restore "PS2 DATA File Extractor.sln"
 
+      - name: Verify tag and release metadata
+        shell: pwsh
+        run: |
+          [xml]$project = Get-Content "PS2 DATA File Extractor/PS2 DATA File Extractor.csproj"
+          $projectVersion = $project.Project.PropertyGroup.Version
+          $tagVersion = $env:GITHUB_REF_NAME.TrimStart('v')
+          if ($projectVersion -ne $tagVersion) {
+            throw "Tag $env:GITHUB_REF_NAME does not match project version $projectVersion."
+          }
+
+          $releaseNotes = "docs/releases/$env:GITHUB_REF_NAME.md"
+          if (-not (Test-Path -LiteralPath $releaseNotes)) {
+            throw "Missing release notes: $releaseNotes"
+          }
+
+          "RELEASE_VERSION=$projectVersion" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "RELEASE_NOTES=$releaseNotes" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
       - name: Run tests
         run: dotnet test "PS2 DATA File Extractor.sln" --configuration Release --no-restore
 
@@ -46,7 +64,11 @@ jobs:
           $archiveName = "Backyard-Baseball-PS2-Editor-$env:GITHUB_REF_NAME-win-x64.zip"
           $archivePath = Join-Path "artifacts" $archiveName
           Compress-Archive -Path "artifacts/publish/*" -DestinationPath $archivePath
+          $checksumPath = "$archivePath.sha256"
+          $hash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $archiveName" | Set-Content -LiteralPath $checksumPath -Encoding ascii -NoNewline
           "RELEASE_ARCHIVE=$archivePath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "RELEASE_CHECKSUM=$checksumPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Create GitHub release
         shell: pwsh
@@ -56,11 +78,16 @@ jobs:
           gh release view $env:GITHUB_REF_NAME --json tagName *> $null
 
           if ($LASTEXITCODE -eq 0) {
-            gh release upload $env:GITHUB_REF_NAME $env:RELEASE_ARCHIVE --clobber
+            gh release edit $env:GITHUB_REF_NAME `
+              --title $env:GITHUB_REF_NAME `
+              --notes-file $env:RELEASE_NOTES
+            gh release upload $env:GITHUB_REF_NAME `
+              $env:RELEASE_ARCHIVE $env:RELEASE_CHECKSUM --clobber
           }
           else {
-            gh release create $env:GITHUB_REF_NAME $env:RELEASE_ARCHIVE `
+            gh release create $env:GITHUB_REF_NAME `
+              $env:RELEASE_ARCHIVE $env:RELEASE_CHECKSUM `
               --verify-tag `
-              --generate-notes `
+              --notes-file $env:RELEASE_NOTES `
               --title $env:GITHUB_REF_NAME
           }

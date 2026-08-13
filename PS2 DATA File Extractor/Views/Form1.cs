@@ -15,7 +15,7 @@ namespace PS2_DATA_File_Extractor
         private bool _isLoadingEditorContent;
         private byte[] _currentFileData;
         private byte[] _leadingUnprintableBytes = Array.Empty<byte>();
-        private const string ApplicationTitle = "Backyard Baseball PS2 Editor v0.4";
+        private const string ApplicationTitle = "Backyard Baseball PS2 Editor v1.0";
 
         public Form1()
         {
