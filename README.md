@@ -50,7 +50,10 @@ To access the .MET files, you need to extract the game files from the ISO using 
   Loader details are documented in
   [`docs/STADIUM_ENVIRONMENTS.md`](docs/STADIUM_ENVIRONMENTS.md).
 - **Gameplay Tweaks...** on the **Game Tools** tab provides validated tabs for 285 ball, bat/power-up, field physics,
-  simulation, practice/cheat, and game-default values stored in `DATA.MET`.
+  simulation, practice/cheat, and game-default values stored in `DATA.MET`. Its 27 quick presets cover
+  ball size, bounce, rolling distance, bunt and normal-hit power, special hits, catches, and complete
+  arcade/defense game styles. A preset previews its affected values and only stages edits until the
+  normal Save action is used. See [gameplay tweaks and physics presets](docs/GAMEPLAY_TWEAKS.md).
 - **Season Schedule Editor...** edits all 40 retail 18-game and 32-game season templates. Pick a
   template and round, then change either team slot in any of the 12 matchups. Reusing a slot
   automatically swaps the teams so every round remains valid; the overview reports side balance,

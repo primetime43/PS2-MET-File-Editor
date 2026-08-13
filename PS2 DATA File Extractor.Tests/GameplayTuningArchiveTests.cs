@@ -1,6 +1,8 @@
+using PS2_DATA_File_Extractor;
 using PS2_DATA_File_Extractor.FileOperations;
 using PS2_DATA_File_Extractor.Models;
 using System.Text;
+using System.Windows.Forms;
 
 namespace PS2_DATA_File_Extractor.Tests;
 
@@ -80,6 +82,64 @@ public sealed class GameplayTuningArchiveTests : IDisposable
         Assert.Contains("Unknown = preserved", ReadEntryText(metPath, "data/options/ball.ini"));
     }
 
+    [Fact]
+    public void PresetsCoverMajorGameplayGroupsAndResolveExactArchiveValues()
+    {
+        Directory.CreateDirectory(_tempDirectory);
+        string metPath = Path.Combine(_tempDirectory, "DATA.MET");
+        CreateArchive(metPath);
+        GameplayTuningArchive archive = GameplayTuningArchive.Load(metPath);
+
+        Assert.Equal(27, GameplayPresetCatalog.Presets.Count);
+        foreach (string group in new[]
+                 {
+                     "Ball Size", "Bounce & Rolling", "Bunts & Normal Hits", "Special Hits", "Catching",
+                     "Complete Game Styles"
+                 })
+            Assert.Contains(GameplayPresetCatalog.Presets, preset => preset.Group == group);
+
+        GameplayPreset tiny = GameplayPresetCatalog.Presets.Single(preset => preset.Name.StartsWith("Tiny Ball"));
+        GameplayPresetChange radius = Assert.Single(tiny.Resolve(archive.Tweaks));
+        Assert.Equal("Radius", radius.Tweak.Key);
+        Assert.Equal("4", radius.Value);
+
+        GameplayPreset guaranteed = GameplayPresetCatalog.Presets.Single(preset => preset.Name == "Guaranteed Catches");
+        IReadOnlyList<GameplayPresetChange> catching = guaranteed.Resolve(archive.Tweaks);
+        Assert.Equal("True", catching.Single(change => change.Tweak.Key == "AlwaysCatch").Value);
+        Assert.Equal("False", catching.Single(change => change.Tweak.Key == "AlwaysMiss").Value);
+
+        GameplayPreset restore = GameplayPresetCatalog.Presets.Single(preset => preset.RestoreAll);
+        Assert.Equal(archive.Tweaks.Count, restore.Resolve(archive.Tweaks).Count);
+    }
+
+    [Fact]
+    public void GameplayEditorOpensWithVisiblePresetControls()
+    {
+        Directory.CreateDirectory(_tempDirectory);
+        string metPath = Path.Combine(_tempDirectory, "DATA.MET");
+        CreateArchive(metPath);
+        GameplayTuningArchive archive = GameplayTuningArchive.Load(metPath);
+        Exception? failure = null;
+        Thread thread = new(() =>
+        {
+            try
+            {
+                using GameplayTweaksForm editor = new(archive, metPath);
+                editor.Show();
+                Application.DoEvents();
+                Assert.NotNull(FindControl<GroupBox>(editor, control => control.Text == "Quick Presets"));
+                Assert.NotNull(FindControl<Button>(editor, control => control.Text == "Apply Preset"));
+                Assert.True(FindControls<ComboBox>(editor).Count >= 2);
+                editor.Close();
+            }
+            catch (Exception exception) { failure = exception; }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        Assert.True(thread.Join(TimeSpan.FromSeconds(10)), "Gameplay preset editor test did not finish.");
+        Assert.Null(failure);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_tempDirectory))
@@ -128,4 +188,15 @@ public sealed class GameplayTuningArchiveTests : IDisposable
         stream.ReadExactly(data);
         return Encoding.UTF8.GetString(data).TrimEnd('\0');
     }
+
+    private static List<T> FindControls<T>(Control root) where T : Control
+    {
+        List<T> result = new();
+        if (root is T match) result.Add(match);
+        foreach (Control child in root.Controls) result.AddRange(FindControls<T>(child));
+        return result;
+    }
+
+    private static T? FindControl<T>(Control root, Func<T, bool> predicate) where T : Control =>
+        FindControls<T>(root).FirstOrDefault(predicate);
 }

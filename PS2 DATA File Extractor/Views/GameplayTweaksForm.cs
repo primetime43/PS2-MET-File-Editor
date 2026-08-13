@@ -8,6 +8,11 @@ public sealed class GameplayTweaksForm : Form
     private readonly TabControl _tabs = new() { Dock = DockStyle.Fill };
     private readonly Label _status = new() { Dock = DockStyle.Bottom, Height = 30, Padding = new Padding(12, 5, 12, 2) };
     private readonly List<DataGridView> _grids = new();
+    private readonly ComboBox _presetGroup = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 190 };
+    private readonly ComboBox _preset = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 260 };
+    private readonly Label _presetDescription = new() { AutoEllipsis = true, Dock = DockStyle.Fill };
+    private readonly Label _presetImpact = new() { AutoEllipsis = true, Dock = DockStyle.Fill, ForeColor = SystemColors.GrayText };
+    private readonly Button _applyPreset = new() { Text = "Apply Preset", AutoSize = true };
     private bool _loading;
 
     public GameplayTweaksForm(GameplayTuningArchive archive, string metPath)
@@ -15,8 +20,8 @@ public sealed class GameplayTweaksForm : Form
         _archive = archive;
         Text = "Gameplay Tweaks - DATA.MET";
         StartPosition = FormStartPosition.CenterParent;
-        ClientSize = new Size(980, 680);
-        MinimumSize = new Size(760, 520);
+        ClientSize = new Size(1100, 780);
+        MinimumSize = new Size(860, 650);
         AutoScaleMode = AutoScaleMode.Dpi;
 
         Label instructions = new()
@@ -37,6 +42,7 @@ public sealed class GameplayTweaksForm : Form
         };
 
         BuildTabs();
+        Control presets = BuildPresetPanel();
         _status.Text = archive.MissingFiles.Count == 0
             ? $"Loaded {archive.Tweaks.Count} supported gameplay values."
             : $"Loaded {archive.Tweaks.Count} values. Missing {archive.MissingFiles.Count} optional tuning file(s).";
@@ -59,10 +65,61 @@ public sealed class GameplayTweaksForm : Form
         Controls.Add(_tabs);
         Controls.Add(_status);
         Controls.Add(buttons);
+        Controls.Add(presets);
         Controls.Add(path);
         Controls.Add(instructions);
         AcceptButton = save;
         CancelButton = cancel;
+    }
+
+    private Control BuildPresetPanel()
+    {
+        GroupBox group = new()
+        {
+            Text = "Quick Presets",
+            Dock = DockStyle.Top,
+            Height = 132,
+            Padding = new Padding(10, 7, 10, 8)
+        };
+        TableLayoutPanel layout = new()
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 5,
+            RowCount = 3
+        };
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 50F));
+        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 50F));
+
+        layout.Controls.Add(new Label
+        {
+            Text = "Type:", AutoSize = true, Margin = new Padding(0, 7, 5, 0)
+        }, 0, 0);
+        layout.Controls.Add(_presetGroup, 1, 0);
+        layout.Controls.Add(new Label
+        {
+            Text = "Preset:", AutoSize = true, Margin = new Padding(14, 7, 5, 0)
+        }, 2, 0);
+        layout.Controls.Add(_preset, 3, 0);
+        layout.Controls.Add(_applyPreset, 4, 0);
+        layout.Controls.Add(_presetDescription, 0, 1);
+        layout.SetColumnSpan(_presetDescription, 5);
+        layout.Controls.Add(_presetImpact, 0, 2);
+        layout.SetColumnSpan(_presetImpact, 5);
+        group.Controls.Add(layout);
+
+        foreach (string presetGroup in GameplayPresetCatalog.Presets.Select(item => item.Group).Distinct())
+            _presetGroup.Items.Add(presetGroup);
+        _presetGroup.SelectedIndexChanged += (_, _) => LoadPresetsForGroup();
+        _preset.SelectedIndexChanged += (_, _) => UpdatePresetPreview();
+        _applyPreset.Click += (_, _) => ApplySelectedPreset();
+        _presetGroup.SelectedIndex = _presetGroup.Items.Count > 0 ? 0 : -1;
+        return group;
     }
 
     private void BuildTabs()
@@ -134,19 +191,96 @@ public sealed class GameplayTweaksForm : Form
     private void ValueChanged(DataGridViewCellEventArgs args)
     {
         if (_loading || args.RowIndex < 0 || args.ColumnIndex != 2) return;
-        int changed = GetRows().Count(row =>
-        {
-            GameplayTuningArchive.GameplayTweak tweak = (GameplayTuningArchive.GameplayTweak)row.Tag!;
-            return !CellText(row).Equals(tweak.Value, StringComparison.Ordinal);
-        });
-        _status.Text = changed == 0 ? "No unsaved gameplay changes."
-            : $"{changed} unsaved gameplay value{(changed == 1 ? string.Empty : "s")}.";
+        UpdateChangedStatus();
+        UpdatePresetPreview();
     }
 
     private IEnumerable<DataGridViewRow> GetRows() =>
         _grids.SelectMany(grid => grid.Rows.Cast<DataGridViewRow>());
 
     private static string CellText(DataGridViewRow row) => Convert.ToString(row.Cells[2].Value) ?? string.Empty;
+
+    private void LoadPresetsForGroup()
+    {
+        string? group = _presetGroup.SelectedItem as string;
+        _preset.Items.Clear();
+        if (group != null)
+        {
+            foreach (GameplayPreset preset in GameplayPresetCatalog.Presets.Where(item => item.Group == group))
+                _preset.Items.Add(preset);
+        }
+        _preset.SelectedIndex = _preset.Items.Count > 0 ? 0 : -1;
+        UpdatePresetPreview();
+    }
+
+    private void UpdatePresetPreview()
+    {
+        if (_preset.SelectedItem is not GameplayPreset preset)
+        {
+            _presetDescription.Text = string.Empty;
+            _presetImpact.Text = string.Empty;
+            _applyPreset.Enabled = false;
+            return;
+        }
+
+        IReadOnlyList<GameplayPresetChange> resolved = preset.Resolve(_archive.Tweaks);
+        Dictionary<GameplayTuningArchive.GameplayTweak, DataGridViewRow> rows = GetRows().ToDictionary(
+            row => (GameplayTuningArchive.GameplayTweak)row.Tag!);
+        GameplayPresetChange[] actual = resolved.Where(change =>
+            rows.TryGetValue(change.Tweak, out DataGridViewRow? row) &&
+            !CellText(row).Equals(change.Value, StringComparison.OrdinalIgnoreCase)).ToArray();
+
+        _presetDescription.Text = preset.Description +
+            " Presets only stage values; use Save to DATA.MET when ready.";
+        _presetImpact.Text = actual.Length == 0
+            ? $"No current values would change ({resolved.Count} setting{(resolved.Count == 1 ? string.Empty : "s")} covered)."
+            : $"Will change {actual.Length} value{(actual.Length == 1 ? string.Empty : "s")}: " +
+              string.Join("; ", actual.Take(4).Select(change =>
+                  $"{change.Tweak.Section}/{Humanize(change.Tweak.Key)} → {change.Value}")) +
+              (actual.Length > 4 ? $"; and {actual.Length - 4} more" : string.Empty);
+        _applyPreset.Enabled = actual.Length > 0;
+    }
+
+    private void ApplySelectedPreset()
+    {
+        if (_preset.SelectedItem is not GameplayPreset preset) return;
+        IReadOnlyList<GameplayPresetChange> changes = preset.Resolve(_archive.Tweaks);
+        Dictionary<GameplayTuningArchive.GameplayTweak, DataGridViewRow> rows = GetRows().ToDictionary(
+            row => (GameplayTuningArchive.GameplayTweak)row.Tag!);
+        int applied = 0;
+        DataGridViewRow? first = null;
+        _loading = true;
+        foreach (GameplayPresetChange change in changes)
+        {
+            if (!rows.TryGetValue(change.Tweak, out DataGridViewRow? row) ||
+                CellText(row).Equals(change.Value, StringComparison.OrdinalIgnoreCase)) continue;
+            row.Cells[2].Value = change.Value;
+            first ??= row;
+            applied++;
+        }
+        _loading = false;
+
+        if (first != null)
+        {
+            DataGridView grid = (DataGridView)first.DataGridView!;
+            _tabs.SelectedTab = (TabPage)grid.Parent!;
+            grid.CurrentCell = first.Cells[2];
+        }
+        UpdateChangedStatus($"Applied {preset.Name}: {applied} value{(applied == 1 ? string.Empty : "s")} staged.");
+        UpdatePresetPreview();
+    }
+
+    private void UpdateChangedStatus(string? prefix = null)
+    {
+        int changed = GetRows().Count(row =>
+        {
+            GameplayTuningArchive.GameplayTweak tweak = (GameplayTuningArchive.GameplayTweak)row.Tag!;
+            return !CellText(row).Equals(tweak.Value, StringComparison.Ordinal);
+        });
+        string summary = changed == 0 ? "No unsaved gameplay changes."
+            : $"{changed} unsaved gameplay value{(changed == 1 ? string.Empty : "s")}.";
+        _status.Text = string.IsNullOrWhiteSpace(prefix) ? summary : $"{prefix} {summary}";
+    }
 
     private void ResetValues()
     {
@@ -160,6 +294,7 @@ public sealed class GameplayTweaksForm : Form
         }
         _loading = false;
         _status.Text = "Unsaved values reset to the archive values.";
+        UpdatePresetPreview();
     }
 
     private void Save_Click(object? sender, EventArgs e)
