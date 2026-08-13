@@ -178,13 +178,17 @@ public sealed class PlayerBiography
         if (lineCount < 1 || lineCount > MaximumSourceLines)
             throw new InvalidDataException($"'{sourcePath}' has invalid source-line count {lineCount}.");
         ReadOnlySpan<byte> body = data.AsSpan(sizeof(int));
-        ValidateTextBytes(body, sourcePath);
-        int newlineCount = body.Count((byte)'\n');
-        if (newlineCount < lineCount)
+        int countedBodyLength = FindCountedBodyLength(body, lineCount);
+        if (countedBodyLength < 0)
             throw new InvalidDataException(
-                $"'{sourcePath}' says to load {lineCount} lines but stores only {newlineCount} newline terminators.");
+                $"'{sourcePath}' says to load {lineCount} lines but does not store that many newline terminators.");
 
-        string rawText = TextEncoding.GetString(body).TrimEnd('\r', '\n');
+        // The retail loader stops after the header's line count. In-place MET replacements retain
+        // the original entry size and zero-fill any unused tail, so bytes after the counted lines
+        // are deliberately ignored here as they are by PlayerCard::LoadBioLines.
+        ReadOnlySpan<byte> countedBody = body[..countedBodyLength];
+        ValidateTextBytes(countedBody, sourcePath);
+        string rawText = TextEncoding.GetString(countedBody).TrimEnd('\r', '\n');
         string text = NormalizeLineEndings(rawText);
         string fileName = Path.GetFileNameWithoutExtension(sourcePath);
         string playerCode = fileName.EndsWith("_bio", StringComparison.OrdinalIgnoreCase)
@@ -276,6 +280,18 @@ public sealed class PlayerBiography
             if (value is not (0x0a or 0x0d or 0x09) && (value < 0x20 || value > 0x7e))
                 throw new InvalidDataException($"'{sourcePath}' contains unsupported biography text bytes.");
         }
+    }
+
+    private static int FindCountedBodyLength(ReadOnlySpan<byte> body, int lineCount)
+    {
+        int found = 0;
+        for (int index = 0; index < body.Length; index++)
+        {
+            if (body[index] != (byte)'\n') continue;
+            found++;
+            if (found == lineCount) return index + 1;
+        }
+        return -1;
     }
 }
 

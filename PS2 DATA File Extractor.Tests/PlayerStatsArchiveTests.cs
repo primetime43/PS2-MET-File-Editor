@@ -107,6 +107,40 @@ public sealed class PlayerStatsArchiveTests : IDisposable
     }
 
     [Fact]
+    public void BiographyParserIgnoresBytesAfterTheCountedLines()
+    {
+        byte[] savedInOriginalSlot = CreateBiography(1, "A shorter replacement.\n")
+            .Concat(new byte[220])
+            .ToArray();
+
+        PlayerBiography biography = PlayerBiography.Parse(
+            "data/kids/jete/jete_bio.dat", savedInOriginalSlot);
+
+        Assert.Equal("A shorter replacement.", biography.Text);
+        Assert.False(biography.IsChanged);
+    }
+
+    [Fact]
+    public void ShorterBiographySaveReopensFromZeroFilledArchiveSlot()
+    {
+        Directory.CreateDirectory(_tempDirectory);
+        string metPath = Path.Combine(_tempDirectory, "DATA.MET");
+        CreateArchive(metPath);
+        PlayerStatsArchive archive = PlayerStatsArchive.Load(metPath);
+        PlayerBiography biography = Assert.IsType<PlayerBiography>(
+            archive.GetBiography(archive.Players.Single(player => !player.IsClone)));
+        biography.Text = "Short.\n";
+
+        PlayerStatsSaveResult result = archive.SaveWithBackup();
+        PlayerStatsArchive reopened = PlayerStatsArchive.Load(metPath);
+        PlayerBiography reloaded = Assert.IsType<PlayerBiography>(
+            reopened.GetBiography(reopened.Players.Single(player => !player.IsClone)));
+
+        Assert.False(result.RebuiltArchive);
+        Assert.Equal("Short.", reloaded.Text);
+    }
+
+    [Fact]
     public void BiographySaveSharesPlayerBackupAndReloadsText()
     {
         Directory.CreateDirectory(_tempDirectory);
